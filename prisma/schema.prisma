@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+enum Role {
+  CHEF_POOL
+  INSPECTEUR
+  EXPLOITANT
+}
+
+enum InspectionStatus {
+  PLANIFIEE
+  EN_COURS
+  TERMINEE
+  RAPPORT_SOUMIS
+  VALIDEE
+}
+
+enum FormType {
+  A1
+  C101
+  T1
+}
+
+enum ReportStatus {
+  BROUILLON
+  SOUMIS
+  EN_REVUE
+  VALIDE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  phone        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignmentsGiven Assignment[]  @relation("AssignedBy")
+  assignments      Assignment[]  @relation("Inspector")
+  inspections      Inspection[]  @relation("InspectorInspections")
+  comments         Comment[]
+
+  @@index([role])
+}
+
+model School {
+  id         String   @id @default(cuid())
+  name       String
+  code       String   @unique
+  province   String
+  territoire String
+  address    String?
+  director   String?
+  phone      String?
+  type       String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  assignments Assignment[]
+  inspections Inspection[]
+
+  @@index([province, territoire])
+}
+
+model Assignment {
+  id           String   @id @default(cuid())
+  school       School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId     String
+  inspector    User     @relation("Inspector", fields: [inspectorId], references: [id], onDelete: Cascade)
+  inspectorId  String
+  assignedBy   User     @relation("AssignedBy", fields: [assignedById], references: [id])
+  assignedById String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([inspectorId])
+  @@index([schoolId])
+}
+
+model Inspection {
+  id            String           @id @default(cuid())
+  school        School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId      String
+  inspector     User             @relation("InspectorInspections", fields: [inspectorId], references: [id], onDelete: Cascade)
+  inspectorId   String
+  status        InspectionStatus @default(PLANIFIEE)
+  scheduledDate DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  forms  Form[]
+  report Report?
+
+  @@index([schoolId])
+  @@index([inspectorId])
+  @@index([status])
+}
+
+model Form {
+  id           String     @id @default(cuid())
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId String
+  type         FormType
+  data         Json       @default("{}")
+  completed    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([inspectionId, type])
+}
+
+model Report {
+  id              String       @id @default(cuid())
+  inspection      Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId    String       @unique
+  summary         String?
+  recommendations String?
+  status          ReportStatus @default(BROUILLON)
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  comments Comment[]
+
+  @@index([status])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+}
