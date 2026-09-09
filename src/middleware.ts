@@ -1,5 +1,10 @@
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { authConfig } from "@/lib/auth.config";
+
+// Uses the edge-safe config (no providers/Prisma/bcrypt) so this middleware
+// stays under the Edge Function size limit — see auth.config.ts.
+const { auth } = NextAuth(authConfig);
 
 const PUBLIC_PATHS = ["/login"];
 
