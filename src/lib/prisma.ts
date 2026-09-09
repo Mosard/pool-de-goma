@@ -6,9 +6,9 @@ const globalForPrisma = globalThis as unknown as {
 
 // Falls back to a placeholder so the client can be constructed (and pages that
 // never touch the DB, like /login for an anonymous visitor, keep working) even
-// before POSTGRES_PRISMA_URL is configured on the hosting platform.
+// before POSTGRES_URL is configured on the hosting platform.
 const datasourceUrl =
-  process.env.POSTGRES_PRISMA_URL ?? "postgresql://placeholder:placeholder@localhost:5432/placeholder";
+  process.env.POSTGRES_URL ?? "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
 export const prisma =
   globalForPrisma.prisma ??
