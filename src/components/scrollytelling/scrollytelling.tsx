@@ -1,11 +1,89 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { SCENES } from "./scenes-data";
+import { SCENES, type Scene } from "./scenes-data";
+import { TextOverlay } from "./text-overlay";
+import { VideoWindow } from "./video-window";
+import type { Map3DStageHandle } from "./map-3d-stage";
+
+const Map3DStage = dynamic(() => import("./map-3d-stage").then((m) => m.Map3DStage), { ssr: false });
+
+function findActiveScene(progress: number): Scene {
+  return SCENES.find((s) => progress >= s.start && progress < s.end) ?? SCENES[SCENES.length - 1];
+}
 
 export function Scrollytelling() {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const pinRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<Map3DStageHandle>(null);
+  const [mode, setMode] = useState<"fallback" | "immersive">("fallback");
+  const [activeScene, setActiveScene] = useState<Scene>(SCENES[0]);
+  const [sceneLocalProgress, setSceneLocalProgress] = useState(0);
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+    const mm = gsap.matchMedia();
+
+    mm.add(
+      {
+        isDesktop: "(min-width: 1024px) and (prefers-reduced-motion: no-preference)",
+      },
+      (context) => {
+        const { isDesktop } = context.conditions as { isDesktop: boolean };
+        setMode(isDesktop ? "immersive" : "fallback");
+        if (!isDesktop) return;
+
+        const pinEl = pinRef.current;
+        const wrapperEl = wrapperRef.current;
+        if (!pinEl || !wrapperEl) return;
+
+        const trigger = ScrollTrigger.create({
+          trigger: wrapperEl,
+          start: "top top",
+          end: "bottom bottom",
+          pin: pinEl,
+          scrub: 1,
+          onUpdate: (self) => {
+            stageRef.current?.setProgress(self.progress);
+            const scene = findActiveScene(self.progress);
+            setActiveScene((prev) => (prev.id === scene.id ? prev : scene));
+            const local = (self.progress - scene.start) / Math.max(scene.end - scene.start, 1e-6);
+            setSceneLocalProgress(local);
+          },
+        });
+
+        return () => trigger.kill();
+      }
+    );
+
+    return () => mm.revert();
+  }, []);
+
+  if (mode === "fallback") {
+    return <FallbackScrollytelling />;
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative h-[800vh]">
+      <div ref={pinRef} className="relative h-screen w-full overflow-hidden bg-[var(--color-navy)]">
+        <Map3DStage ref={stageRef} />
+        {activeScene.kind === "video" && activeScene.videoId && (
+          <VideoWindow videoId={activeScene.videoId} active progress={sceneLocalProgress} />
+        )}
+        <TextOverlay scene={activeScene} visible={activeScene.kind === "map"} />
+      </div>
+    </div>
+  );
+}
+
+// Repli mobile / prefers-reduced-motion : pas de pin, pas de WebGL — chaque
+// scène apparaît simplement en fondu au scroll, comme la version précédente.
+// Les scènes vidéo affichent une miniature YouTube cliquable plutôt qu'un
+// lecteur embarqué, pour rester léger.
+function FallbackScrollytelling() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -13,25 +91,21 @@ export function Scrollytelling() {
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const ctx = gsap.context(() => {
-      const scenes = containerRef.current?.querySelectorAll<HTMLElement>("[data-scene]");
-      scenes?.forEach((scene) => {
+      const items = containerRef.current?.querySelectorAll<HTMLElement>("[data-scene]");
+      items?.forEach((el) => {
         if (prefersReducedMotion) {
-          gsap.set(scene, { opacity: 1, y: 0 });
+          gsap.set(el, { opacity: 1, y: 0 });
           return;
         }
         gsap.fromTo(
-          scene,
-          { opacity: 0, y: 32 },
+          el,
+          { opacity: 0, y: 24 },
           {
             opacity: 1,
             y: 0,
-            duration: 0.9,
+            duration: 0.8,
             ease: "power2.out",
-            scrollTrigger: {
-              trigger: scene,
-              start: "top 75%",
-              toggleActions: "play none none reverse",
-            },
+            scrollTrigger: { trigger: el, start: "top 80%", toggleActions: "play none none reverse" },
           }
         );
       });
@@ -41,15 +115,23 @@ export function Scrollytelling() {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative bg-[var(--color-navy)] py-20 text-white">
-      <div className="mx-auto max-w-3xl space-y-32 px-6">
+    <div ref={containerRef} className="bg-[var(--color-navy)] py-16 text-white">
+      <div className="mx-auto max-w-2xl space-y-20 px-6">
         {SCENES.map((scene) => (
-          <div key={scene.id} data-scene className="flex min-h-[40vh] flex-col justify-center opacity-0">
-            {/* Point d'ancrage pour le futur visuel (carte 3D RDC / vidéo) — placeholder sobre en attendant les assets réels. */}
-            <div className="mb-6 h-1 w-16 rounded-full bg-blue-500" />
-            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-blue-300">{scene.eyebrow}</p>
-            <h3 className="text-2xl font-bold sm:text-3xl">{scene.title}</h3>
-            <p className="mt-3 max-w-xl text-sm text-gray-300 sm:text-base">{scene.body}</p>
+          <div key={scene.id} data-scene className="opacity-0">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">{scene.eyebrow}</p>
+            <h3 className="text-xl font-bold sm:text-2xl">{scene.title}</h3>
+            <p className="mt-2 text-sm text-gray-300">{scene.body}</p>
+            {scene.kind === "video" && scene.videoId && (
+              <a
+                href={`https://www.youtube.com/watch?v=${scene.videoId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 flex aspect-video items-center justify-center rounded-xl bg-white/5 text-sm font-medium text-blue-300 ring-1 ring-white/10 hover:bg-white/10"
+              >
+                Voir la vidéo institutionnelle →
+              </a>
+            )}
           </div>
         ))}
       </div>

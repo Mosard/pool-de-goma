@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { Scrollytelling } from "@/components/scrollytelling/scrollytelling";
+import { InstitutionalCarousel } from "@/components/institutional-carousel";
 
 export default async function Home() {
   const session = await auth();
@@ -57,6 +58,10 @@ export default async function Home() {
 
       {/* Après la partie immersive : simple et pratique */}
       <main className="mx-auto w-full max-w-5xl space-y-10 px-6 py-16">
+        <section>
+          <InstitutionalCarousel />
+        </section>
+
         <section id="actualites">
           <h2 className="mb-4 text-xl font-bold text-gray-900">Actualités</h2>
           <EmptyState message="Aucune actualité publiée pour le moment. Le back-office éditorial arrive prochainement." />

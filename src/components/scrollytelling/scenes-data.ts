@@ -1,57 +1,104 @@
-// Contenu provisoire du scrollytelling (§9 du design.md). Aucun asset 3D/vidéo
-// acheté n'est disponible : chaque scène est un placeholder textuel sobre,
-// prêt à être remplacé par la carte 3D RDC / les vidéos réelles plus tard
-// sans changer la structure (voir Scene, ci-dessous, pour le point d'ancrage
-// du futur visuel).
+// 9 scènes du storyboard fourni : RDC -> vision nationale -> Inspection ->
+// IPP Nord-Kivu 1 -> inspecteurs -> enseignants -> élèves -> conclusion.
+// `start`/`end` sont des positions de progression (0-1) sur la séquence
+// pinnée ; les textes sont l'intention éditoriale du storyboard, pas ses
+// phrases mot pour mot (sauf "IPP Nord-Kivu 1").
+
+export type SceneKind = "map" | "video";
 
 export type Scene = {
   id: string;
+  kind: SceneKind;
   eyebrow: string;
   title: string;
   body: string;
+  start: number;
+  end: number;
+  videoId?: string;
 };
 
 export const SCENES: Scene[] = [
   {
     id: "scene-1",
-    eyebrow: "01 — République Démocratique du Congo",
-    title: "Une transformation numérique à l'échelle nationale",
-    body: "Le ministère porte une vision claire : faire entrer l'enseignement congolais dans l'ère numérique.",
+    kind: "map",
+    eyebrow: "01",
+    title: "Une nouvelle ère numérique",
+    body: "La République Démocratique du Congo entre progressivement dans la transformation numérique.",
+    start: 0,
+    end: 0.12,
   },
   {
     id: "scene-2",
-    eyebrow: "02 — Réseau numérique national",
-    title: "Un réseau se déploie à travers le pays",
-    body: "Des circuits d'information et de formation se mettent progressivement en place.",
+    kind: "map",
+    eyebrow: "02",
+    title: "Un réseau qui s'éveille",
+    body: "Un maillage numérique se dessine progressivement à travers le pays.",
+    start: 0.12,
+    end: 0.24,
   },
   {
     id: "scene-3",
-    eyebrow: "03 — Connexions",
-    title: "Une infrastructure et une vision prennent forme",
-    body: "Institutions, provinces et acteurs de terrain se relient autour d'un même objectif.",
+    kind: "map",
+    eyebrow: "03",
+    title: "Une vision nationale",
+    body: "L'impulsion part d'abord de l'Inspection, au niveau national.",
+    start: 0.24,
+    end: 0.34,
   },
   {
     id: "scene-4",
-    eyebrow: "04 — Niveau national",
-    title: "L'impulsion part de l'institution",
-    body: "L'Inspection principale au niveau national porte l'origine de cette transformation.",
+    kind: "map",
+    eyebrow: "04",
+    title: "IPP Nord-Kivu 1",
+    body: "La vision nationale est reprise et appliquée au niveau provincial.",
+    start: 0.34,
+    end: 0.46,
   },
   {
     id: "scene-5",
-    eyebrow: "05 — Province Éducationnelle Nord-Kivu 1",
-    title: "IPP Nord-Kivu 1",
-    body: "La province s'inscrit pleinement dans cette dynamique de numérisation de l'enseignement.",
+    kind: "map",
+    eyebrow: "05",
+    title: "Un relais provincial",
+    body: "L'Inspection transmet la transformation numérique à travers tout le système éducatif.",
+    start: 0.46,
+    end: 0.54,
   },
   {
     id: "scene-6",
-    eyebrow: "06 — Formation en cascade",
-    title: "De l'institution jusqu'à l'élève",
-    body: "Formation des inspecteurs, puis des enseignants, puis accompagnement numérique des élèves.",
+    kind: "video",
+    eyebrow: "06",
+    title: "Former les inspecteurs",
+    body: "La formation numérique des inspecteurs itinérants — premier relais humain.",
+    start: 0.54,
+    end: 0.68,
+    videoId: "nXDotxUYpHU",
   },
   {
     id: "scene-7",
-    eyebrow: "07 — Résultat",
-    title: "Un environnement éducatif modernisé",
-    body: "Une administration plus connectée, des enseignants formés, des élèves mieux préparés.",
+    kind: "video",
+    eyebrow: "07",
+    title: "Accompagner les enseignants",
+    body: "Rentrée scolaire 2026-2027 : rigueur numérique et formation des enseignants.",
+    start: 0.68,
+    end: 0.82,
+    videoId: "SufOnpVGKtk",
+  },
+  {
+    id: "scene-8",
+    kind: "map",
+    eyebrow: "08",
+    title: "Préparer les élèves",
+    body: "La technologie, encadrée, mise au service de l'apprentissage.",
+    start: 0.82,
+    end: 0.92,
+  },
+  {
+    id: "scene-9",
+    kind: "map",
+    eyebrow: "09",
+    title: "Une inspection connectée",
+    body: "Une éducation tournée vers l'avenir, du niveau national jusqu'à l'élève.",
+    start: 0.92,
+    end: 1,
   },
 ];
