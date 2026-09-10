@@ -46,11 +46,11 @@ export function buildRdcModel(targetWidth = 2.6): RdcModel {
   const shape = new THREE.Shape(points);
 
   const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: 0.08,
+    depth: 0.18,
     bevelEnabled: true,
-    bevelThickness: 0.015,
-    bevelSize: 0.015,
-    bevelSegments: 2,
+    bevelThickness: 0.03,
+    bevelSize: 0.03,
+    bevelSegments: 3,
     curveSegments: 2,
   });
   geometry.center();

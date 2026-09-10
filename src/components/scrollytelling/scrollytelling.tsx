@@ -23,44 +23,48 @@ export function Scrollytelling() {
   const [activeScene, setActiveScene] = useState<Scene>(SCENES[0]);
   const [sceneLocalProgress, setSceneLocalProgress] = useState(0);
 
+  // Étape 1 : uniquement décider du mode (desktop + mouvement autorisé, ou
+  // repli). gsap.matchMedia réévalue automatiquement si l'utilisateur
+  // redimensionne la fenêtre ou change sa préférence de mouvement.
   useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
     const mm = gsap.matchMedia();
-
-    mm.add(
-      {
-        isDesktop: "(min-width: 1024px) and (prefers-reduced-motion: no-preference)",
-      },
-      (context) => {
-        const { isDesktop } = context.conditions as { isDesktop: boolean };
-        setMode(isDesktop ? "immersive" : "fallback");
-        if (!isDesktop) return;
-
-        const pinEl = pinRef.current;
-        const wrapperEl = wrapperRef.current;
-        if (!pinEl || !wrapperEl) return;
-
-        const trigger = ScrollTrigger.create({
-          trigger: wrapperEl,
-          start: "top top",
-          end: "bottom bottom",
-          pin: pinEl,
-          scrub: 1,
-          onUpdate: (self) => {
-            stageRef.current?.setProgress(self.progress);
-            const scene = findActiveScene(self.progress);
-            setActiveScene((prev) => (prev.id === scene.id ? prev : scene));
-            const local = (self.progress - scene.start) / Math.max(scene.end - scene.start, 1e-6);
-            setSceneLocalProgress(local);
-          },
-        });
-
-        return () => trigger.kill();
-      }
-    );
-
+    mm.add("(min-width: 1024px) and (prefers-reduced-motion: no-preference)", () => {
+      setMode("immersive");
+      return () => setMode("fallback");
+    });
     return () => mm.revert();
   }, []);
+
+  // Étape 2 : ne créer le pin GSAP qu'APRÈS que React ait effectivement
+  // rendu l'arbre "immersive" (donc que wrapperRef/pinRef pointent vers de
+  // vrais éléments) — sinon ScrollTrigger s'accroche à des refs encore
+  // nulles (celles de l'arbre "fallback" affiché au premier rendu) et le
+  // pin ne s'active jamais, laissant un grand vide vide au scroll.
+  useEffect(() => {
+    if (mode !== "immersive") return;
+
+    gsap.registerPlugin(ScrollTrigger);
+    const pinEl = pinRef.current;
+    const wrapperEl = wrapperRef.current;
+    if (!pinEl || !wrapperEl) return;
+
+    const trigger = ScrollTrigger.create({
+      trigger: wrapperEl,
+      start: "top top",
+      end: "bottom bottom",
+      pin: pinEl,
+      scrub: 1,
+      onUpdate: (self) => {
+        stageRef.current?.setProgress(self.progress);
+        const scene = findActiveScene(self.progress);
+        setActiveScene((prev) => (prev.id === scene.id ? prev : scene));
+        const local = (self.progress - scene.start) / Math.max(scene.end - scene.start, 1e-6);
+        setSceneLocalProgress(local);
+      },
+    });
+
+    return () => trigger.kill();
+  }, [mode]);
 
   if (mode === "fallback") {
     return <FallbackScrollytelling />;

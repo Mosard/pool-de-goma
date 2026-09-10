@@ -115,10 +115,13 @@ export const Map3DStage = forwardRef<Map3DStageHandle>(function Map3DStage(_prop
     const pulse = new THREE.Mesh(pulseGeo, pulseMat);
     scene.add(pulse);
 
-    scene.add(new THREE.AmbientLight(0x1e3a8a, 0.6));
-    const pointLight = new THREE.PointLight(0x60a5fa, 1.2, 10);
+    scene.add(new THREE.AmbientLight(0x1e3a8a, 0.5));
+    const pointLight = new THREE.PointLight(0x60a5fa, 1.4, 12);
     pointLight.position.set(2, 2, 3);
     scene.add(pointLight);
+    const rimLight = new THREE.DirectionalLight(0x93c5fd, 0.6);
+    rimLight.position.set(-2, 1, -2);
+    scene.add(rimLight);
 
     function resize() {
       if (!container) return;
