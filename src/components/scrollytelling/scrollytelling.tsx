@@ -123,9 +123,9 @@ function FallbackScrollytelling() {
       <div className="mx-auto max-w-2xl space-y-20 px-6">
         {SCENES.map((scene) => (
           <div key={scene.id} data-scene className="opacity-0">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">{scene.eyebrow}</p>
-            <h3 className="text-xl font-bold sm:text-2xl">{scene.title}</h3>
-            <p className="mt-2 text-sm text-gray-300">{scene.body}</p>
+            <p className="mb-2 text-sm font-bold uppercase tracking-[0.2em] text-blue-300">{scene.eyebrow}</p>
+            <h3 className="text-2xl font-bold sm:text-3xl">{scene.title}</h3>
+            <p className="mt-3 text-base text-gray-200">{scene.body}</p>
             {scene.kind === "video" && scene.videoId && (
               <a
                 href={`https://www.youtube.com/watch?v=${scene.videoId}`}
