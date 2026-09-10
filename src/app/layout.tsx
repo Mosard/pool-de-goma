@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "POOL de Goma",
-  description: "Plateforme de gestion du POOL d'inspection scolaire",
+  title: "IPP Nord-Kivu 1",
+  description: "Inspection Principale Provinciale de l'Enseignement — Province Éducationnelle Nord-Kivu 1",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
