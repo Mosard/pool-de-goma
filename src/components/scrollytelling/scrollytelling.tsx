@@ -77,7 +77,7 @@ export function Scrollytelling() {
         {activeScene.kind === "video" && activeScene.videoId && (
           <VideoWindow videoId={activeScene.videoId} active progress={sceneLocalProgress} />
         )}
-        <TextOverlay scene={activeScene} visible={activeScene.kind === "map"} />
+        <TextOverlay scene={activeScene} dimmed={activeScene.kind === "video"} />
       </div>
     </div>
   );
@@ -124,8 +124,8 @@ function FallbackScrollytelling() {
         {SCENES.map((scene) => (
           <div key={scene.id} data-scene className="opacity-0">
             <p className="mb-2 text-sm font-bold uppercase tracking-[0.2em] text-blue-300">{scene.eyebrow}</p>
-            <h3 className="text-2xl font-bold sm:text-3xl">{scene.title}</h3>
-            <p className="mt-3 text-base text-gray-200">{scene.body}</p>
+            <h3 className="text-3xl font-bold sm:text-4xl">{scene.title}</h3>
+            <p className="mt-3 text-lg text-gray-200">{scene.body}</p>
             {scene.kind === "video" && scene.videoId && (
               <a
                 href={`https://www.youtube.com/watch?v=${scene.videoId}`}
