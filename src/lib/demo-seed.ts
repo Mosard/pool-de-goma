@@ -296,11 +296,11 @@ async function seedWorkflow() {
   );
   const statusByKey = new Map(statusRows.map((s) => [s.key, s]));
 
-  await mapConcurrent(WORKFLOW_TRANSITIONS, CONCURRENCY, (t) => {
+  await mapConcurrent(WORKFLOW_TRANSITIONS, CONCURRENCY, async (t) => {
     const fromStatus = statusByKey.get(t.from);
     const toStatus = statusByKey.get(t.to);
-    if (!fromStatus || !toStatus) return Promise.resolve();
-    return prisma.workflowTransition.upsert({
+    if (!fromStatus || !toStatus) return;
+    await prisma.workflowTransition.upsert({
       where: { fromStatusId_toStatusId: { fromStatusId: fromStatus.id, toStatusId: toStatus.id } },
       update: { label: t.label, allowedPermissionKey: t.permission },
       create: {
@@ -327,10 +327,10 @@ async function seedFormTemplates() {
   );
   const categoryByCode = new Map(categoryRows.map((c) => [c.code, c]));
 
-  await mapConcurrent(FORM_TEMPLATES, CONCURRENCY, (t) => {
+  await mapConcurrent(FORM_TEMPLATES, CONCURRENCY, async (t) => {
     const category = categoryByCode.get(t.categoryCode);
-    if (!category) return Promise.resolve();
-    return prisma.formTemplate.upsert({
+    if (!category) return;
+    await prisma.formTemplate.upsert({
       where: { code: t.code },
       update: { title: t.title, fieldsSchema: t.fieldsSchema, categoryId: category.id },
       create: { code: t.code, title: t.title, fieldsSchema: t.fieldsSchema, categoryId: category.id },
