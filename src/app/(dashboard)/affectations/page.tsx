@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
+import { ConfirmButton } from "@/components/confirm-button";
 import { AssignmentForm } from "./assignment-form";
 import { revokeAssignmentAction } from "./actions";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
@@ -58,11 +59,13 @@ export default async function AffectationsPage() {
                   <td className="px-6 py-3 font-medium text-gray-900">{a.school.name}</td>
                   <td className="px-6 py-3 text-gray-600">{a.inspector.name}</td>
                   <td className="px-6 py-3 text-right">
-                    <form action={revokeAssignmentAction.bind(null, a.id)}>
-                      <button type="submit" className="text-xs font-medium text-red-600 hover:underline">
-                        Révoquer
-                      </button>
-                    </form>
+                    <ConfirmButton
+                      label="Révoquer"
+                      confirmLabel="Révoquer"
+                      variant="danger"
+                      className="!min-h-0 px-3 py-1.5 text-xs"
+                      formAction={revokeAssignmentAction.bind(null, a.id)}
+                    />
                   </td>
                 </tr>
               ))}

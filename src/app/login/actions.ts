@@ -44,3 +44,8 @@ export async function loginAction(
     throw error;
   }
 }
+
+export async function signInWithGoogleAction(formData: FormData) {
+  const callbackUrl = (formData.get("callbackUrl") as string) || "/dashboard";
+  await signIn("google", { redirectTo: callbackUrl });
+}

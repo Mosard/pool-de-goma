@@ -3,39 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import {
-  LayoutDashboard,
-  School,
-  Users,
-  ClipboardList,
-  FileCheck2,
-  Share2,
-  UserPlus,
-  ScrollText,
-  LogOut,
-} from "lucide-react";
+import { LogOut, User as UserIcon } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
-import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permissions";
 import { NotificationBell, type NotificationItem } from "./notifications-bell";
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  permission?: string; // absent = visible à tout utilisateur connecté
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/ecoles", label: "Écoles", icon: School },
-  { href: "/affectations", label: "Affectations", icon: Share2, permission: PERMISSIONS.ASSIGNMENTS_MANAGE },
-  { href: "/inspections", label: "Inspections & fiches", icon: ClipboardList },
-  { href: "/rapports", label: "Rapports", icon: FileCheck2 },
-  { href: "/utilisateurs", label: "Utilisateurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
-  { href: "/comptes", label: "Demandes de compte", icon: UserPlus, permission: PERMISSIONS.ACCOUNTS_MANAGE },
-  { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
-];
+import { MobileNav } from "./mobile-nav";
+import { Avatar } from "./ui";
+import { NAV_ITEMS } from "./nav-items";
 
 export function Sidebar({ permissions }: { permissions: SessionPermission[] }) {
   const pathname = usePathname();
@@ -75,26 +49,39 @@ export function Topbar({
   name,
   roleLabels,
   notifications,
+  permissions,
 }: {
   name: string;
   roleLabels: string[];
   notifications: NotificationItem[];
+  permissions: SessionPermission[];
 }) {
   return (
-    <header className="flex h-16 items-center justify-between border-b border-gray-100 bg-white px-6">
-      <div>
-        <p className="text-sm font-semibold text-gray-900">Bienvenue, {name}</p>
-        <p className="text-xs text-gray-500">{roleLabels.length > 0 ? roleLabels.join(", ") : "Aucun rôle attribué"}</p>
+    <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 sm:px-6">
+      <div className="flex items-center gap-3">
+        <MobileNav permissions={permissions} />
+        <Avatar name={name} className="hidden sm:flex" />
+        <div>
+          <p className="text-sm font-semibold text-gray-900">{name}</p>
+          <p className="text-xs text-gray-500">{roleLabels.length > 0 ? roleLabels.join(", ") : "Aucun rôle attribué"}</p>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
         <NotificationBell notifications={notifications} />
+        <Link
+          href="/profil"
+          className="hidden items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 sm:flex"
+        >
+          <UserIcon size={16} strokeWidth={1.75} />
+          Mon profil
+        </Link>
         <form action={signOutAction}>
           <button
             type="submit"
             className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900"
           >
             <LogOut size={16} strokeWidth={1.75} />
-            Déconnexion
+            <span className="hidden sm:inline">Déconnexion</span>
           </button>
         </form>
       </div>

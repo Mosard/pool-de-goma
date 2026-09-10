@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, PageHeader, Badge, Button, EmptyState } from "@/components/ui";
+import { Card, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { approveAccountRequestAction, rejectAccountRequestAction } from "./actions";
@@ -49,12 +50,19 @@ export default async function ComptesPage() {
                   <td className="px-6 py-3 text-gray-600">{r.pool?.name ?? "—"}</td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex justify-end gap-2">
-                      <form action={approveAccountRequestAction.bind(null, r.id)}>
-                        <Button type="submit" className="px-3 py-1.5 text-xs">Valider</Button>
-                      </form>
-                      <form action={rejectAccountRequestAction.bind(null, r.id)}>
-                        <Button type="submit" variant="danger" className="px-3 py-1.5 text-xs">Refuser</Button>
-                      </form>
+                      <ConfirmButton
+                        label="Valider"
+                        confirmLabel="Valider"
+                        className="!min-h-0 px-3 py-1.5 text-xs"
+                        formAction={approveAccountRequestAction.bind(null, r.id)}
+                      />
+                      <ConfirmButton
+                        label="Refuser"
+                        confirmLabel="Refuser"
+                        variant="danger"
+                        className="!min-h-0 px-3 py-1.5 text-xs"
+                        formAction={rejectAccountRequestAction.bind(null, r.id)}
+                      />
                     </div>
                   </td>
                 </tr>

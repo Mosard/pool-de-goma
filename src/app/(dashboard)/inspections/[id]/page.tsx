@@ -5,6 +5,23 @@ import { Card, PageHeader, Badge } from "@/components/ui";
 import { FicheForm } from "../fiche-form";
 import { ReportForm } from "../report-form";
 
+function ProgressBar({ completed, total }: { completed: number; total: number }) {
+  const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+  return (
+    <Card>
+      <div className="mb-2 flex items-center justify-between text-sm">
+        <span className="font-medium text-gray-900">
+          {completed}/{total} fiche{total > 1 ? "s" : ""} complétée{completed > 1 ? "s" : ""}
+        </span>
+        <span className="text-gray-500">{pct}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+        <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${pct}%` }} />
+      </div>
+    </Card>
+  );
+}
+
 export default async function InspectionDetailPage({
   params,
 }: {
@@ -41,6 +58,8 @@ export default async function InspectionDetailPage({
         description={`Inspecteur : ${inspection.inspector.name}`}
         actions={<Badge color="blue">{inspection.status}</Badge>}
       />
+
+      <ProgressBar completed={inspection.forms.filter((f) => f.completed).length} total={templates.length} />
 
       {templates.map((template) => {
         const existing = formsByTemplate.get(template.id);

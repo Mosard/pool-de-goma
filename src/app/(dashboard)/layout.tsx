@@ -24,7 +24,12 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen w-full bg-gray-50">
       <Sidebar permissions={session.user.permissions} />
       <div className="flex flex-1 flex-col">
-        <Topbar name={session.user.name ?? ""} roleLabels={roleLabels} notifications={notifications} />
+        <Topbar
+          name={session.user.name ?? ""}
+          roleLabels={roleLabels}
+          notifications={notifications}
+          permissions={session.user.permissions}
+        />
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

@@ -51,6 +51,15 @@ export const commentSchema = z.object({
   content: z.string().min(1, "Commentaire vide"),
 });
 
+export const profileSchema = z.object({
+  prenom: z.string().optional().or(z.literal("")),
+  postnom: z.string().optional().or(z.literal("")),
+  sex: z.enum(["M", "F"]).optional().or(z.literal("")),
+  phone: z.string().optional().or(z.literal("")),
+  dateNaissance: z.string().optional().or(z.literal("")),
+  nombreEnfants: z.string().optional().or(z.literal("")),
+});
+
 export const transitionSchema = z.object({
   toStatusKey: z.string().min(1, "Statut requis"),
   comment: z.string().optional().or(z.literal("")),

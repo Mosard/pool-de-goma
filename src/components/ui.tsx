@@ -29,12 +29,57 @@ export function Button({
   return (
     <button
       className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         variants[variant],
         className
       )}
       {...props}
     />
+  );
+}
+
+export function Alert({
+  variant = "info",
+  children,
+}: {
+  variant?: "success" | "error" | "info";
+  children: React.ReactNode;
+}) {
+  const styles = {
+    success: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    error: "bg-red-50 text-red-800 border-red-200",
+    info: "bg-blue-50 text-blue-800 border-blue-200",
+  };
+  return (
+    <div
+      role={variant === "error" ? "alert" : "status"}
+      className={clsx("rounded-xl border px-4 py-3 text-sm", styles[variant])}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={clsx("animate-pulse rounded-xl bg-gray-200/70", className)} />;
+}
+
+export function Avatar({ name, className }: { name: string; className?: string }) {
+  const initials = name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase())
+    .join("");
+  return (
+    <div
+      className={clsx(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white",
+        className
+      )}
+    >
+      {initials || "?"}
+    </div>
   );
 }
 

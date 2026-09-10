@@ -1,10 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  --background: #f8fafc;
+  --foreground: #0f172a;
   --color-primary: #2563eb;
-  --color-secondary: #111827;
+  --color-primary-dark: #1d4ed8;
+  --color-secondary: #0f172a;
+  --color-navy: #0b1220;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
@@ -21,4 +23,29 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.hero-gradient {
+  background:
+    radial-gradient(60% 60% at 20% 20%, rgba(37, 99, 235, 0.55), transparent 60%),
+    radial-gradient(50% 50% at 80% 30%, rgba(29, 78, 216, 0.35), transparent 60%),
+    radial-gradient(70% 70% at 50% 100%, rgba(11, 18, 32, 0.9), transparent 60%),
+    var(--color-navy);
+  background-size: 140% 140%;
+  animation: hero-gradient-move 18s ease-in-out infinite alternate;
+}
+
+@keyframes hero-gradient-move {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 40%; }
 }

@@ -3,9 +3,10 @@ import { clsx } from "clsx";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, Badge } from "@/components/ui";
-import { School, Users, ClipboardList, FileCheck2 } from "lucide-react";
+import { School, Users, ClipboardList, FileCheck2, AlertTriangle } from "lucide-react";
 import { PERMISSIONS, ROLE_KEYS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
+import { PoolActivityChart } from "@/components/pool-activity-chart";
 
 const PENDING_KEYS: string[] = [
   WORKFLOW_STATUS_KEYS.SOUMIS,
@@ -51,13 +52,17 @@ export default async function DashboardPage({
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
 
   if (isProvinceScoped) {
-    const [schools, activeUsers, activeInspections, pendingReports, pools] = await Promise.all([
-      prisma.school.count(),
-      prisma.user.count({ where: { status: "ACTIVE" } }),
-      prisma.inspection.count({ where: { status: { in: ["PLANIFIEE", "EN_COURS"] } } }),
-      prisma.report.count({ where: { status: { key: { in: PENDING_KEYS } } } }),
-      prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    ]);
+    const [schools, activeUsers, realizedInspections, pendingReports, toValidateReports, validatedReports, alertsCount, pools] =
+      await Promise.all([
+        prisma.school.count(),
+        prisma.user.count({ where: { status: "ACTIVE" } }),
+        prisma.inspection.count({ where: { completedAt: { not: null } } }),
+        prisma.report.count({ where: { status: { key: { in: PENDING_KEYS } } } }),
+        prisma.report.count({ where: { status: { key: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION } } }),
+        prisma.report.count({ where: { status: { key: { in: VALIDATED_KEYS } } } }),
+        prisma.report.count({ where: { status: { key: WORKFLOW_STATUS_KEYS.A_CORRIGER } } }),
+        prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+      ]);
 
     const poolStats = await Promise.all(
       pools.map(async (pool) => {
@@ -78,14 +83,40 @@ export default async function DashboardPage({
           title="Tableau de bord provincial"
           description="Vue d'ensemble de l'Inspection Principale Provinciale — Nord-Kivu 1"
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard icon={School} label="Écoles enregistrées" value={schools} />
           <StatCard icon={Users} label="Utilisateurs actifs" value={activeUsers} />
-          <StatCard icon={ClipboardList} label="Inspections en cours" value={activeInspections} />
-          <StatCard icon={FileCheck2} label="Rapports à traiter" value={pendingReports} />
+          <StatCard icon={ClipboardList} label="Inspections réalisées" value={realizedInspections} />
+          <StatCard icon={FileCheck2} label="Rapports en attente" value={pendingReports} />
+          <StatCard icon={FileCheck2} label="Rapports à valider" value={toValidateReports} />
+          <StatCard icon={FileCheck2} label="Rapports validés" value={validatedReports} />
         </div>
 
-        <Card>
+        {alertsCount > 0 && (
+          <Card className="mt-4 flex items-center gap-3 border-amber-200 bg-amber-50">
+            <AlertTriangle size={20} className="text-amber-600" strokeWidth={1.75} />
+            <p className="text-sm text-amber-800">
+              {alertsCount} rapport{alertsCount > 1 ? "s" : ""} en attente de correction par un inspecteur.
+            </p>
+          </Card>
+        )}
+
+        <Card className="mt-6">
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Activité par pool</h2>
+          {poolStats.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun pool actif pour le moment.</p>
+          ) : (
+            <PoolActivityChart
+              data={poolStats.map(({ pool, reportCount, pendingCount }) => ({
+                pool: pool.name,
+                rapports: reportCount,
+                aTraiter: pendingCount,
+              }))}
+            />
+          )}
+        </Card>
+
+        <Card className="mt-6">
           <h2 className="mb-4 text-sm font-semibold text-gray-900">Comparaison par pool</h2>
           {poolStats.length === 0 ? (
             <p className="text-sm text-gray-500">Aucun pool actif pour le moment.</p>
@@ -139,7 +170,7 @@ export default async function DashboardPage({
     );
   }
 
-  const [assigned, mine] = await Promise.all([
+  const [assigned, mine, inspectedSchoolIds] = await Promise.all([
     prisma.assignment.count({ where: { inspectorId: user.id, active: true } }),
     prisma.inspection.findMany({
       where: { inspectorId: user.id },
@@ -147,17 +178,38 @@ export default async function DashboardPage({
       orderBy: { updatedAt: "desc" },
       include: { school: true },
     }),
+    prisma.inspection.findMany({
+      where: { inspectorId: user.id },
+      distinct: ["schoolId"],
+      select: { schoolId: true },
+    }),
   ]);
-  const inProgress = await prisma.inspection.count({
-    where: { inspectorId: user.id, status: { in: ["PLANIFIEE", "EN_COURS"] } },
+
+  const aFaire = Math.max(assigned - inspectedSchoolIds.length, 0);
+  const enCours = await prisma.inspection.count({ where: { inspectorId: user.id, status: "EN_COURS" } });
+  const aCompleter = await prisma.inspection.count({ where: { inspectorId: user.id, status: "PLANIFIEE" } });
+  const envoyees = await prisma.inspection.count({
+    where: { inspectorId: user.id, status: { in: ["RAPPORT_SOUMIS", "VALIDEE"] } },
   });
 
   return (
     <div>
-      <PageHeader title="Mon tableau de bord" description="Vos écoles et inspections" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard icon={School} label="Écoles assignées" value={assigned} />
-        <StatCard icon={ClipboardList} label="Inspections en cours" value={inProgress} />
+      <PageHeader
+        title="Mon tableau de bord"
+        description="Vos écoles et inspections"
+        actions={
+          <Link href="/inspections">
+            <span className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
+              Nouvelle inspection
+            </span>
+          </Link>
+        }
+      />
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard icon={School} label="À faire" value={aFaire} />
+        <StatCard icon={ClipboardList} label="En cours" value={enCours} />
+        <StatCard icon={FileCheck2} label="Envoyées" value={envoyees} />
+        <StatCard icon={FileCheck2} label="À compléter" value={aCompleter} />
       </div>
       <Card className="mt-6">
         <h2 className="mb-4 text-sm font-semibold text-gray-900">Mes dernières inspections</h2>

@@ -131,17 +131,26 @@ model UserRole {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String     @id @default(cuid())
-  name         String
-  email        String     @unique
-  passwordHash String
-  status       UserStatus @default(PENDING)
-  sex          Sex?
-  phone        String?
-  poolId       String?
-  pool         Pool?      @relation(fields: [poolId], references: [id])
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                  String     @id @default(cuid())
+  name                String
+  email               String     @unique
+  passwordHash        String
+  status              UserStatus @default(PENDING)
+  sex                 Sex?
+  phone               String?
+  poolId              String?
+  pool                Pool?      @relation(fields: [poolId], references: [id])
+  // Profil détaillé (§18 du design) — additifs, `name` reste le nom complet
+  // affiché partout ailleurs dans l'application.
+  postnom             String?
+  prenom              String?
+  dateNaissance       DateTime?
+  matricule           String?
+  statutAdministratif String?
+  mecanise            Boolean?
+  nombreEnfants       Int?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   roles                   UserRole[]
   assignmentsGiven        Assignment[]          @relation("AssignedBy")

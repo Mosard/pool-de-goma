@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, Badge, Select } from "@/components/ui";
+import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { toggleUserStatusAction } from "./actions";
@@ -103,11 +104,13 @@ export default async function UtilisateursPage({
                   </Badge>
                 </td>
                 <td className="px-6 py-3 text-right">
-                  <form action={toggleUserStatusAction.bind(null, u.id)}>
-                    <button type="submit" className="text-xs font-medium text-blue-600 hover:underline">
-                      {u.status === "ACTIVE" ? "Suspendre" : "Activer"}
-                    </button>
-                  </form>
+                  <ConfirmButton
+                    label={u.status === "ACTIVE" ? "Suspendre" : "Activer"}
+                    confirmLabel={u.status === "ACTIVE" ? "Suspendre" : "Activer"}
+                    variant={u.status === "ACTIVE" ? "danger" : "primary"}
+                    className="!min-h-0 px-3 py-1.5 text-xs"
+                    formAction={toggleUserStatusAction.bind(null, u.id)}
+                  />
                 </td>
               </tr>
             ))}
