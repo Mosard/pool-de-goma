@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Card, Textarea, FieldError } from "@/components/ui";
+import { Button, Textarea, FieldError } from "@/components/ui";
 import { addCommentAction, type CommentState } from "./actions";
 
 const initialState: CommentState = {};

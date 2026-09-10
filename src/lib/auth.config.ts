@@ -1,5 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
-import type { Role } from "@prisma/client";
+
+export type SessionRole = { key: string; label: string; poolId: string | null };
+export type SessionPermission = { permissionKey: string; poolId: string | null };
 
 // Edge-safe config: no providers, no Prisma/bcrypt. Used by middleware (Edge
 // runtime, 1MB size limit) to check session presence without pulling in the
@@ -12,14 +14,18 @@ export const authConfig: NextAuthConfig = {
     jwt: async ({ token, user }) => {
       if (user) {
         token.id = user.id as string;
-        token.role = user.role;
+        token.poolId = (user.poolId as string | null) ?? null;
+        token.roles = (user.roles as SessionRole[]) ?? [];
+        token.permissions = (user.permissions as SessionPermission[]) ?? [];
       }
       return token;
     },
     session: async ({ session, token }) => {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.role = token.role as Role;
+        session.user.poolId = (token.poolId as string | null) ?? null;
+        session.user.roles = (token.roles as SessionRole[]) ?? [];
+        session.user.permissions = (token.permissions as SessionPermission[]) ?? [];
       }
       return session;
     },

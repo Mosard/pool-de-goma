@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { Sidebar, Topbar } from "@/components/nav";
 
 export default async function DashboardLayout({
@@ -10,11 +11,20 @@ export default async function DashboardLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const notifications = await prisma.notification.findMany({
+    where: { userId: session.user.id, channel: "IN_APP", readAt: null },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { id: true, title: true, body: true },
+  });
+
+  const roleLabels = session.user.roles.map((r) => r.label);
+
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
-      <Sidebar role={session.user.role} />
+      <Sidebar permissions={session.user.permissions} />
       <div className="flex flex-1 flex-col">
-        <Topbar name={session.user.name ?? ""} role={session.user.role} />
+        <Topbar name={session.user.name ?? ""} roleLabels={roleLabels} notifications={notifications} />
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

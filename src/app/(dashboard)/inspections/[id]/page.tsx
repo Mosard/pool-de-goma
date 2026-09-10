@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, Badge } from "@/components/ui";
 import { FicheForm } from "../fiche-form";
 import { ReportForm } from "../report-form";
-import type { FicheType } from "@/lib/fiches";
 
 export default async function InspectionDetailPage({
   params,
@@ -15,23 +14,25 @@ export default async function InspectionDetailPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const inspection = await prisma.inspection.findUnique({
-    where: { id },
-    include: {
-      school: true,
-      inspector: true,
-      forms: true,
-      report: true,
-    },
-  });
+  const [inspection, templates] = await Promise.all([
+    prisma.inspection.findUnique({
+      where: { id },
+      include: { school: true, inspector: true, forms: true, report: { include: { status: true } } },
+    }),
+    prisma.formTemplate.findMany({
+      where: { active: true },
+      orderBy: [{ category: { code: "asc" } }, { code: "asc" }],
+      include: { category: true },
+    }),
+  ]);
 
   if (!inspection) notFound();
 
-  const isOwner = session.user.role === "INSPECTEUR" && inspection.inspectorId === session.user.id;
-  const canEdit = isOwner && inspection.status !== "RAPPORT_SOUMIS" && inspection.status !== "VALIDEE";
+  const user = session.user;
+  const isOwner = inspection.inspectorId === user.id;
+  const canEditFiches = isOwner && inspection.status !== "RAPPORT_SOUMIS" && inspection.status !== "VALIDEE";
 
-  const formsByType = new Map(inspection.forms.map((f) => [f.type, f]));
-  const ficheTypes: FicheType[] = ["A1", "C101", "T1"];
+  const formsByTemplate = new Map(inspection.forms.map((f) => [f.formTemplateId, f]));
 
   return (
     <div className="space-y-6">
@@ -41,16 +42,16 @@ export default async function InspectionDetailPage({
         actions={<Badge color="blue">{inspection.status}</Badge>}
       />
 
-      {ficheTypes.map((type) => {
-        const existing = formsByType.get(type);
+      {templates.map((template) => {
+        const existing = formsByTemplate.get(template.id);
         return (
           <FicheForm
-            key={type}
+            key={template.id}
             inspectionId={inspection.id}
-            type={type}
+            template={template}
             existingData={(existing?.data as Record<string, string>) ?? undefined}
             completed={existing?.completed ?? false}
-            readOnly={!canEdit}
+            readOnly={!canEditFiches}
           />
         );
       })}
@@ -65,6 +66,9 @@ export default async function InspectionDetailPage({
                 <p className="mt-2 text-sm text-gray-500">
                   Recommandations : {inspection.report.recommendations}
                 </p>
+              )}
+              {inspection.report && (
+                <p className="mt-2 text-xs text-gray-400">Statut actuel : {inspection.report.status.label}</p>
               )}
             </Card>
           ) : (

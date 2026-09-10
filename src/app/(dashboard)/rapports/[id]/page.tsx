@@ -1,10 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, PageHeader, Badge, Button } from "@/components/ui";
-import { FICHE_DEFINITIONS, type FicheType } from "@/lib/fiches";
+import { Card, PageHeader, Badge } from "@/components/ui";
 import { CommentForm } from "../comment-form";
-import { validateReportAction } from "../actions";
+import { TransitionActions } from "../transition-actions";
+import { getAvailableTransitions } from "@/lib/workflow";
+import { parseFieldsSchema } from "@/lib/form-schema";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermission } from "@/lib/permissions";
 
 export default async function RapportDetailPage({
   params,
@@ -18,28 +21,36 @@ export default async function RapportDetailPage({
   const report = await prisma.report.findUnique({
     where: { id },
     include: {
+      status: true,
       inspection: {
         include: {
           school: true,
           inspector: true,
-          forms: true,
+          forms: { include: { formTemplate: { include: { category: true } } } },
         },
       },
       comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
+      statusHistory: { include: { changedBy: true }, orderBy: { createdAt: "asc" } },
     },
   });
 
   if (!report) notFound();
 
-  const canValidate = session.user.role === "EXPLOITANT" && report.status !== "VALIDE";
-  const boundValidate = validateReportAction.bind(null, report.id);
+  const user = session.user;
+  const poolId = report.inspection.school.poolId;
+  const canComment =
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId }) ||
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId }) ||
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId });
+
+  const transitions = await getAvailableTransitions(report.id, user.permissions, poolId);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={report.inspection.school.name}
         description={`Inspecteur : ${report.inspection.inspector.name}`}
-        actions={<Badge color={report.status === "VALIDE" ? "green" : "orange"}>{report.status}</Badge>}
+        actions={<Badge color="blue">{report.status.label}</Badge>}
       />
 
       <Card>
@@ -51,21 +62,17 @@ export default async function RapportDetailPage({
             <p className="text-sm text-gray-700">{report.recommendations}</p>
           </>
         )}
-        {canValidate && (
-          <form action={boundValidate} className="mt-4">
-            <Button type="submit">Valider le rapport</Button>
-          </form>
-        )}
+        {transitions.length > 0 && <TransitionActions reportId={report.id} transitions={transitions} />}
       </Card>
 
       {report.inspection.forms.map((form) => {
-        const def = FICHE_DEFINITIONS[form.type as FicheType];
+        const fields = parseFieldsSchema(form.formTemplate.fieldsSchema);
         const data = form.data as Record<string, string>;
         return (
           <Card key={form.id}>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">{def.title}</h3>
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">{form.formTemplate.title}</h3>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-              {def.fields.map((f) => (
+              {fields.map((f) => (
                 <div key={f.name}>
                   <dt className="text-gray-500">{f.label}</dt>
                   <dd className="font-medium text-gray-900">{data[f.name] || "—"}</dd>
@@ -75,6 +82,22 @@ export default async function RapportDetailPage({
           </Card>
         );
       })}
+
+      <Card>
+        <h3 className="mb-4 text-sm font-semibold text-gray-900">Historique du circuit</h3>
+        {report.statusHistory.length === 0 ? (
+          <p className="text-sm text-gray-500">Aucune transition enregistrée.</p>
+        ) : (
+          <ul className="space-y-2 text-sm text-gray-600">
+            {report.statusHistory.map((h) => (
+              <li key={h.id}>
+                {h.changedBy.name} — {new Date(h.createdAt).toLocaleString("fr-FR")}
+                {h.comment && <span className="text-gray-400"> — {h.comment}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card>
         <h3 className="mb-4 text-sm font-semibold text-gray-900">Observations</h3>
@@ -90,9 +113,7 @@ export default async function RapportDetailPage({
             ))
           )}
         </div>
-        {(session.user.role === "EXPLOITANT" || session.user.role === "CHEF_POOL") && (
-          <CommentForm reportId={report.id} />
-        )}
+        {canComment && <CommentForm reportId={report.id} />}
       </Card>
     </div>
   );

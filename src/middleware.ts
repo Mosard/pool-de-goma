@@ -6,12 +6,12 @@ import { authConfig } from "@/lib/auth.config";
 // stays under the Edge Function size limit — see auth.config.ts.
 const { auth } = NextAuth(authConfig);
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PREFIXES = ["/login", "/demande-de-compte", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe"];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const isPublic = pathname === "/" || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
   if (isPublic) return NextResponse.next();
 
   if (!req.auth) {

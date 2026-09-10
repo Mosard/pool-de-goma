@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validations";
 import { authConfig } from "@/lib/auth.config";
+import { loadUserAccess } from "@/lib/permissions";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -20,16 +21,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const user = await prisma.user.findUnique({
           where: { email: parsed.data.email.toLowerCase() },
         });
-        if (!user || !user.active) return null;
+        if (!user || user.status !== "ACTIVE") return null;
 
         const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!valid) return null;
+
+        const { roles, permissions } = await loadUserAccess(user.id);
 
         return {
           id: user.id,
           name: user.name,
           email: user.email,
-          role: user.role,
+          poolId: user.poolId,
+          roles,
+          permissions,
         };
       },
     }),

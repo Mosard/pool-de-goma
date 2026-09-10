@@ -1,7 +1,21 @@
+import Link from "next/link";
+import { clsx } from "clsx";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, Badge } from "@/components/ui";
 import { School, Users, ClipboardList, FileCheck2 } from "lucide-react";
+import { PERMISSIONS, ROLE_KEYS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool } from "@/lib/permissions";
+
+const PENDING_KEYS: string[] = [
+  WORKFLOW_STATUS_KEYS.SOUMIS,
+  WORKFLOW_STATUS_KEYS.RECU,
+  WORKFLOW_STATUS_KEYS.EN_EXPLOITATION,
+  WORKFLOW_STATUS_KEYS.A_CORRIGER,
+  WORKFLOW_STATUS_KEYS.TRANSMIS,
+  WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION,
+];
+const VALIDATED_KEYS: string[] = [WORKFLOW_STATUS_KEYS.VALIDE, WORKFLOW_STATUS_KEYS.CLOTURE];
 
 function StatCard({
   icon: Icon,
@@ -25,129 +39,240 @@ function StatCard({
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ poolId?: string; inspecteurId?: string }>;
+}) {
   const session = await auth();
-  const role = session!.user.role;
-  const userId = session!.user.id;
+  const user = session!.user;
+  const { poolId: selectedPoolId, inspecteurId: selectedInspectorId } = await searchParams;
 
-  if (role === "CHEF_POOL") {
-    const [schools, users, activeInspections, submittedReports] = await Promise.all([
+  const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
+
+  if (isProvinceScoped) {
+    const [schools, activeUsers, activeInspections, pendingReports, pools] = await Promise.all([
       prisma.school.count(),
-      prisma.user.count(),
+      prisma.user.count({ where: { status: "ACTIVE" } }),
       prisma.inspection.count({ where: { status: { in: ["PLANIFIEE", "EN_COURS"] } } }),
-      prisma.report.count({ where: { status: { in: ["SOUMIS", "EN_REVUE"] } } }),
+      prisma.report.count({ where: { status: { key: { in: PENDING_KEYS } } } }),
+      prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     ]);
 
-    const recentReports = await prisma.report.findMany({
-      take: 5,
-      orderBy: { updatedAt: "desc" },
-      include: { inspection: { include: { school: true, inspector: true } } },
-    });
+    const poolStats = await Promise.all(
+      pools.map(async (pool) => {
+        const [schoolCount, reportCount, pendingCount] = await Promise.all([
+          prisma.school.count({ where: { poolId: pool.id } }),
+          prisma.report.count({ where: { inspection: { school: { poolId: pool.id } } } }),
+          prisma.report.count({
+            where: { inspection: { school: { poolId: pool.id } }, status: { key: { in: PENDING_KEYS } } },
+          }),
+        ]);
+        return { pool, schoolCount, reportCount, pendingCount };
+      })
+    );
 
     return (
-      <div>
-        <PageHeader title="Tableau de bord" description="Vue d'ensemble du POOL d'inspection" />
+      <div className="space-y-6">
+        <PageHeader
+          title="Tableau de bord provincial"
+          description="Vue d'ensemble de l'Inspection Principale Provinciale — Nord-Kivu 1"
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon={School} label="Écoles enregistrées" value={schools} />
-          <StatCard icon={Users} label="Utilisateurs" value={users} />
+          <StatCard icon={Users} label="Utilisateurs actifs" value={activeUsers} />
           <StatCard icon={ClipboardList} label="Inspections en cours" value={activeInspections} />
-          <StatCard icon={FileCheck2} label="Rapports à traiter" value={submittedReports} />
+          <StatCard icon={FileCheck2} label="Rapports à traiter" value={pendingReports} />
         </div>
-        <Card className="mt-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Derniers rapports</h2>
-          <ReportsList reports={recentReports} />
-        </Card>
-      </div>
-    );
-  }
 
-  if (role === "INSPECTEUR") {
-    const [assigned, mine] = await Promise.all([
-      prisma.assignment.count({ where: { inspectorId: userId, active: true } }),
-      prisma.inspection.findMany({
-        where: { inspectorId: userId },
-        take: 5,
-        orderBy: { updatedAt: "desc" },
-        include: { school: true },
-      }),
-    ]);
-    const inProgress = await prisma.inspection.count({
-      where: { inspectorId: userId, status: { in: ["PLANIFIEE", "EN_COURS"] } },
-    });
-
-    return (
-      <div>
-        <PageHeader title="Mon tableau de bord" description="Vos écoles et inspections" />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <StatCard icon={School} label="Écoles assignées" value={assigned} />
-          <StatCard icon={ClipboardList} label="Inspections en cours" value={inProgress} />
-        </div>
-        <Card className="mt-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Mes dernières inspections</h2>
-          {mine.length === 0 ? (
-            <p className="text-sm text-gray-500">Aucune inspection pour le moment.</p>
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Comparaison par pool</h2>
+          {poolStats.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun pool actif pour le moment.</p>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {mine.map((i) => (
-                <li key={i.id} className="flex items-center justify-between py-3 text-sm">
-                  <span className="font-medium text-gray-900">{i.school.name}</span>
-                  <Badge color="blue">{i.status}</Badge>
-                </li>
-              ))}
-            </ul>
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+                <tr>
+                  <th className="py-2">Pool</th>
+                  <th className="py-2">Écoles</th>
+                  <th className="py-2">Rapports</th>
+                  <th className="py-2">À traiter</th>
+                  <th className="py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {poolStats.map(({ pool, schoolCount, reportCount, pendingCount }) => (
+                  <tr key={pool.id} className={clsx(selectedPoolId === pool.id && "bg-blue-50/60")}>
+                    <td className="py-2 font-medium text-gray-900">{pool.name}</td>
+                    <td className="py-2">{schoolCount}</td>
+                    <td className="py-2">{reportCount}</td>
+                    <td className="py-2">{pendingCount}</td>
+                    <td className="py-2 text-right">
+                      <Link href={`/dashboard?poolId=${pool.id}`} className="text-xs font-medium text-blue-600 hover:underline">
+                        Explorer
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </Card>
+
+        {selectedPoolId && <PoolExplorer poolId={selectedPoolId} selectedInspectorId={selectedInspectorId} />}
       </div>
     );
   }
 
-  const pendingReports = await prisma.report.count({ where: { status: "SOUMIS" } });
-  const recentReports = await prisma.report.findMany({
-    take: 5,
-    where: { status: { in: ["SOUMIS", "EN_REVUE", "VALIDE"] } },
-    orderBy: { updatedAt: "desc" },
-    include: { inspection: { include: { school: true, inspector: true } } },
+  const canManagePool =
+    user.poolId &&
+    (hasPermissionAnyPool(user.permissions, PERMISSIONS.SCHOOLS_MANAGE) ||
+      hasPermissionAnyPool(user.permissions, PERMISSIONS.ASSIGNMENTS_MANAGE) ||
+      hasPermissionAnyPool(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL));
+
+  if (canManagePool && user.poolId) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Tableau de bord du pool" description="Vue d'ensemble de votre pool d'inspection" />
+        <PoolExplorer poolId={user.poolId} selectedInspectorId={selectedInspectorId} />
+      </div>
+    );
+  }
+
+  const [assigned, mine] = await Promise.all([
+    prisma.assignment.count({ where: { inspectorId: user.id, active: true } }),
+    prisma.inspection.findMany({
+      where: { inspectorId: user.id },
+      take: 5,
+      orderBy: { updatedAt: "desc" },
+      include: { school: true },
+    }),
+  ]);
+  const inProgress = await prisma.inspection.count({
+    where: { inspectorId: user.id, status: { in: ["PLANIFIEE", "EN_COURS"] } },
   });
 
   return (
     <div>
-      <PageHeader title="Tableau de bord" description="Rapports d'inspection à analyser" />
+      <PageHeader title="Mon tableau de bord" description="Vos écoles et inspections" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard icon={FileCheck2} label="Rapports en attente" value={pendingReports} />
+        <StatCard icon={School} label="Écoles assignées" value={assigned} />
+        <StatCard icon={ClipboardList} label="Inspections en cours" value={inProgress} />
       </div>
       <Card className="mt-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-900">Derniers rapports</h2>
-        <ReportsList reports={recentReports} />
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Mes dernières inspections</h2>
+        {mine.length === 0 ? (
+          <p className="text-sm text-gray-500">Aucune inspection pour le moment.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {mine.map((i) => (
+              <li key={i.id} className="flex items-center justify-between py-3 text-sm">
+                <span className="font-medium text-gray-900">{i.school.name}</span>
+                <Badge color="blue">{i.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );
 }
 
-function ReportsList({
-  reports,
+async function PoolExplorer({
+  poolId,
+  selectedInspectorId,
 }: {
-  reports: Array<{
-    id: string;
-    status: string;
-    inspection: { school: { name: string }; inspector: { name: string } };
-  }>;
+  poolId: string;
+  selectedInspectorId?: string;
 }) {
-  if (reports.length === 0) {
-    return <p className="text-sm text-gray-500">Aucun rapport pour le moment.</p>;
-  }
+  const pool = await prisma.pool.findUnique({ where: { id: poolId } });
+  if (!pool) return <Card><p className="text-sm text-gray-500">Pool introuvable.</p></Card>;
+
+  const [schools, inspectors, pendingReports, validatedReports] = await Promise.all([
+    prisma.school.count({ where: { poolId } }),
+    prisma.user.findMany({
+      where: { poolId, roles: { some: { role: { key: ROLE_KEYS.INSPECTEUR } } } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.report.count({ where: { inspection: { school: { poolId } }, status: { key: { in: PENDING_KEYS } } } }),
+    prisma.report.count({ where: { inspection: { school: { poolId } }, status: { key: { in: VALIDATED_KEYS } } } }),
+  ]);
+
+  const inspectorStats = await Promise.all(
+    inspectors.map(async (insp) => ({
+      ...insp,
+      reportCount: await prisma.report.count({ where: { inspection: { inspectorId: insp.id } } }),
+    }))
+  );
+
+  const selectedReports = selectedInspectorId
+    ? await prisma.report.findMany({
+        where: { inspection: { inspectorId: selectedInspectorId, school: { poolId } } },
+        orderBy: { updatedAt: "desc" },
+        include: { status: true, inspection: { include: { school: true } } },
+      })
+    : [];
+
   return (
-    <ul className="divide-y divide-gray-100">
-      {reports.map((r) => (
-        <li key={r.id} className="flex items-center justify-between py-3 text-sm">
-          <div>
-            <p className="font-medium text-gray-900">{r.inspection.school.name}</p>
-            <p className="text-xs text-gray-500">Inspecteur : {r.inspection.inspector.name}</p>
-          </div>
-          <Badge color={r.status === "VALIDE" ? "green" : r.status === "SOUMIS" ? "orange" : "blue"}>
-            {r.status}
-          </Badge>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-6">
+      <Card>
+        <h2 className="mb-1 text-sm font-semibold text-gray-900">Pool {pool.name}</h2>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard icon={School} label="Écoles" value={schools} />
+          <StatCard icon={FileCheck2} label="Rapports à traiter" value={pendingReports} />
+          <StatCard icon={FileCheck2} label="Rapports validés" value={validatedReports} />
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Inspecteurs itinérants</h2>
+        {inspectorStats.length === 0 ? (
+          <p className="text-sm text-gray-500">Aucun inspecteur rattaché à ce pool.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {inspectorStats.map((insp) => (
+              <li key={insp.id} className="flex items-center justify-between py-3 text-sm">
+                <span className={clsx("font-medium", insp.id === selectedInspectorId ? "text-blue-600" : "text-gray-900")}>
+                  {insp.name}
+                </span>
+                <div className="flex items-center gap-3">
+                  <Badge color="blue">{insp.reportCount} rapport(s)</Badge>
+                  <Link
+                    href={`/dashboard?poolId=${poolId}&inspecteurId=${insp.id}`}
+                    className="text-xs font-medium text-blue-600 hover:underline"
+                  >
+                    Voir
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {selectedInspectorId && (
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Rapports de l&apos;inspecteur sélectionné</h2>
+          {selectedReports.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun rapport pour le moment.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {selectedReports.map((r) => (
+                <li key={r.id} className="flex items-center justify-between py-3 text-sm">
+                  <span className="font-medium text-gray-900">{r.inspection.school.name}</span>
+                  <div className="flex items-center gap-3">
+                    <Badge color="blue">{r.status.label}</Badge>
+                    <Link href={`/rapports/${r.id}`} className="text-xs font-medium text-blue-600 hover:underline">
+                      Ouvrir
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+    </div>
   );
 }

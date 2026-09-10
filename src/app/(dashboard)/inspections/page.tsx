@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, Badge, EmptyState } from "@/components/ui";
 import { NewInspectionForm } from "./new-inspection-form";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool } from "@/lib/permissions";
 
 const STATUS_COLOR: Record<string, "gray" | "blue" | "green" | "orange"> = {
   PLANIFIEE: "gray",
@@ -14,19 +16,24 @@ const STATUS_COLOR: Record<string, "gray" | "blue" | "green" | "orange"> = {
 
 export default async function InspectionsPage() {
   const session = await auth();
-  const role = session!.user.role;
-  const userId = session!.user.id;
+  const user = session!.user;
+  const isInspector = hasPermissionAnyPool(user.permissions, PERMISSIONS.INSPECTIONS_CONDUCT);
+  const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
 
   const inspections = await prisma.inspection.findMany({
-    where: role === "INSPECTEUR" ? { inspectorId: userId } : undefined,
+    where: isInspector
+      ? { inspectorId: user.id }
+      : isProvinceScoped
+        ? undefined
+        : { school: { poolId: user.poolId ?? "__none__" } },
     orderBy: { updatedAt: "desc" },
     include: { school: true, inspector: true },
   });
 
   let assignedSchools: { id: string; name: string }[] = [];
-  if (role === "INSPECTEUR") {
+  if (isInspector) {
     const assignments = await prisma.assignment.findMany({
-      where: { inspectorId: userId, active: true },
+      where: { inspectorId: user.id, active: true },
       include: { school: true },
     });
     assignedSchools = assignments.map((a) => ({ id: a.school.id, name: a.school.name }));
@@ -36,7 +43,7 @@ export default async function InspectionsPage() {
     <div className="space-y-6">
       <PageHeader title="Inspections & fiches" description="Suivi des inspections et remplissage des fiches" />
 
-      {role === "INSPECTEUR" && <NewInspectionForm schools={assignedSchools} />}
+      {isInspector && <NewInspectionForm schools={assignedSchools} />}
 
       {inspections.length === 0 ? (
         <EmptyState message="Aucune inspection pour le moment." />

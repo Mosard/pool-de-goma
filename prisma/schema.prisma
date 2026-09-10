@@ -7,10 +7,31 @@ datasource db {
   url      = env("POSTGRES_URL")
 }
 
-enum Role {
-  CHEF_POOL
-  INSPECTEUR
-  EXPLOITANT
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum Sex {
+  M
+  F
+}
+
+enum RoleScope {
+  PROVINCE
+  POOL
+}
+
+enum AccountRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum InspectionStatus {
@@ -21,40 +42,163 @@ enum InspectionStatus {
   VALIDEE
 }
 
-enum FormType {
-  A1
-  C101
-  T1
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+  SMS
 }
 
-enum ReportStatus {
-  BROUILLON
-  SOUMIS
-  EN_REVUE
-  VALIDE
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  DISABLED
 }
+
+// ---------------------------------------------------------------------------
+// Organisation territoriale
+// ---------------------------------------------------------------------------
+
+model Pool {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schools         School[]
+  users           User[]
+  userRoles       UserRole[]
+  accountRequests AccountRequest[]
+}
+
+// ---------------------------------------------------------------------------
+// RBAC dynamique
+// ---------------------------------------------------------------------------
+
+model RoleDefinition {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  label       String
+  description String?
+  scope       RoleScope
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+  accountRequests AccountRequest[]
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  key      String @unique
+  label    String
+  category String
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id           String         @id @default(cuid())
+  roleId       String
+  role         RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission     @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  poolId    String?
+  pool      Pool?          @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, roleId, poolId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Comptes & activation
+// ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   name         String
-  email        String   @unique
+  email        String     @unique
   passwordHash String
-  role         Role
+  status       UserStatus @default(PENDING)
+  sex          Sex?
   phone        String?
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  poolId       String?
+  pool         Pool?      @relation(fields: [poolId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  assignmentsGiven Assignment[]  @relation("AssignedBy")
-  assignments      Assignment[]  @relation("Inspector")
-  inspections      Inspection[]  @relation("InspectorInspections")
-  comments         Comment[]
+  roles                   UserRole[]
+  assignmentsGiven        Assignment[]          @relation("AssignedBy")
+  assignments             Assignment[]          @relation("Inspector")
+  inspections             Inspection[]          @relation("InspectorInspections")
+  comments                Comment[]
+  reviewedAccountRequests AccountRequest[]      @relation("ReviewedBy")
+  notifications           Notification[]
+  passwordResetTokens     PasswordResetToken[]
+  auditLogs               AuditLog[]
+  reportTransitions       ReportStatusHistory[]
+  uploadedAttachments     Attachment[]
 
-  @@index([role])
+  @@index([poolId])
+  @@index([status])
 }
+
+model AccountRequest {
+  id              String               @id @default(cuid())
+  name            String
+  email           String
+  phone           String?
+  message         String?
+  requestedRoleId String?
+  requestedRole   RoleDefinition?      @relation(fields: [requestedRoleId], references: [id])
+  poolId          String?
+  pool            Pool?                @relation(fields: [poolId], references: [id])
+  status          AccountRequestStatus @default(PENDING)
+  reviewedById    String?
+  reviewedBy      User?                @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([status])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Référentiel des écoles
+// ---------------------------------------------------------------------------
 
 model School {
   id         String   @id @default(cuid())
+  poolId     String
+  pool       Pool     @relation(fields: [poolId], references: [id])
   name       String
   code       String   @unique
   province   String
@@ -70,6 +214,7 @@ model School {
   assignments Assignment[]
   inspections Inspection[]
 
+  @@index([poolId])
   @@index([province, territoire])
 }
 
@@ -86,6 +231,36 @@ model Assignment {
 
   @@index([inspectorId])
   @@index([schoolId])
+}
+
+// ---------------------------------------------------------------------------
+// Types d'inspection & fiches dynamiques
+// ---------------------------------------------------------------------------
+
+model InspectionCategory {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  label       String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  formTemplates FormTemplate[]
+}
+
+model FormTemplate {
+  id           String             @id @default(cuid())
+  categoryId   String
+  category     InspectionCategory @relation(fields: [categoryId], references: [id])
+  code         String             @unique
+  title        String
+  version      Int                @default(1)
+  fieldsSchema Json
+  active       Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  forms Form[]
 }
 
 model Inspection {
@@ -109,33 +284,80 @@ model Inspection {
 }
 
 model Form {
-  id           String     @id @default(cuid())
-  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  inspectionId String
-  type         FormType
-  data         Json       @default("{}")
-  completed    Boolean    @default(false)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id             String       @id @default(cuid())
+  inspection     Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId   String
+  formTemplateId String
+  formTemplate   FormTemplate @relation(fields: [formTemplateId], references: [id])
+  data           Json         @default("{}")
+  completed      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  @@unique([inspectionId, type])
+  @@unique([inspectionId, formTemplateId])
+}
+
+// ---------------------------------------------------------------------------
+// Circuit d'exploitation & validation (configurable)
+// ---------------------------------------------------------------------------
+
+model WorkflowStatus {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  label      String
+  order      Int
+  isTerminal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  reports         Report[]
+  transitionsFrom WorkflowTransition[] @relation("FromStatus")
+  transitionsTo   WorkflowTransition[] @relation("ToStatus")
+}
+
+model WorkflowTransition {
+  id                   String         @id @default(cuid())
+  fromStatusId         String
+  fromStatus           WorkflowStatus @relation("FromStatus", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatusId           String
+  toStatus             WorkflowStatus @relation("ToStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
+  label                String
+  allowedPermissionKey String
+
+  @@unique([fromStatusId, toStatusId])
 }
 
 model Report {
-  id              String       @id @default(cuid())
-  inspection      Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  inspectionId    String       @unique
+  id              String         @id @default(cuid())
+  inspection      Inspection     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId    String         @unique
   summary         String?
   recommendations String?
-  status          ReportStatus @default(BROUILLON)
+  statusId        String
+  status          WorkflowStatus @relation(fields: [statusId], references: [id])
   submittedAt     DateTime?
   validatedAt     DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  comments Comment[]
+  comments      Comment[]
+  statusHistory ReportStatusHistory[]
+  attachments   Attachment[]
 
-  @@index([status])
+  @@index([statusId])
+}
+
+model ReportStatusHistory {
+  id           String   @id @default(cuid())
+  reportId     String
+  report       Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  fromStatusId String?
+  toStatusId   String
+  changedById  String
+  changedBy    User     @relation(fields: [changedById], references: [id])
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  @@index([reportId])
 }
 
 model Comment {
@@ -148,4 +370,60 @@ model Comment {
   createdAt DateTime @default(now())
 
   @@index([reportId])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  reportId     String
+  report       Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([reportId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit & traçabilité
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  event     String
+  title     String
+  body      String
+  payload   Json?
+  status    NotificationStatus  @default(PENDING)
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+  sentAt    DateTime?
+
+  @@index([userId, status])
 }

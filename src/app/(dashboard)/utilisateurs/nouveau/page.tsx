@@ -1,53 +1,20 @@
-"use client";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool } from "@/lib/permissions";
+import { NewUserForm } from "../new-user-form";
 
-import { useActionState } from "react";
-import { Button, Card, Input, Label, Select, FieldError, PageHeader } from "@/components/ui";
-import { createUserAction, type UserFormState } from "../actions";
+export default async function NouvelUtilisateurPage() {
+  const session = await auth();
+  if (!session?.user || !hasPermissionAnyPool(session.user.permissions, PERMISSIONS.USERS_MANAGE)) {
+    redirect("/utilisateurs");
+  }
 
-const initialState: UserFormState = {};
+  const [roles, pools] = await Promise.all([
+    prisma.roleDefinition.findMany({ orderBy: { label: "asc" } }),
+    prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+  ]);
 
-export default function NouvelUtilisateurPage() {
-  const [state, formAction, pending] = useActionState(createUserAction, initialState);
-
-  return (
-    <div>
-      <PageHeader title="Nouvel utilisateur" description="Créer un compte et attribuer un rôle" />
-      <Card>
-        <form action={formAction} className="space-y-4">
-          <div>
-            <Label htmlFor="name">Nom complet</Label>
-            <Input id="name" name="name" required />
-            <FieldError message={state.errors?.name} />
-          </div>
-          <div>
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" required />
-            <FieldError message={state.errors?.email} />
-          </div>
-          <div>
-            <Label htmlFor="password">Mot de passe</Label>
-            <Input id="password" name="password" type="password" required />
-            <FieldError message={state.errors?.password} />
-          </div>
-          <div>
-            <Label htmlFor="phone">Téléphone</Label>
-            <Input id="phone" name="phone" />
-          </div>
-          <div>
-            <Label htmlFor="role">Rôle</Label>
-            <Select id="role" name="role" required defaultValue="INSPECTEUR">
-              <option value="CHEF_POOL">Chef de POOL</option>
-              <option value="INSPECTEUR">Inspecteur itinérant</option>
-              <option value="EXPLOITANT">Exploitant</option>
-            </Select>
-            <FieldError message={state.errors?.role} />
-          </div>
-          {state.formError && <FieldError message={state.formError} />}
-          <Button type="submit" disabled={pending}>
-            {pending ? "Création..." : "Créer le compte"}
-          </Button>
-        </form>
-      </Card>
-    </div>
-  );
+  return <NewUserForm roles={roles} pools={pools} />;
 }

@@ -2,14 +2,18 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, EmptyState, Badge } from "@/components/ui";
-import { canManageSchools } from "@/lib/permissions";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool } from "@/lib/permissions";
 
 export default async function EcolesPage() {
   const session = await auth();
-  const role = session!.user.role;
+  const user = session!.user;
+  const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
+
   const schools = await prisma.school.findMany({
+    where: isProvinceScoped ? undefined : { poolId: user.poolId ?? "__none__" },
     orderBy: { name: "asc" },
-    include: { _count: { select: { inspections: true, assignments: true } } },
+    include: { pool: true, _count: { select: { inspections: true, assignments: true } } },
   });
 
   return (
@@ -18,7 +22,7 @@ export default async function EcolesPage() {
         title="Écoles"
         description={`${schools.length} école(s) enregistrée(s)`}
         actions={
-          canManageSchools(role) ? (
+          hasPermissionAnyPool(user.permissions, PERMISSIONS.SCHOOLS_MANAGE) ? (
             <Link href="/ecoles/nouveau">
               <Button>Nouvelle école</Button>
             </Link>
@@ -36,7 +40,7 @@ export default async function EcolesPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-semibold text-gray-900">{school.name}</h3>
-                    <p className="text-xs text-gray-500">{school.code}</p>
+                    <p className="text-xs text-gray-500">{school.code} · Pool {school.pool.name}</p>
                   </div>
                   <Badge color={school.active ? "green" : "gray"}>
                     {school.active ? "Active" : "Inactive"}

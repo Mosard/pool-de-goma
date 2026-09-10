@@ -4,16 +4,30 @@ import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { AssignmentForm } from "./assignment-form";
 import { revokeAssignmentAction } from "./actions";
+import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool } from "@/lib/permissions";
 
 export default async function AffectationsPage() {
   const session = await auth();
-  if (session?.user.role !== "CHEF_POOL") redirect("/dashboard");
+  const user = session!.user;
+  if (!hasPermissionAnyPool(user.permissions, PERMISSIONS.ASSIGNMENTS_MANAGE)) redirect("/dashboard");
+
+  const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
+  const poolFilter = isProvinceScoped ? undefined : { poolId: user.poolId ?? "__none__" };
 
   const [schools, inspectors, assignments] = await Promise.all([
-    prisma.school.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    prisma.user.findMany({ where: { role: "INSPECTEUR", active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.school.findMany({
+      where: { active: true, ...poolFilter },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.user.findMany({
+      where: { status: "ACTIVE", ...poolFilter, roles: { some: { role: { key: ROLE_KEYS.INSPECTEUR } } } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
     prisma.assignment.findMany({
-      where: { active: true },
+      where: { active: true, school: poolFilter },
       orderBy: { createdAt: "desc" },
       include: { school: true, inspector: true },
     }),

@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { schoolSchema } from "@/lib/validations";
-import { assertRole } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permissions";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { logAudit } from "@/lib/audit";
 
 export type SchoolFormState = {
   errors?: Record<string, string>;
@@ -14,6 +16,7 @@ export type SchoolFormState = {
 
 function parseSchoolForm(formData: FormData) {
   return schoolSchema.safeParse({
+    poolId: formData.get("poolId"),
     name: formData.get("name"),
     code: formData.get("code"),
     province: formData.get("province"),
@@ -31,18 +34,28 @@ export async function createSchoolAction(
 ): Promise<SchoolFormState> {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["CHEF_POOL"]);
 
   const parsed = parseSchoolForm(formData);
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
+  await requirePermission(session.user.id, PERMISSIONS.SCHOOLS_MANAGE, { poolId: parsed.data.poolId });
+
+  let school;
   try {
-    await prisma.school.create({ data: parsed.data });
+    school = await prisma.school.create({ data: parsed.data });
   } catch {
     return { formError: "Ce code d'école existe déjà." };
   }
+
+  await logAudit({
+    actorId: session.user.id,
+    action: "school.create",
+    entityType: "School",
+    entityId: school.id,
+    newValue: parsed.data,
+  });
 
   revalidatePath("/ecoles");
   redirect("/ecoles");
@@ -55,18 +68,31 @@ export async function updateSchoolAction(
 ): Promise<SchoolFormState> {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["CHEF_POOL"]);
+
+  const existing = await prisma.school.findUnique({ where: { id } });
+  if (!existing) return { formError: "École introuvable." };
 
   const parsed = parseSchoolForm(formData);
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
+  await requirePermission(session.user.id, PERMISSIONS.SCHOOLS_MANAGE, { poolId: existing.poolId });
+
   try {
     await prisma.school.update({ where: { id }, data: parsed.data });
   } catch {
     return { formError: "Ce code d'école existe déjà." };
   }
+
+  await logAudit({
+    actorId: session.user.id,
+    action: "school.update",
+    entityType: "School",
+    entityId: id,
+    oldValue: existing,
+    newValue: parsed.data,
+  });
 
   revalidatePath("/ecoles");
   revalidatePath(`/ecoles/${id}`);

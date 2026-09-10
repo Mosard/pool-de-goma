@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inspectionSchema, reportSchema } from "@/lib/validations";
-import { assertRole } from "@/lib/permissions";
-import { FICHE_DEFINITIONS, type FicheType } from "@/lib/fiches";
+import { hasPermission, requirePermission } from "@/lib/permissions";
+import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
+import { logAudit } from "@/lib/audit";
+import { getWorkflowStatusByKey } from "@/lib/workflow";
+import { notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
 
 export type ActionState = {
   errors?: Record<string, string>;
@@ -19,11 +22,13 @@ export async function createInspectionAction(
 ): Promise<ActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["CHEF_POOL", "INSPECTEUR"]);
+  const user = session.user;
+
+  const isSelf = hasPermission(user.permissions, PERMISSIONS.INSPECTIONS_CONDUCT, { poolId: user.poolId });
 
   const parsed = inspectionSchema.safeParse({
     schoolId: formData.get("schoolId"),
-    inspectorId: session.user.role === "INSPECTEUR" ? session.user.id : formData.get("inspectorId"),
+    inspectorId: isSelf ? user.id : formData.get("inspectorId"),
     scheduledDate: formData.get("scheduledDate"),
   });
 
@@ -31,9 +36,14 @@ export async function createInspectionAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  if (session.user.role === "INSPECTEUR") {
+  const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId } });
+  if (!school) return { formError: "École introuvable." };
+
+  if (!isSelf) {
+    await requirePermission(user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, { poolId: school.poolId });
+  } else {
     const assigned = await prisma.assignment.findFirst({
-      where: { schoolId: parsed.data.schoolId, inspectorId: session.user.id, active: true },
+      where: { schoolId: parsed.data.schoolId, inspectorId: user.id, active: true },
     });
     if (!assigned) {
       return { formError: "Vous n'êtes pas assigné à cette école." };
@@ -52,31 +62,33 @@ export async function createInspectionAction(
   redirect(`/inspections/${inspection.id}`);
 }
 
-export async function saveFicheAction(
-  inspectionId: string,
-  type: FicheType,
-  formData: FormData
-) {
+export async function saveFicheAction(inspectionId: string, formTemplateId: string, formData: FormData) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["INSPECTEUR", "CHEF_POOL"]);
 
-  const inspection = await prisma.inspection.findUnique({ where: { id: inspectionId } });
+  const inspection = await prisma.inspection.findUnique({
+    where: { id: inspectionId },
+    include: { school: true },
+  });
   if (!inspection) return;
-  if (session.user.role === "INSPECTEUR" && inspection.inspectorId !== session.user.id) {
-    throw new Error("Action non autorisée.");
+
+  if (inspection.inspectorId !== session.user.id) {
+    await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, { poolId: inspection.school.poolId });
   }
 
-  const def = FICHE_DEFINITIONS[type];
+  const template = await prisma.formTemplate.findUnique({ where: { id: formTemplateId } });
+  if (!template) return;
+
+  const fields = Array.isArray(template.fieldsSchema) ? (template.fieldsSchema as { name: string }[]) : [];
   const data: Record<string, string> = {};
-  for (const field of def.fields) {
+  for (const field of fields) {
     data[field.name] = String(formData.get(field.name) ?? "");
   }
 
   await prisma.form.upsert({
-    where: { inspectionId_type: { inspectionId, type } },
+    where: { inspectionId_formTemplateId: { inspectionId, formTemplateId } },
     update: { data, completed: true },
-    create: { inspectionId, type, data, completed: true },
+    create: { inspectionId, formTemplateId, data, completed: true },
   });
 
   if (inspection.status === "PLANIFIEE") {
@@ -93,9 +105,11 @@ export async function submitReportAction(
 ): Promise<ActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["INSPECTEUR"]);
 
-  const inspection = await prisma.inspection.findUnique({ where: { id: inspectionId } });
+  const inspection = await prisma.inspection.findUnique({
+    where: { id: inspectionId },
+    include: { school: true },
+  });
   if (!inspection || inspection.inspectorId !== session.user.id) {
     return { formError: "Action non autorisée." };
   }
@@ -108,19 +122,21 @@ export async function submitReportAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
+  const soumisStatus = await getWorkflowStatusByKey(WORKFLOW_STATUS_KEYS.SOUMIS);
+
   await prisma.report.upsert({
     where: { inspectionId },
     update: {
       summary: parsed.data.summary,
       recommendations: parsed.data.recommendations || null,
-      status: "SOUMIS",
+      statusId: soumisStatus.id,
       submittedAt: new Date(),
     },
     create: {
       inspectionId,
       summary: parsed.data.summary,
       recommendations: parsed.data.recommendations || null,
-      status: "SOUMIS",
+      statusId: soumisStatus.id,
       submittedAt: new Date(),
     },
   });
@@ -128,6 +144,22 @@ export async function submitReportAction(
   await prisma.inspection.update({
     where: { id: inspectionId },
     data: { status: "RAPPORT_SOUMIS", completedAt: new Date() },
+  });
+
+  await logAudit({
+    actorId: session.user.id,
+    action: "report.submit",
+    entityType: "Report",
+    entityId: inspectionId,
+    newValue: { status: WORKFLOW_STATUS_KEYS.SOUMIS },
+  });
+
+  await notifyUsersWithPermission({
+    permissionKey: PERMISSIONS.REPORTS_REVIEW_POOL,
+    poolId: inspection.school.poolId,
+    event: "report.submitted",
+    title: `Nouveau rapport — ${inspection.school.name}`,
+    body: "Un rapport d'inspection a été soumis et attend d'être exploité.",
   });
 
   revalidatePath(`/inspections/${inspectionId}`);

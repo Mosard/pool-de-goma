@@ -1,38 +1,48 @@
 "use client";
 
 import { Button, Card, Input, Label, Select, Textarea, Badge } from "@/components/ui";
-import { FICHE_DEFINITIONS, type FicheType } from "@/lib/fiches";
+import { parseFieldsSchema } from "@/lib/form-schema";
 import { saveFicheAction } from "./actions";
+
+type TemplateProp = {
+  id: string;
+  title: string;
+  fieldsSchema: unknown;
+  category: { label: string };
+};
 
 export function FicheForm({
   inspectionId,
-  type,
+  template,
   existingData,
   completed,
   readOnly,
 }: {
   inspectionId: string;
-  type: FicheType;
+  template: TemplateProp;
   existingData?: Record<string, string>;
   completed: boolean;
   readOnly: boolean;
 }) {
-  const def = FICHE_DEFINITIONS[type];
-  const action = saveFicheAction.bind(null, inspectionId, type);
+  const fields = parseFieldsSchema(template.fieldsSchema);
+  const action = saveFicheAction.bind(null, inspectionId, template.id);
 
   return (
     <Card>
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">{def.title}</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">{template.title}</h3>
+          <p className="text-xs text-gray-400">{template.category.label}</p>
+        </div>
         <Badge color={completed ? "green" : "gray"}>{completed ? "Complétée" : "À remplir"}</Badge>
       </div>
       <form action={action} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {def.fields.map((field) => (
+        {fields.map((field) => (
           <div key={field.name} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
-            <Label htmlFor={`${type}-${field.name}`}>{field.label}</Label>
+            <Label htmlFor={`${template.id}-${field.name}`}>{field.label}</Label>
             {field.type === "select" ? (
               <Select
-                id={`${type}-${field.name}`}
+                id={`${template.id}-${field.name}`}
                 name={field.name}
                 defaultValue={existingData?.[field.name] ?? ""}
                 disabled={readOnly}
@@ -44,7 +54,7 @@ export function FicheForm({
               </Select>
             ) : field.type === "textarea" ? (
               <Textarea
-                id={`${type}-${field.name}`}
+                id={`${template.id}-${field.name}`}
                 name={field.name}
                 rows={3}
                 defaultValue={existingData?.[field.name] ?? ""}
@@ -52,7 +62,7 @@ export function FicheForm({
               />
             ) : (
               <Input
-                id={`${type}-${field.name}`}
+                id={`${template.id}-${field.name}`}
                 name={field.name}
                 type={field.type}
                 defaultValue={existingData?.[field.name] ?? ""}

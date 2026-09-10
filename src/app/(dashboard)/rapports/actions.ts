@@ -4,8 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { commentSchema } from "@/lib/validations";
-import { assertRole } from "@/lib/permissions";
+import { commentSchema, transitionSchema } from "@/lib/validations";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermission } from "@/lib/permissions";
+import { applyTransition } from "@/lib/workflow";
+import { logAudit } from "@/lib/audit";
 
 export type CommentState = {
   errors?: Record<string, string>;
@@ -19,7 +22,19 @@ export async function addCommentAction(
 ): Promise<CommentState> {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["EXPLOITANT", "CHEF_POOL"]);
+
+  const report = await prisma.report.findUnique({
+    where: { id: reportId },
+    include: { inspection: { include: { school: true } } },
+  });
+  if (!report) return { formError: "Rapport introuvable." };
+
+  const poolId = report.inspection.school.poolId;
+  const canComment =
+    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId }) ||
+    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId }) ||
+    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId });
+  if (!canComment) return { formError: "Action non autorisée." };
 
   const parsed = commentSchema.safeParse({ content: formData.get("content") });
   if (!parsed.success) {
@@ -27,37 +42,37 @@ export async function addCommentAction(
   }
 
   await prisma.comment.create({
-    data: {
-      reportId,
-      authorId: session.user.id,
-      content: parsed.data.content,
-    },
+    data: { reportId, authorId: session.user.id, content: parsed.data.content },
   });
 
-  if (session.user.role === "EXPLOITANT") {
-    await prisma.report.update({
-      where: { id: reportId },
-      data: { status: "EN_REVUE" },
-    });
-  }
+  await logAudit({
+    actorId: session.user.id,
+    action: "report.comment",
+    entityType: "Report",
+    entityId: reportId,
+  });
 
   revalidatePath(`/rapports/${reportId}`);
   return {};
 }
 
-export async function validateReportAction(reportId: string) {
+export async function transitionReportAction(reportId: string, formData: FormData) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  assertRole(session.user.role, ["EXPLOITANT"]);
 
-  const report = await prisma.report.update({
-    where: { id: reportId },
-    data: { status: "VALIDE", validatedAt: new Date() },
+  const parsed = transitionSchema.safeParse({
+    toStatusKey: formData.get("toStatusKey"),
+    comment: formData.get("comment"),
   });
+  if (!parsed.success) return;
 
-  await prisma.inspection.update({
-    where: { id: report.inspectionId },
-    data: { status: "VALIDEE" },
+  await applyTransition({
+    reportId,
+    toStatusKey: parsed.data.toStatusKey,
+    actorId: session.user.id,
+    actorPermissions: session.user.permissions,
+    actorPoolId: session.user.poolId,
+    comment: parsed.data.comment || undefined,
   });
 
   revalidatePath(`/rapports/${reportId}`);
