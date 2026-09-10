@@ -20,7 +20,7 @@ export default async function Home() {
           <a href="#contacts" className="hover:text-white">Contacts</a>
         </nav>
         <Link href="/login">
-          <Button className="!min-h-0 bg-white px-4 py-2 text-sm text-blue-700 hover:bg-gray-100">
+          <Button className="!min-h-0 !bg-white !text-blue-700 px-4 py-2 text-sm hover:!bg-gray-100">
             Connexion
           </Button>
         </Link>
@@ -40,10 +40,10 @@ export default async function Home() {
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Link href="/login">
-            <Button className="bg-white text-blue-700 hover:bg-gray-100">Espace professionnel</Button>
+            <Button className="!bg-white !text-blue-700 hover:!bg-gray-100">Espace professionnel</Button>
           </Link>
           <Link href="/demande-de-compte">
-            <Button variant="ghost" className="border border-white/30 text-white hover:bg-white/10">
+            <Button variant="ghost" className="border border-white/30 !text-white hover:!bg-white/10">
               Demander un accès
             </Button>
           </Link>
