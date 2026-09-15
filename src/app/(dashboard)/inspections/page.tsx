@@ -24,7 +24,7 @@ export default async function InspectionsPage() {
     where: isInspector
       ? { inspectorId: user.id }
       : isProvinceScoped
-        ? undefined
+        ? { school: { pool: { organizationId: user.organizationId } } }
         : { school: { poolId: user.poolId ?? "__none__" } },
     orderBy: { updatedAt: "desc" },
     include: { school: true, inspector: true },

@@ -52,16 +52,31 @@ export default async function DashboardPage({
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
 
   if (isProvinceScoped) {
+    const organizationId = user.organizationId;
     const [schools, activeUsers, realizedInspections, pendingReports, toValidateReports, validatedReports, alertsCount, pools] =
       await Promise.all([
-        prisma.school.count(),
-        prisma.user.count({ where: { status: "ACTIVE" } }),
-        prisma.inspection.count({ where: { completedAt: { not: null } } }),
-        prisma.report.count({ where: { status: { key: { in: PENDING_KEYS } } } }),
-        prisma.report.count({ where: { status: { key: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION } } }),
-        prisma.report.count({ where: { status: { key: { in: VALIDATED_KEYS } } } }),
-        prisma.report.count({ where: { status: { key: WORKFLOW_STATUS_KEYS.A_CORRIGER } } }),
-        prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+        prisma.school.count({ where: { pool: { organizationId } } }),
+        prisma.user.count({ where: { status: "ACTIVE", organizationId } }),
+        prisma.inspection.count({ where: { completedAt: { not: null }, school: { pool: { organizationId } } } }),
+        prisma.report.count({
+          where: { status: { key: { in: PENDING_KEYS } }, inspection: { school: { pool: { organizationId } } } },
+        }),
+        prisma.report.count({
+          where: {
+            status: { key: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION },
+            inspection: { school: { pool: { organizationId } } },
+          },
+        }),
+        prisma.report.count({
+          where: { status: { key: { in: VALIDATED_KEYS } }, inspection: { school: { pool: { organizationId } } } },
+        }),
+        prisma.report.count({
+          where: {
+            status: { key: WORKFLOW_STATUS_KEYS.A_CORRIGER },
+            inspection: { school: { pool: { organizationId } } },
+          },
+        }),
+        prisma.pool.findMany({ where: { active: true, organizationId }, orderBy: { name: "asc" } }),
       ]);
 
     const poolStats = await Promise.all(
@@ -150,7 +165,13 @@ export default async function DashboardPage({
           )}
         </Card>
 
-        {selectedPoolId && <PoolExplorer poolId={selectedPoolId} selectedInspectorId={selectedInspectorId} />}
+        {selectedPoolId && (
+          <PoolExplorer
+            poolId={selectedPoolId}
+            organizationId={organizationId}
+            selectedInspectorId={selectedInspectorId}
+          />
+        )}
       </div>
     );
   }
@@ -165,7 +186,7 @@ export default async function DashboardPage({
     return (
       <div className="space-y-6">
         <PageHeader title="Tableau de bord du pool" description="Vue d'ensemble de votre pool d'inspection" />
-        <PoolExplorer poolId={user.poolId} selectedInspectorId={selectedInspectorId} />
+        <PoolExplorer poolId={user.poolId} organizationId={user.organizationId} selectedInspectorId={selectedInspectorId} />
       </div>
     );
   }
@@ -232,12 +253,14 @@ export default async function DashboardPage({
 
 async function PoolExplorer({
   poolId,
+  organizationId,
   selectedInspectorId,
 }: {
   poolId: string;
+  organizationId: string;
   selectedInspectorId?: string;
 }) {
-  const pool = await prisma.pool.findUnique({ where: { id: poolId } });
+  const pool = await prisma.pool.findFirst({ where: { id: poolId, organizationId } });
   if (!pool) return <Card><p className="text-sm text-gray-500">Pool introuvable.</p></Card>;
 
   const [schools, inspectors, pendingReports, validatedReports] = await Promise.all([

@@ -29,10 +29,13 @@ export async function createAssignmentAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId } });
+  const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId }, include: { pool: true } });
   if (!school) return { formError: "École introuvable." };
 
-  await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, { poolId: school.poolId });
+  await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
+    poolId: school.poolId,
+    organizationId: school.pool.organizationId,
+  });
 
   const existing = await prisma.assignment.findFirst({
     where: { schoolId: parsed.data.schoolId, inspectorId: parsed.data.inspectorId, active: true },
@@ -51,6 +54,7 @@ export async function createAssignmentAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: school.pool.organizationId,
     action: "assignment.create",
     entityType: "Assignment",
     entityId: assignment.id,
@@ -67,16 +71,20 @@ export async function revokeAssignmentAction(assignmentId: string) {
 
   const assignment = await prisma.assignment.findUnique({
     where: { id: assignmentId },
-    include: { school: true },
+    include: { school: { include: { pool: true } } },
   });
   if (!assignment) return;
 
-  await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, { poolId: assignment.school.poolId });
+  await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
+    poolId: assignment.school.poolId,
+    organizationId: assignment.school.pool.organizationId,
+  });
 
   await prisma.assignment.update({ where: { id: assignmentId }, data: { active: false } });
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: assignment.school.pool.organizationId,
     action: "assignment.revoke",
     entityType: "Assignment",
     entityId: assignmentId,

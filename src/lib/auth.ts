@@ -32,6 +32,7 @@ const providers: Provider[] = [
         id: user.id,
         name: user.name,
         email: user.email,
+        organizationId: user.organizationId,
         poolId: user.poolId,
         roles,
         permissions,
@@ -71,6 +72,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (dbUser) {
           const { roles, permissions } = await loadUserAccess(dbUser.id);
           token.id = dbUser.id;
+          token.organizationId = dbUser.organizationId;
           token.poolId = dbUser.poolId;
           token.roles = roles;
           token.permissions = permissions;
@@ -79,6 +81,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (user) {
         token.id = user.id as string;
+        token.organizationId = user.organizationId as string;
         token.poolId = (user.poolId as string | null) ?? null;
         token.roles = (user.roles as SessionRole[]) ?? [];
         token.permissions = (user.permissions as SessionPermission[]) ?? [];

@@ -43,6 +43,13 @@ export async function createUserAction(
     return { errors: { poolId: "Ce rôle nécessite un pool." } };
   }
 
+  if (parsed.data.poolId) {
+    const targetPool = await prisma.pool.findUnique({ where: { id: parsed.data.poolId } });
+    if (!targetPool || targetPool.organizationId !== session.user.organizationId) {
+      return { errors: { poolId: "Pool introuvable." } };
+    }
+  }
+
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
   let user;
@@ -55,6 +62,7 @@ export async function createUserAction(
         phone: parsed.data.phone || null,
         sex: parsed.data.sex || null,
         status: "ACTIVE",
+        organizationId: session.user.organizationId,
         poolId: parsed.data.poolId || null,
         roles: {
           create: { roleId: role.id, poolId: role.scope === "POOL" ? parsed.data.poolId || null : null },
@@ -67,6 +75,7 @@ export async function createUserAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "user.create",
     entityType: "User",
     entityId: user.id,
@@ -83,13 +92,14 @@ export async function toggleUserStatusAction(userId: string) {
   await requirePermission(session.user.id, PERMISSIONS.USERS_MANAGE);
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return;
+  if (!user || user.organizationId !== session.user.organizationId) return;
 
   const nextStatus = user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
   await prisma.user.update({ where: { id: userId }, data: { status: nextStatus } });
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "user.status_change",
     entityType: "User",
     entityId: userId,

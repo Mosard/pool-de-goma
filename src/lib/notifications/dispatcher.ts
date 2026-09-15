@@ -64,10 +64,11 @@ export async function notify(params: {
   }
 }
 
-/** Notifie tous les détenteurs d'une permission (provinciale, ou scopée à un pool donné). */
+/** Notifie tous les détenteurs d'une permission (à l'échelle de l'organisation, ou scopée à un pool donné). */
 export async function notifyUsersWithPermission(params: {
   permissionKey: string;
   poolId?: string | null;
+  organizationId: string;
   event: string;
   title: string;
   body: string;
@@ -78,6 +79,11 @@ export async function notifyUsersWithPermission(params: {
   const userRoles = await prisma.userRole.findMany({
     where: {
       role: { rolePermissions: { some: { permission: { key: params.permissionKey } } } },
+      // Une permission à portée organisation (poolId: null) ne doit notifier
+      // que les détenteurs de la même organisation que la ressource
+      // concernée — sinon on notifierait le staff provincial de toutes les
+      // organisations à chaque rapport, quelle que soit l'organisation.
+      user: { organizationId: params.organizationId },
       OR: poolFilter,
     },
     select: { userId: true },

@@ -13,7 +13,10 @@ export default async function NouvelUtilisateurPage() {
 
   const [roles, pools] = await Promise.all([
     prisma.roleDefinition.findMany({ orderBy: { label: "asc" } }),
-    prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.pool.findMany({
+      where: { active: true, organizationId: session.user.organizationId },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return <NewUserForm roles={roles} pools={pools} />;

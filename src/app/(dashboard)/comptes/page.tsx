@@ -14,6 +14,7 @@ export default async function ComptesPage() {
   }
 
   const requests = await prisma.accountRequest.findMany({
+    where: { organizationId: session.user.organizationId },
     orderBy: { createdAt: "desc" },
     include: { requestedRole: true, pool: true },
   });

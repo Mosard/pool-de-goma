@@ -14,7 +14,9 @@ export default async function NouvelleEcolePage() {
 
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
   const pools = await prisma.pool.findMany({
-    where: isProvinceScoped ? { active: true } : { id: user.poolId ?? "__none__" },
+    where: isProvinceScoped
+      ? { active: true, organizationId: user.organizationId }
+      : { id: user.poolId ?? "__none__" },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });

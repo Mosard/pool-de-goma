@@ -24,7 +24,10 @@ export async function createInspectionAction(
   if (!session?.user) redirect("/login");
   const user = session.user;
 
-  const isSelf = hasPermission(user.permissions, PERMISSIONS.INSPECTIONS_CONDUCT, { poolId: user.poolId });
+  const isSelf = hasPermission(user.permissions, PERMISSIONS.INSPECTIONS_CONDUCT, {
+    poolId: user.poolId,
+    organizationId: user.organizationId,
+  });
 
   const parsed = inspectionSchema.safeParse({
     schoolId: formData.get("schoolId"),
@@ -36,11 +39,14 @@ export async function createInspectionAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId } });
+  const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId }, include: { pool: true } });
   if (!school) return { formError: "École introuvable." };
 
   if (!isSelf) {
-    await requirePermission(user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, { poolId: school.poolId });
+    await requirePermission(user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
+      poolId: school.poolId,
+      organizationId: school.pool.organizationId,
+    });
   } else {
     const assigned = await prisma.assignment.findFirst({
       where: { schoolId: parsed.data.schoolId, inspectorId: user.id, active: true },
@@ -68,12 +74,15 @@ export async function saveFicheAction(inspectionId: string, formTemplateId: stri
 
   const inspection = await prisma.inspection.findUnique({
     where: { id: inspectionId },
-    include: { school: true },
+    include: { school: { include: { pool: true } } },
   });
   if (!inspection) return;
 
   if (inspection.inspectorId !== session.user.id) {
-    await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, { poolId: inspection.school.poolId });
+    await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
+      poolId: inspection.school.poolId,
+      organizationId: inspection.school.pool.organizationId,
+    });
   }
 
   const template = await prisma.formTemplate.findUnique({ where: { id: formTemplateId } });
@@ -108,7 +117,7 @@ export async function submitReportAction(
 
   const inspection = await prisma.inspection.findUnique({
     where: { id: inspectionId },
-    include: { school: true },
+    include: { school: { include: { pool: true } } },
   });
   if (!inspection || inspection.inspectorId !== session.user.id) {
     return { formError: "Action non autorisée." };
@@ -148,6 +157,7 @@ export async function submitReportAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: inspection.school.pool.organizationId,
     action: "report.submit",
     entityType: "Report",
     entityId: inspectionId,
@@ -157,6 +167,7 @@ export async function submitReportAction(
   await notifyUsersWithPermission({
     permissionKey: PERMISSIONS.REPORTS_REVIEW_POOL,
     poolId: inspection.school.poolId,
+    organizationId: inspection.school.pool.organizationId,
     event: "report.submitted",
     title: `Nouveau rapport — ${inspection.school.name}`,
     body: "Un rapport d'inspection a été soumis et attend d'être exploité.",

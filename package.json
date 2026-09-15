@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && ( [ -z \"$POSTGRES_URL\" ] && echo 'POSTGRES_URL not set, skipping schema push/seed' || (prisma db push --skip-generate && tsx prisma/seed.ts) ) && next build",
+    "build": "prisma generate && ( [ -z \"$POSTGRES_URL\" ] && echo 'POSTGRES_URL not set, skipping migration' || prisma migrate deploy ) && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts"
   },
   "prisma": {

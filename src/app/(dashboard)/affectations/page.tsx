@@ -14,7 +14,9 @@ export default async function AffectationsPage() {
   if (!hasPermissionAnyPool(user.permissions, PERMISSIONS.ASSIGNMENTS_MANAGE)) redirect("/dashboard");
 
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
-  const poolFilter = isProvinceScoped ? undefined : { poolId: user.poolId ?? "__none__" };
+  const poolFilter = isProvinceScoped
+    ? { pool: { organizationId: user.organizationId } }
+    : { poolId: user.poolId ?? "__none__" };
 
   const [schools, inspectors, assignments] = await Promise.all([
     prisma.school.findMany({

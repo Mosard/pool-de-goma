@@ -22,6 +22,7 @@ export default async function UtilisateursPage({
   const [users, pools, roles] = await Promise.all([
     prisma.user.findMany({
       where: {
+        organizationId: user.organizationId,
         poolId: poolId || undefined,
         status: status ? (status as "PENDING" | "ACTIVE" | "SUSPENDED" | "DISABLED") : undefined,
         sex: sex ? (sex as "M" | "F") : undefined,
@@ -30,7 +31,7 @@ export default async function UtilisateursPage({
       orderBy: { createdAt: "desc" },
       include: { pool: true, roles: { include: { role: true } } },
     }),
-    prisma.pool.findMany({ orderBy: { name: "asc" } }),
+    prisma.pool.findMany({ where: { organizationId: user.organizationId }, orderBy: { name: "asc" } }),
     prisma.roleDefinition.findMany({ orderBy: { label: "asc" } }),
   ]);
 

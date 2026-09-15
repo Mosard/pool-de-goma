@@ -26,13 +26,16 @@ export default async function EcoleDetailPage({
   if (!school) notFound();
 
   const user = session!.user;
-  const canEdit = hasPermission(user.permissions, PERMISSIONS.SCHOOLS_MANAGE, { poolId: school.poolId });
+  const canEdit = hasPermission(user.permissions, PERMISSIONS.SCHOOLS_MANAGE, {
+    poolId: school.poolId,
+    organizationId: school.pool.organizationId,
+  });
   const boundUpdate = updateSchoolAction.bind(null, school.id);
 
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
   const pools = canEdit
     ? await prisma.pool.findMany({
-        where: isProvinceScoped ? { active: true } : { id: school.poolId },
+        where: isProvinceScoped ? { active: true, organizationId: user.organizationId } : { id: school.poolId },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       })

@@ -31,7 +31,7 @@ export default async function RapportsPage() {
   const reports = await prisma.report.findMany({
     where: canReview
       ? isProvinceScoped
-        ? undefined
+        ? { inspection: { school: { pool: { organizationId: user.organizationId } } } }
         : { inspection: { school: { poolId: user.poolId ?? "__none__" } } }
       : { inspection: { inspectorId: user.id } },
     orderBy: { updatedAt: "desc" },

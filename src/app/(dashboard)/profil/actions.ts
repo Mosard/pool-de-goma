@@ -47,6 +47,7 @@ export async function updateProfileAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "profile.update",
     entityType: "User",
     entityId: session.user.id,

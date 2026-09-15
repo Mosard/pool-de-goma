@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getDefaultOrganization } from "@/lib/organization";
 import { accountRequestSchema } from "@/lib/validations";
 
 export type AccountRequestState = {
@@ -31,12 +32,15 @@ export async function submitAccountRequestAction(
     return { formError: "Un compte existe déjà avec cet email." };
   }
 
+  const organization = await getDefaultOrganization();
+
   await prisma.accountRequest.create({
     data: {
       name: parsed.data.name,
       email: parsed.data.email.toLowerCase(),
       phone: parsed.data.phone || null,
       requestedRoleId: parsed.data.requestedRoleId || null,
+      organizationId: organization.id,
       poolId: parsed.data.poolId || null,
       message: parsed.data.message || null,
     },

@@ -40,7 +40,13 @@ export async function createSchoolAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  await requirePermission(session.user.id, PERMISSIONS.SCHOOLS_MANAGE, { poolId: parsed.data.poolId });
+  const targetPool = await prisma.pool.findUnique({ where: { id: parsed.data.poolId } });
+  if (!targetPool) return { errors: { poolId: "Pool introuvable." } };
+
+  await requirePermission(session.user.id, PERMISSIONS.SCHOOLS_MANAGE, {
+    poolId: parsed.data.poolId,
+    organizationId: targetPool.organizationId,
+  });
 
   let school;
   try {
@@ -51,6 +57,7 @@ export async function createSchoolAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "school.create",
     entityType: "School",
     entityId: school.id,
@@ -69,7 +76,7 @@ export async function updateSchoolAction(
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const existing = await prisma.school.findUnique({ where: { id } });
+  const existing = await prisma.school.findUnique({ where: { id }, include: { pool: true } });
   if (!existing) return { formError: "École introuvable." };
 
   const parsed = parseSchoolForm(formData);
@@ -77,7 +84,17 @@ export async function updateSchoolAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  await requirePermission(session.user.id, PERMISSIONS.SCHOOLS_MANAGE, { poolId: existing.poolId });
+  await requirePermission(session.user.id, PERMISSIONS.SCHOOLS_MANAGE, {
+    poolId: existing.poolId,
+    organizationId: existing.pool.organizationId,
+  });
+
+  if (parsed.data.poolId !== existing.poolId) {
+    const targetPool = await prisma.pool.findUnique({ where: { id: parsed.data.poolId } });
+    if (!targetPool || targetPool.organizationId !== existing.pool.organizationId) {
+      return { errors: { poolId: "Pool introuvable." } };
+    }
+  }
 
   try {
     await prisma.school.update({ where: { id }, data: parsed.data });
@@ -87,6 +104,7 @@ export async function updateSchoolAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: existing.pool.organizationId,
     action: "school.update",
     entityType: "School",
     entityId: id,

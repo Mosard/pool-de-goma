@@ -24,7 +24,7 @@ export default async function RapportDetailPage({
       status: true,
       inspection: {
         include: {
-          school: true,
+          school: { include: { pool: true } },
           inspector: true,
           forms: { include: { formTemplate: { include: { category: true } } } },
         },
@@ -38,12 +38,13 @@ export default async function RapportDetailPage({
 
   const user = session.user;
   const poolId = report.inspection.school.poolId;
+  const organizationId = report.inspection.school.pool.organizationId;
   const canComment =
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId }) ||
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId }) ||
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId });
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId, organizationId }) ||
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId, organizationId }) ||
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId, organizationId });
 
-  const transitions = await getAvailableTransitions(report.id, user.permissions, poolId);
+  const transitions = await getAvailableTransitions(report.id, user.permissions, poolId, organizationId);
 
   return (
     <div className="space-y-6">

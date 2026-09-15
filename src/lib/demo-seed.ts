@@ -271,13 +271,23 @@ async function seedRbac() {
   return roleByKey;
 }
 
-async function seedPools() {
+const DEFAULT_ORGANIZATION = { code: "IPP-NORD-KIVU-1", name: "IPP Nord-Kivu 1" };
+
+async function seedOrganization() {
+  return prisma.organization.upsert({
+    where: { code: DEFAULT_ORGANIZATION.code },
+    update: { name: DEFAULT_ORGANIZATION.name },
+    create: { code: DEFAULT_ORGANIZATION.code, name: DEFAULT_ORGANIZATION.name },
+  });
+}
+
+async function seedPools(organizationId: string) {
   const rows = await Promise.all(
     POOLS.map((p) =>
       prisma.pool.upsert({
         where: { code: p.code },
-        update: { name: p.name },
-        create: { code: p.code, name: p.name },
+        update: { name: p.name, organizationId },
+        create: { code: p.code, name: p.name, organizationId },
       })
     )
   );
@@ -342,6 +352,7 @@ async function upsertDemoUser(params: {
   email: string;
   name: string;
   passwordHash: string;
+  organizationId: string;
   poolId?: string | null;
   roleId: string;
   roleScopedToPool: boolean;
@@ -354,6 +365,7 @@ async function upsertDemoUser(params: {
     update: {
       name: params.name,
       status: "ACTIVE",
+      organizationId: params.organizationId,
       poolId: params.poolId ?? null,
       sex: params.sex,
       phone: params.phone,
@@ -364,6 +376,7 @@ async function upsertDemoUser(params: {
       name: params.name,
       passwordHash: params.passwordHash,
       status: "ACTIVE",
+      organizationId: params.organizationId,
       poolId: params.poolId ?? null,
       sex: params.sex,
       phone: params.phone,
@@ -441,7 +454,12 @@ const POOL_ROLE_CYCLE: { roleKey: RoleKey; count: number }[] = [
 ];
 const SLOTS_PER_POOL = POOL_ROLE_CYCLE.reduce((sum, r) => sum + r.count, 0);
 
-async function seedDemoUsers(poolByCode: Map<string, PoolRow>, roleByKey: Map<string, RoleRow>, passwordHash: string) {
+async function seedDemoUsers(
+  organizationId: string,
+  poolByCode: Map<string, PoolRow>,
+  roleByKey: Map<string, RoleRow>,
+  passwordHash: string
+) {
   const pools = Array.from(poolByCode.values());
   const jobs: { pool: PoolRow; roleKey: RoleKey; n: number }[] = [];
 
@@ -466,6 +484,7 @@ async function seedDemoUsers(poolByCode: Map<string, PoolRow>, roleByKey: Map<st
       email,
       name: p.name,
       passwordHash,
+      organizationId,
       poolId: pool.id,
       roleId: role.id,
       roleScopedToPool: true,
@@ -614,7 +633,11 @@ const REQUEST_ROLE_CYCLE: RoleKey[] = [
 const REQUEST_STATUS_CYCLE = ["PENDING", "PENDING", "APPROVED", "REJECTED"] as const;
 const ACCOUNT_REQUEST_COUNT = 25;
 
-async function seedDemoAccountRequests(poolByCode: Map<string, PoolRow>, roleByKey: Map<string, RoleRow>) {
+async function seedDemoAccountRequests(
+  organizationId: string,
+  poolByCode: Map<string, PoolRow>,
+  roleByKey: Map<string, RoleRow>
+) {
   const pools = Array.from(poolByCode.values());
   const items = Array.from({ length: ACCOUNT_REQUEST_COUNT }, (_, idx) => idx + 1);
 
@@ -635,6 +658,7 @@ async function seedDemoAccountRequests(poolByCode: Map<string, PoolRow>, roleByK
         phone: `+243${910000000 + i}`,
         message: "Demande de création de compte pour accéder à la plateforme d'inspection.",
         requestedRoleId: role?.id,
+        organizationId,
         poolId: pool.id,
         status,
         reviewedAt: status === "PENDING" ? null : new Date(),
@@ -654,8 +678,9 @@ export async function runDemoSeed() {
 
   const password = await bcrypt.hash("Demo1234!", 10);
 
+  const organization = await seedOrganization();
   const roleByKey = await seedRbac();
-  const poolByCode = await seedPools();
+  const poolByCode = await seedPools(organization.id);
   const statusByKey = await seedWorkflow();
   await seedFormTemplates();
 
@@ -666,6 +691,7 @@ export async function runDemoSeed() {
     email: "ipp@ipp-nordkivu1.test",
     name: "Ir Mozart Salama",
     passwordHash: password,
+    organizationId: organization.id,
     roleId: roleByKey.get(ROLE_KEYS.IPP)!.id,
     roleScopedToPool: false,
   });
@@ -674,6 +700,7 @@ export async function runDemoSeed() {
     email: "informaticien@ipp-nordkivu1.test",
     name: "Grace Nzuzi",
     passwordHash: password,
+    organizationId: organization.id,
     roleId: roleByKey.get(ROLE_KEYS.INFORMATICIEN)!.id,
     roleScopedToPool: false,
   });
@@ -682,6 +709,7 @@ export async function runDemoSeed() {
     email: "chef.goma@ipp-nordkivu1.test",
     name: "Moise Bahati",
     passwordHash: password,
+    organizationId: organization.id,
     poolId: goma.id,
     roleId: roleByKey.get(ROLE_KEYS.CHEF_POOL)!.id,
     roleScopedToPool: true,
@@ -691,6 +719,7 @@ export async function runDemoSeed() {
     email: "exploitant.goma@ipp-nordkivu1.test",
     name: "Alice Kavira",
     passwordHash: password,
+    organizationId: organization.id,
     poolId: goma.id,
     roleId: roleByKey.get(ROLE_KEYS.EXPLOITANT_POOL)!.id,
     roleScopedToPool: true,
@@ -700,6 +729,7 @@ export async function runDemoSeed() {
     email: "inspecteur.goma@ipp-nordkivu1.test",
     name: "Jean Mapenzi",
     passwordHash: password,
+    organizationId: organization.id,
     poolId: goma.id,
     roleId: roleByKey.get(ROLE_KEYS.INSPECTEUR)!.id,
     roleScopedToPool: true,
@@ -709,6 +739,7 @@ export async function runDemoSeed() {
     email: "exploitant.ipp@ipp-nordkivu1.test",
     name: "Furaha Mbusa",
     passwordHash: password,
+    organizationId: organization.id,
     roleId: roleByKey.get(ROLE_KEYS.EXPLOITANT_IPP)!.id,
     roleScopedToPool: false,
   });
@@ -780,13 +811,13 @@ export async function runDemoSeed() {
   // Jeux de données de démonstration en volume (≥ 25 lignes par liste) pour
   // que les testeurs voient une application déjà peuplée et représentative.
   const generatedSchools = await seedDemoSchools(poolByCode);
-  const poolStaff = await seedDemoUsers(poolByCode, roleByKey, password);
+  const poolStaff = await seedDemoUsers(organization.id, poolByCode, roleByKey, password);
   const { assignmentsCreated, inspectionsCreated, reportsCreated } = await seedDemoAssignmentsAndInspections(
     generatedSchools,
     poolStaff,
     statusByKey
   );
-  const accountRequestsCreated = await seedDemoAccountRequests(poolByCode, roleByKey);
+  const accountRequestsCreated = await seedDemoAccountRequests(organization.id, poolByCode, roleByKey);
 
   push("Seed terminé. Comptes de démo (mot de passe : Demo1234!) :");
   push("- ipp@ipp-nordkivu1.test (Inspecteur Principal Provincial)");

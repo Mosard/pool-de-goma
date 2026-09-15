@@ -60,7 +60,11 @@ enum NotificationStatus {
 // Organisation territoriale
 // ---------------------------------------------------------------------------
 
-model Pool {
+// Une Organization est une IPP (ex. "IPP Nord-Kivu 1") : la plateforme est
+// générique et peut héberger plusieurs organisations, chacune avec ses
+// propres pools (Goma, Karisimbi, ...). Le déploiement actuel n'en sert
+// qu'une seule, mais toute la donnée est déjà scoping-ready.
+model Organization {
   id        String   @id @default(cuid())
   name      String
   code      String   @unique
@@ -68,10 +72,27 @@ model Pool {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  pools           Pool[]
+  users           User[]
+  accountRequests AccountRequest[]
+}
+
+model Pool {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  code           String       @unique
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
   schools         School[]
   users           User[]
   userRoles       UserRole[]
   accountRequests AccountRequest[]
+
+  @@index([organizationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -131,15 +152,17 @@ model UserRole {
 // ---------------------------------------------------------------------------
 
 model User {
-  id                  String     @id @default(cuid())
+  id                  String       @id @default(cuid())
   name                String
-  email               String     @unique
+  email               String       @unique
   passwordHash        String
-  status              UserStatus @default(PENDING)
+  status              UserStatus   @default(PENDING)
   sex                 Sex?
   phone               String?
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id])
   poolId              String?
-  pool                Pool?      @relation(fields: [poolId], references: [id])
+  pool                Pool?        @relation(fields: [poolId], references: [id])
   // Profil détaillé (§18 du design) — additifs, `name` reste le nom complet
   // affiché partout ailleurs dans l'application.
   postnom             String?
@@ -164,6 +187,7 @@ model User {
   reportTransitions       ReportStatusHistory[]
   uploadedAttachments     Attachment[]
 
+  @@index([organizationId])
   @@index([poolId])
   @@index([status])
 }
@@ -176,6 +200,8 @@ model AccountRequest {
   message         String?
   requestedRoleId String?
   requestedRole   RoleDefinition?      @relation(fields: [requestedRoleId], references: [id])
+  organizationId  String
+  organization    Organization         @relation(fields: [organizationId], references: [id])
   poolId          String?
   pool            Pool?                @relation(fields: [poolId], references: [id])
   status          AccountRequestStatus @default(PENDING)
@@ -185,6 +211,7 @@ model AccountRequest {
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
+  @@index([organizationId])
   @@index([status])
 }
 
@@ -401,19 +428,21 @@ model Attachment {
 // ---------------------------------------------------------------------------
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  actorId    String?
-  actor      User?    @relation(fields: [actorId], references: [id])
-  action     String
-  entityType String
-  entityId   String
-  oldValue   Json?
-  newValue   Json?
-  metadata   Json?
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  actorId        String?
+  actor          User?    @relation(fields: [actorId], references: [id])
+  organizationId String
+  action         String
+  entityType     String
+  entityId       String
+  oldValue       Json?
+  newValue       Json?
+  metadata       Json?
+  createdAt      DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([organizationId])
 }
 
 // ---------------------------------------------------------------------------

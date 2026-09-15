@@ -12,6 +12,7 @@ export default async function AuditPage() {
   }
 
   const logs = await prisma.auditLog.findMany({
+    where: { organizationId: session.user.organizationId },
     orderBy: { createdAt: "desc" },
     take: 200,
     include: { actor: true },

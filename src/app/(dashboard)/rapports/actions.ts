@@ -25,15 +25,16 @@ export async function addCommentAction(
 
   const report = await prisma.report.findUnique({
     where: { id: reportId },
-    include: { inspection: { include: { school: true } } },
+    include: { inspection: { include: { school: { include: { pool: true } } } } },
   });
   if (!report) return { formError: "Rapport introuvable." };
 
   const poolId = report.inspection.school.poolId;
+  const organizationId = report.inspection.school.pool.organizationId;
   const canComment =
-    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId }) ||
-    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId }) ||
-    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId });
+    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId, organizationId }) ||
+    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId, organizationId }) ||
+    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId, organizationId });
   if (!canComment) return { formError: "Action non autorisée." };
 
   const parsed = commentSchema.safeParse({ content: formData.get("content") });
@@ -47,6 +48,7 @@ export async function addCommentAction(
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "report.comment",
     entityType: "Report",
     entityId: reportId,
@@ -72,6 +74,7 @@ export async function transitionReportAction(reportId: string, formData: FormDat
     actorId: session.user.id,
     actorPermissions: session.user.permissions,
     actorPoolId: session.user.poolId,
+    actorOrganizationId: session.user.organizationId,
     comment: parsed.data.comment || undefined,
   });
 

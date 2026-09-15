@@ -12,7 +12,8 @@ export async function getWorkflowStatusByKey(key: string) {
 export async function getAvailableTransitions(
   reportId: string,
   permissions: SessionPermission[],
-  poolId: string | null
+  poolId: string | null,
+  organizationId: string | null
 ) {
   const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId }, select: { statusId: true } });
   const transitions = await prisma.workflowTransition.findMany({
@@ -20,7 +21,7 @@ export async function getAvailableTransitions(
     include: { toStatus: true },
     orderBy: { toStatus: { order: "asc" } },
   });
-  return transitions.filter((t) => hasPermission(permissions, t.allowedPermissionKey, { poolId }));
+  return transitions.filter((t) => hasPermission(permissions, t.allowedPermissionKey, { poolId, organizationId }));
 }
 
 // Qui prévenir lorsqu'un rapport atteint un statut donné (le palier suivant
@@ -39,11 +40,15 @@ export async function applyTransition(params: {
   actorId: string;
   actorPermissions: SessionPermission[];
   actorPoolId: string | null;
+  actorOrganizationId: string;
   comment?: string;
 }) {
   const report = await prisma.report.findUnique({
     where: { id: params.reportId },
-    include: { status: true, inspection: { include: { school: true, inspector: true } } },
+    include: {
+      status: true,
+      inspection: { include: { school: { include: { pool: true } }, inspector: true } },
+    },
   });
   if (!report) throw new Error("Rapport introuvable.");
 
@@ -56,7 +61,13 @@ export async function applyTransition(params: {
   if (!transition) throw new Error("Transition non autorisée depuis ce statut.");
 
   const reportPoolId = report.inspection.school.poolId;
-  if (!hasPermission(params.actorPermissions, transition.allowedPermissionKey, { poolId: reportPoolId })) {
+  const reportOrganizationId = report.inspection.school.pool.organizationId;
+  if (
+    !hasPermission(params.actorPermissions, transition.allowedPermissionKey, {
+      poolId: reportPoolId,
+      organizationId: reportOrganizationId,
+    })
+  ) {
     throw new ForbiddenError();
   }
 
@@ -84,6 +95,7 @@ export async function applyTransition(params: {
 
   await logAudit({
     actorId: params.actorId,
+    organizationId: params.actorOrganizationId,
     action: "report.transition",
     entityType: "Report",
     entityId: report.id,
@@ -112,6 +124,7 @@ export async function applyTransition(params: {
       await notifyUsersWithPermission({
         permissionKey: nextPermission,
         poolId: reportPoolId,
+        organizationId: reportOrganizationId,
         event: "report.awaiting_action",
         title: `Rapport à traiter — ${report.inspection.school.name}`,
         body: `Le rapport est au statut "${toStatus.label}".`,

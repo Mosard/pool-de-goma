@@ -17,7 +17,7 @@ export async function approveAccountRequestAction(requestId: string) {
   await requirePermission(session.user.id, PERMISSIONS.ACCOUNTS_MANAGE);
 
   const request = await prisma.accountRequest.findUnique({ where: { id: requestId } });
-  if (!request || request.status !== "PENDING") return;
+  if (!request || request.status !== "PENDING" || request.organizationId !== session.user.organizationId) return;
 
   const tempPassword = crypto.randomBytes(9).toString("base64url");
   const passwordHash = await bcrypt.hash(tempPassword, 10);
@@ -33,6 +33,7 @@ export async function approveAccountRequestAction(requestId: string) {
       passwordHash,
       phone: request.phone,
       status: "ACTIVE",
+      organizationId: request.organizationId,
       poolId: request.poolId,
       roles: role
         ? { create: { roleId: role.id, poolId: role.scope === "POOL" ? request.poolId : null } }
@@ -47,6 +48,7 @@ export async function approveAccountRequestAction(requestId: string) {
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "account_request.approve",
     entityType: "AccountRequest",
     entityId: requestId,
@@ -69,7 +71,7 @@ export async function rejectAccountRequestAction(requestId: string) {
   await requirePermission(session.user.id, PERMISSIONS.ACCOUNTS_MANAGE);
 
   const request = await prisma.accountRequest.findUnique({ where: { id: requestId } });
-  if (!request || request.status !== "PENDING") return;
+  if (!request || request.status !== "PENDING" || request.organizationId !== session.user.organizationId) return;
 
   await prisma.accountRequest.update({
     where: { id: requestId },
@@ -78,6 +80,7 @@ export async function rejectAccountRequestAction(requestId: string) {
 
   await logAudit({
     actorId: session.user.id,
+    organizationId: session.user.organizationId,
     action: "account_request.reject",
     entityType: "AccountRequest",
     entityId: requestId,

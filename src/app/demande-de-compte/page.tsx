@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getDefaultOrganization } from "@/lib/organization";
 import { AccountRequestForm } from "./account-request-form";
 
 // Ne pas prérendre au build : évite toute dépendance à une connexion DB
@@ -6,9 +7,13 @@ import { AccountRequestForm } from "./account-request-form";
 export const dynamic = "force-dynamic";
 
 export default async function DemandeDeComptePage() {
+  const organization = await getDefaultOrganization();
   const [roles, pools] = await Promise.all([
     prisma.roleDefinition.findMany({ orderBy: { label: "asc" } }),
-    prisma.pool.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.pool.findMany({
+      where: { active: true, organizationId: organization.id },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
