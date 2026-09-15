@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { Scrollytelling } from "@/components/scrollytelling/scrollytelling";
@@ -7,7 +6,7 @@ import { InstitutionalCarousel } from "@/components/institutional-carousel";
 
 export default async function Home() {
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  const isConnected = Boolean(session?.user);
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
@@ -20,9 +19,9 @@ export default async function Home() {
           <a href="#actualites" className="hover:text-white">Actualités</a>
           <a href="#contacts" className="hover:text-white">Contacts</a>
         </nav>
-        <Link href="/login">
+        <Link href={isConnected ? "/dashboard" : "/login"}>
           <Button className="!min-h-0 !bg-white !text-blue-700 px-4 py-2 text-sm hover:!bg-gray-100">
-            Connexion
+            {isConnected ? "Mon espace" : "Connexion"}
           </Button>
         </Link>
       </header>

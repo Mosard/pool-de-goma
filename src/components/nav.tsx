@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import { LogOut, User as UserIcon } from "lucide-react";
+import { Home, LogOut, User as UserIcon } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permissions";
 import { NotificationBell, type NotificationItem } from "./notifications-bell";
@@ -68,6 +68,13 @@ export function Topbar({
       </div>
       <div className="flex items-center gap-1 sm:gap-2">
         <NotificationBell notifications={notifications} />
+        <Link
+          href="/"
+          className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+        >
+          <Home size={16} strokeWidth={1.75} />
+          <span className="hidden sm:inline">Accueil</span>
+        </Link>
         <Link
           href="/profil"
           className="hidden items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 sm:flex"
