@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { clsx } from "clsx";
 
 export function VideoWindow({
@@ -15,9 +15,12 @@ export function VideoWindow({
   const [muted, setMuted] = useState(true);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    if (active && !mounted) setMounted(true);
-  }, [active, mounted]);
+  // Montage paresseux, irréversible : une fois la scène active, l'iframe reste
+  // montée (pas de démontage au scroll suivant) pour éviter de relancer la
+  // vidéo. Ajustement fait pendant le rendu plutôt que dans un effet — la
+  // condition devient fausse dès que `mounted` passe à true, donc pas de
+  // boucle de rendu.
+  if (active && !mounted) setMounted(true);
 
   const scale = active ? 0.55 + Math.min(Math.max(progress, 0), 1) * 0.45 : 0.55;
 

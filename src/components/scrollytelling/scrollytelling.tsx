@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { SCENES, type Scene } from "./scenes-data";
 import { TextOverlay } from "./text-overlay";
 import { VideoWindow } from "./video-window";
-import type { Map3DStageHandle } from "./map-3d-stage";
-
-const Map3DStage = dynamic(() => import("./map-3d-stage").then((m) => m.Map3DStage), { ssr: false });
+import { PhotoBackdrop, type PhotoBackdropHandle } from "./photo-backdrop";
 
 function findActiveScene(progress: number): Scene {
   return SCENES.find((s) => progress >= s.start && progress < s.end) ?? SCENES[SCENES.length - 1];
@@ -18,7 +15,7 @@ function findActiveScene(progress: number): Scene {
 export function Scrollytelling() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const pinRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<Map3DStageHandle>(null);
+  const stageRef = useRef<PhotoBackdropHandle>(null);
   const [mode, setMode] = useState<"fallback" | "immersive">("fallback");
   const [activeScene, setActiveScene] = useState<Scene>(SCENES[0]);
   const [sceneLocalProgress, setSceneLocalProgress] = useState(0);
@@ -73,7 +70,7 @@ export function Scrollytelling() {
   return (
     <div ref={wrapperRef} className="relative h-[800vh]">
       <div ref={pinRef} className="relative h-screen w-full overflow-hidden bg-[var(--color-navy)]">
-        <Map3DStage ref={stageRef} />
+        <PhotoBackdrop ref={stageRef} />
         {activeScene.kind === "video" && activeScene.videoId && (
           <VideoWindow videoId={activeScene.videoId} active progress={sceneLocalProgress} />
         )}

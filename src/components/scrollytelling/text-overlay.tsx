@@ -10,12 +10,16 @@ export function TextOverlay({ scene, dimmed }: { scene: Scene; dimmed: boolean }
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // À chaque changement de scène (même d'une scène "carte" à une autre), on
-  // repousse explicitement le texte hors champ puis on le fait revenir avec
-  // le nouveau contenu — un simple fondu était trop discret pour que le
-  // changement de scène soit perçu (retour utilisateur).
+  // repousse explicitement le texte hors champ — immédiatement, pendant le
+  // rendu — puis on le fait revenir avec le nouveau contenu après un court
+  // délai : un simple fondu était trop discret pour que le changement de
+  // scène soit perçu (retour utilisateur).
+  if (scene.id !== displayed.id && punched) {
+    setPunched(false);
+  }
+
   useEffect(() => {
     if (scene.id === displayed.id) return;
-    setPunched(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setDisplayed(scene);
