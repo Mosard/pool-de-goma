@@ -151,9 +151,9 @@ export const PhotoBackdrop = forwardRef<PhotoBackdropHandle>(function PhotoBackd
             className="pointer-events-none absolute inset-0 z-[2]"
             style={{
               background:
-                "linear-gradient(to top, rgba(5,8,11,0.45) 0%, rgba(5,8,11,0.12) 26%, rgba(5,8,11,0) 55%)," +
-                "linear-gradient(to bottom, rgba(5,8,11,0.3) 0%, rgba(5,8,11,0) 22%)," +
-                "radial-gradient(120% 100% at 50% 50%, rgba(5,8,11,0) 55%, rgba(5,8,11,0.28) 100%)",
+                "linear-gradient(to top, rgba(5,8,11,0.6) 0%, rgba(5,8,11,0.35) 26%, rgba(5,8,11,0.22) 55%)," +
+                "linear-gradient(to bottom, rgba(5,8,11,0.48) 0%, rgba(5,8,11,0.25) 22%)," +
+                "radial-gradient(120% 100% at 50% 50%, rgba(5,8,11,0.2) 55%, rgba(5,8,11,0.45) 100%)",
             }}
           />
         </div>
