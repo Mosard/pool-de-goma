@@ -41,7 +41,7 @@ export function TextOverlay({ scene, dimmed }: { scene: Scene; dimmed: boolean }
       <div
         className={clsx(
           "flex flex-col items-center transition-all duration-300 ease-out",
-          punched ? "translate-y-0 scale-100 opacity-100" : "-translate-y-4 scale-95 opacity-0"
+          punched ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
         )}
       >
         <p className="mb-4 text-base font-bold uppercase tracking-[0.3em] text-blue-300 sm:text-lg">{displayed.eyebrow}</p>
