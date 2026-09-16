@@ -44,9 +44,9 @@ export function TextOverlay({ scene, dimmed }: { scene: Scene; dimmed: boolean }
           punched ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
         )}
       >
-        <p className="mb-4 text-base font-bold uppercase tracking-[0.3em] text-blue-300 sm:text-lg">{displayed.eyebrow}</p>
-        <h3 className="max-w-3xl text-6xl font-bold text-white sm:text-7xl">{displayed.title}</h3>
-        <p className="mt-5 max-w-xl text-xl text-gray-200 sm:text-2xl">{displayed.body}</p>
+        <p className="mb-4 text-base font-bold uppercase tracking-[0.3em] text-blue-300 [text-shadow:0_1px_12px_rgba(0,0,0,0.8)] sm:text-lg">{displayed.eyebrow}</p>
+        <h3 className="max-w-3xl text-6xl font-bold text-white [text-shadow:0_2px_24px_rgba(0,0,0,0.85),0_1px_4px_rgba(0,0,0,0.9)] sm:text-7xl">{displayed.title}</h3>
+        <p className="mt-5 max-w-xl text-xl text-gray-200 [text-shadow:0_1px_12px_rgba(0,0,0,0.8)] sm:text-2xl">{displayed.body}</p>
       </div>
     </div>
   );
