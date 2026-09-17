@@ -136,8 +136,12 @@ export function AiObservationSection() {
             const Icon = point.icon;
             return (
               <Reveal key={point.title} delay={0.05 * i}>
-                <div className="h-full rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <Icon size={20} strokeWidth={1.75} className="text-blue-300" />
+                <div className="group h-full rounded-2xl border border-white/10 bg-white/5 p-5 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-white/25 hover:bg-white/10">
+                  <Icon
+                    size={20}
+                    strokeWidth={1.75}
+                    className="text-blue-300 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110"
+                  />
                   <h3 className="mt-3 text-sm font-bold text-white">{point.title}</h3>
                   <p className="mt-2 text-sm text-gray-400">{point.body}</p>
                 </div>
@@ -170,8 +174,8 @@ export function AiResponseSection() {
         <div className="mx-auto mt-12 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {PROGRAM_STEPS.map((step, i) => (
             <Reveal key={step.title} delay={i * 0.06}>
-              <Card className="h-full !bg-white/80">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">
+              <Card className="group h-full !bg-white/80 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-gray-300 hover:shadow-md">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-600 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110">
                   {step.step}
                 </span>
                 <h3 className="mt-4 text-base font-bold text-gray-900">{step.title}</h3>
@@ -331,7 +335,7 @@ export function ActionSection() {
 
 function ActivityCard({ activity }: { activity: Activity }) {
   return (
-    <div className="grid grid-cols-1 gap-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8 lg:grid-cols-2 lg:items-center">
+    <div className="grid grid-cols-1 gap-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:border-gray-300 hover:shadow-md sm:p-8 lg:grid-cols-2 lg:items-center">
       <div className={clsx(!activity.videoId && !activity.image && "lg:order-2")}>
         <h3 className="text-base font-bold text-gray-900 sm:text-lg">{activity.title}</h3>
         <p className="mt-2 text-sm text-gray-600">{activity.body}</p>

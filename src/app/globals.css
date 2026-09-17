@@ -49,3 +49,8 @@ body {
   0% { background-position: 0% 0%; }
   100% { background-position: 100% 40%; }
 }
+
+@keyframes divider-sweep {
+  0%, 100% { transform: translateX(-70%); opacity: 0.35; }
+  50% { transform: translateX(70%); opacity: 1; }
+}

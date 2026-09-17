@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LeadershipSection } from "@/components/homepage/leadership-section";
 import { PoolsSection } from "@/components/homepage/pools-section";
+import { SectionDivider } from "@/components/section-divider";
 import {
   IppIntroSection,
   MissionSection,
@@ -64,7 +65,9 @@ export default async function Home() {
 
       {/* Modernisation de l'administration et outil gratuit pour les écoles */}
       <DigitalTransformationSection />
+      <SectionDivider />
       <SchoolSoftwareSection />
+      <SectionDivider />
 
       {/* Gouvernance de l'Inspection */}
       <LeadershipSection />
