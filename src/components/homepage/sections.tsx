@@ -118,7 +118,7 @@ export function AiObservationSection() {
           <Reveal delay={0.08} className="text-center lg:text-left">
             <p className="text-6xl font-bold tracking-tight sm:text-7xl">{AI_STAT.value}</p>
             <p className="mx-auto mt-4 max-w-md text-sm text-gray-300 lg:mx-0">{AI_STAT.label}</p>
-            <p className="mt-2 text-xs uppercase tracking-widest text-gray-500">— {AI_STAT.source}</p>
+            <p className="mt-2 text-xs uppercase tracking-widest text-gray-500">{AI_STAT.source}</p>
           </Reveal>
           <Reveal delay={0.14}>
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl">

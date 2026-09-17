@@ -33,7 +33,7 @@ export default async function Home() {
           Site en construction — contenu provisoire
         </p>
         <h1 className="max-w-3xl text-3xl font-bold sm:text-5xl">
-          Inspection Principale Provinciale de l&apos;Enseignement — Nord-Kivu 1
+          Inspection Principale Provinciale de l&apos;Enseignement Nord-Kivu 1
         </h1>
         <p className="mt-5 max-w-xl text-sm text-gray-200 sm:text-base">
           Une administration qui accompagne la transformation numérique de l&apos;enseignement, des institutions
