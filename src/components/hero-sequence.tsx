@@ -95,8 +95,11 @@ export function HeroSequence({ overlay = false }: { overlay?: boolean }) {
         />
       </div>
       {/* Assombrissement optionnel, seulement utile quand du texte est
-          superposé directement sur la séquence. */}
-      {overlay && <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-black/35" />}
+          superposé directement sur la séquence. Uniforme plutôt qu'en
+          dégradé : les photos réelles ont des zones claires (fenêtres,
+          rideaux) n'importe où dans le cadre, un dégradé laissait certaines
+          zones de texte illisibles. */}
+      {overlay && <div className="absolute inset-0 bg-black/50" />}
     </div>
   );
 }

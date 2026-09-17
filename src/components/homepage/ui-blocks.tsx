@@ -87,12 +87,17 @@ export function SectionHeading({
   description,
   align = "left",
   tone = "dark",
+  shadow = false,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   align?: "left" | "center";
   tone?: "dark" | "light";
+  // Ombre portée pour le texte clair posé directement sur une photo (plutôt
+  // qu'un fond uni) — les zones claires d'une vraie photo (fenêtre, mur)
+  // peuvent sinon rendre le texte illisible même avec un voile sombre.
+  shadow?: boolean;
 }) {
   return (
     <div className={clsx("max-w-2xl", align === "center" && "mx-auto text-center")}>
@@ -100,17 +105,30 @@ export function SectionHeading({
         <p
           className={clsx(
             "mb-2 text-xs font-semibold uppercase tracking-widest",
-            tone === "light" ? "text-blue-300" : "text-blue-600"
+            tone === "light" ? "text-blue-300" : "text-blue-600",
+            shadow && "[text-shadow:0_1px_10px_rgba(0,0,0,0.85)]"
           )}
         >
           {eyebrow}
         </p>
       )}
-      <h2 className={clsx("text-2xl font-bold sm:text-3xl", tone === "light" ? "text-white" : "text-gray-900")}>
+      <h2
+        className={clsx(
+          "text-2xl font-bold sm:text-3xl",
+          tone === "light" ? "text-white" : "text-gray-900",
+          shadow && "[text-shadow:0_2px_18px_rgba(0,0,0,0.9),0_1px_4px_rgba(0,0,0,0.95)]"
+        )}
+      >
         {title}
       </h2>
       {description && (
-        <p className={clsx("mt-3 text-sm sm:text-base", tone === "light" ? "text-gray-300" : "text-gray-600")}>
+        <p
+          className={clsx(
+            "mt-3 text-sm sm:text-base",
+            tone === "light" ? "text-gray-200" : "text-gray-600",
+            shadow && "[text-shadow:0_1px_10px_rgba(0,0,0,0.85)]"
+          )}
+        >
           {description}
         </p>
       )}

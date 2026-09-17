@@ -29,6 +29,7 @@ export function IppIntroSection() {
           title="Qui est l'IPP Nord-Kivu 1 ?"
           align="center"
           tone="light"
+          shadow
           description="L'Inspection Principale Provinciale de l'Enseignement — Nord-Kivu 1 est l'autorité provinciale chargée de veiller à la qualité et à la conformité de l'enseignement dans la Province Éducationnelle Nord-Kivu 1. Elle contrôle le fonctionnement des établissements, évalue la qualité pédagogique, encadre les inspecteurs et le personnel enseignant, et accompagne la modernisation de l'enseignement à travers les différents POOL qui composent la province."
         />
       </Reveal>
