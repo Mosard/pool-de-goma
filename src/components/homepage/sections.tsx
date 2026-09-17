@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { Reveal } from "@/components/reveal";
 import { SectionHeading, PlaceholderMedia, YoutubeEmbed } from "./ui-blocks";
+import { HeroSequence } from "@/components/hero-sequence";
 import { TrilogyGrid } from "./trilogy-grid";
 import {
   MISSION_ITEMS,
@@ -34,6 +35,11 @@ export function IppIntroSection() {
           la qualité pédagogique, encadre les inspecteurs et le personnel enseignant, et accompagne la
           modernisation de l&apos;enseignement à travers les différents POOL qui composent la province.
         </p>
+      </Reveal>
+      <Reveal delay={0.12} className="mt-10">
+        <div className="relative aspect-video w-full overflow-hidden rounded-3xl shadow-lg">
+          <HeroSequence />
+        </div>
       </Reveal>
     </div>
   );

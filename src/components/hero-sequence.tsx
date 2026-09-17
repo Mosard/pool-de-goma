@@ -10,7 +10,7 @@ import gsap from "gsap";
 // zoomées via transform-origin (jamais de recadrage qui déforme ou coupe un
 // visage) — pas de vidéo générée, pas de dépendance ajoutée : uniquement
 // GSAP, déjà utilisé ailleurs dans le projet.
-export function HeroSequence() {
+export function HeroSequence({ overlay = false }: { overlay?: boolean }) {
   const exteriorRef = useRef<HTMLDivElement>(null);
   const interiorRef = useRef<HTMLDivElement>(null);
 
@@ -94,9 +94,9 @@ export function HeroSequence() {
           style={{ objectPosition: "32% 48%" }}
         />
       </div>
-      {/* Légère assombrissement, concentré derrière le texte, pas un voile
-          uniforme — le fond doit rester lisible. */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-black/35" />
+      {/* Assombrissement optionnel, seulement utile quand du texte est
+          superposé directement sur la séquence. */}
+      {overlay && <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-black/35" />}
     </div>
   );
 }

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui";
 import { InstitutionalCarousel } from "@/components/institutional-carousel";
-import { HeroSequence } from "@/components/hero-sequence";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LeadershipSection } from "@/components/homepage/leadership-section";
@@ -28,29 +27,26 @@ export default async function Home() {
       <SiteHeader isConnected={isConnected} />
 
       {/* Hero institutionnel */}
-      <section id="accueil" className="relative flex min-h-[80vh] flex-col items-center justify-center overflow-hidden px-6 text-center text-white">
-        <HeroSequence />
-        <div className="relative z-10 flex flex-col items-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-blue-300">
-            Site en construction — contenu provisoire
-          </p>
-          <h1 className="max-w-3xl text-3xl font-bold sm:text-5xl">
-            Inspection Principale Provinciale de l&apos;Enseignement — Nord-Kivu 1
-          </h1>
-          <p className="mt-5 max-w-xl text-sm text-gray-200 sm:text-base">
-            Une administration qui accompagne la transformation numérique de l&apos;enseignement, des institutions
-            jusqu&apos;aux élèves.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link href="/login">
-              <Button className="!bg-white !text-blue-700 hover:!bg-gray-100">Espace professionnel</Button>
-            </Link>
-            <Link href="/demande-de-compte">
-              <Button variant="ghost" className="border border-white/30 !text-white hover:!bg-white/10">
-                Demander un accès
-              </Button>
-            </Link>
-          </div>
+      <section id="accueil" className="hero-gradient flex min-h-[80vh] flex-col items-center justify-center px-6 text-center text-white">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-blue-300">
+          Site en construction — contenu provisoire
+        </p>
+        <h1 className="max-w-3xl text-3xl font-bold sm:text-5xl">
+          Inspection Principale Provinciale de l&apos;Enseignement — Nord-Kivu 1
+        </h1>
+        <p className="mt-5 max-w-xl text-sm text-gray-200 sm:text-base">
+          Une administration qui accompagne la transformation numérique de l&apos;enseignement, des institutions
+          jusqu&apos;aux élèves.
+        </p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Link href="/login">
+            <Button className="!bg-white !text-blue-700 hover:!bg-gray-100">Espace professionnel</Button>
+          </Link>
+          <Link href="/demande-de-compte">
+            <Button variant="ghost" className="border border-white/30 !text-white hover:!bg-white/10">
+              Demander un accès
+            </Button>
+          </Link>
         </div>
       </section>
 
