@@ -57,9 +57,11 @@ export function MissionSection() {
             return (
               <Reveal key={item.title} delay={i * 0.05}>
                 <Card className="group h-full transition-all duration-300 ease-out hover:-translate-y-1 hover:border-gray-300 hover:shadow-md">
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110">
-                    <Icon size={20} strokeWidth={1.75} />
-                  </span>
+                  <Icon
+                    size={26}
+                    strokeWidth={1.5}
+                    className="text-blue-600 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110"
+                  />
                   <h3 className="mt-4 text-lg font-bold text-gray-900">{item.title}</h3>
                   <p className="mt-2 text-sm text-gray-600">{item.description}</p>
                 </Card>
@@ -293,9 +295,7 @@ export function SchoolSoftwareSection() {
               <Reveal key={feature.title} delay={0.05 * i}>
                 <InteractiveCard className="!p-4">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                      <Icon size={18} strokeWidth={1.75} />
-                    </span>
+                    <Icon size={22} strokeWidth={1.5} className="shrink-0 text-blue-600" />
                     <span className="text-sm font-semibold text-gray-900">{feature.title}</span>
                   </div>
                 </InteractiveCard>
