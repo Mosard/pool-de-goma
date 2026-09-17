@@ -26,7 +26,7 @@ export function TrilogyGrid({ pillars }: { pillars: TrilogyPillar[] }) {
               onMouseEnter={() => setHovered(i)}
               onMouseLeave={() => setHovered(null)}
               className={clsx(
-                "flex h-full flex-col items-center rounded-2xl border bg-white p-6 text-center transition-all duration-300 ease-out",
+                "flex h-full flex-col items-center rounded-2xl border bg-white/80 p-6 text-center transition-all duration-300 ease-out",
                 isHovered && "scale-[1.03] border-gray-200 shadow-md",
                 isSoftened && "scale-[0.98] border-gray-100 opacity-70",
                 !isHovered && !isSoftened && "border-gray-200 shadow-sm"

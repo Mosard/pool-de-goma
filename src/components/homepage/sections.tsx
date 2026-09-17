@@ -71,8 +71,11 @@ export function MissionSection() {
 
 export function TrilogySection() {
   return (
-    <div className="px-6 py-16 sm:px-10">
-      <div className="mx-auto max-w-6xl">
+    <div className="relative overflow-hidden px-6 py-16 sm:px-10">
+      <div className="pointer-events-none absolute inset-0">
+        <RdcMapCanvas />
+      </div>
+      <div className="relative z-10 mx-auto max-w-6xl">
         <Reveal>
           <SectionHeading
             eyebrow="Fondements"
@@ -84,7 +87,7 @@ export function TrilogySection() {
         <Reveal delay={0.08}>
           <TrilogyGrid pillars={TRILOGY_PILLARS} />
         </Reveal>
-        <Reveal delay={0.14} className="mx-auto mt-6 max-w-2xl rounded-2xl border border-gray-200 bg-white px-6 py-5 text-center shadow-sm">
+        <Reveal delay={0.14} className="mx-auto mt-6 max-w-2xl rounded-2xl border border-gray-200 bg-white/80 px-6 py-5 text-center shadow-sm">
           <p className="text-sm font-semibold text-gray-900">{ADMINISTRATIVE_CONTROL.title}</p>
           <p className="mt-1 text-sm text-gray-500">{ADMINISTRATIVE_CONTROL.body}</p>
         </Reveal>
@@ -146,48 +149,53 @@ export function AiObservationSection() {
 
 export function AiResponseSection() {
   return (
-    <section className="px-6 py-20 sm:px-10">
-      <div className="mx-auto max-w-4xl text-center">
-        <Reveal>
-          <SectionHeading eyebrow="La réponse de l'IPP" title="Former pour maîtriser" align="center" />
-          <p className="mx-auto mt-5 max-w-2xl text-sm text-gray-600 sm:text-base">
-            Plutôt que d&apos;interdire l&apos;intelligence artificielle, l&apos;Inspection Principale
-            Provinciale choisit de former l&apos;ensemble des acteurs de l&apos;enseignement à un usage
-            responsable, éthique et maîtrisé de ces outils.
-          </p>
-        </Reveal>
+    <section className="relative overflow-hidden px-6 py-20 sm:px-10">
+      <div className="pointer-events-none absolute inset-0">
+        <RdcMapCanvas />
       </div>
-      <div className="mx-auto mt-12 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {PROGRAM_STEPS.map((step, i) => (
-          <Reveal key={step.title} delay={i * 0.06}>
-            <Card className="h-full">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">
-                {step.step}
-              </span>
-              <h3 className="mt-4 text-base font-bold text-gray-900">{step.title}</h3>
-              <p className="mt-2 text-sm text-gray-600">{step.body}</p>
-            </Card>
+      <div className="relative z-10">
+        <div className="mx-auto max-w-4xl text-center">
+          <Reveal>
+            <SectionHeading eyebrow="La réponse de l'IPP" title="Former pour maîtriser" align="center" />
+            <p className="mx-auto mt-5 max-w-2xl text-sm text-gray-600 sm:text-base">
+              Plutôt que d&apos;interdire l&apos;intelligence artificielle, l&apos;Inspection Principale
+              Provinciale choisit de former l&apos;ensemble des acteurs de l&apos;enseignement à un usage
+              responsable, éthique et maîtrisé de ces outils.
+            </p>
           </Reveal>
-        ))}
-      </div>
-
-      <Reveal delay={0.2} className="mx-auto mt-14 max-w-4xl">
-        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-widest text-gray-400">
-          Une formation qui se diffuse
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-3">
-          {DIFFUSION_CHAIN.map((step, i) => (
-            <span key={step} className="flex items-center gap-3">
-              <span className="rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700">
-                {step}
-              </span>
-              {i < DIFFUSION_CHAIN.length - 1 && (
-                <ArrowRight size={16} strokeWidth={1.75} className="text-gray-300" />
-              )}
-            </span>
+        </div>
+        <div className="mx-auto mt-12 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {PROGRAM_STEPS.map((step, i) => (
+            <Reveal key={step.title} delay={i * 0.06}>
+              <Card className="h-full !bg-white/80">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">
+                  {step.step}
+                </span>
+                <h3 className="mt-4 text-base font-bold text-gray-900">{step.title}</h3>
+                <p className="mt-2 text-sm text-gray-600">{step.body}</p>
+              </Card>
+            </Reveal>
           ))}
         </div>
-      </Reveal>
+
+        <Reveal delay={0.2} className="mx-auto mt-14 max-w-4xl">
+          <p className="mb-4 text-center text-xs font-semibold uppercase tracking-widest text-gray-400">
+            Une formation qui se diffuse
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-3">
+            {DIFFUSION_CHAIN.map((step, i) => (
+              <span key={step} className="flex items-center gap-3">
+                <span className="rounded-full bg-gray-100/80 px-4 py-2 text-sm font-semibold text-gray-700">
+                  {step}
+                </span>
+                {i < DIFFUSION_CHAIN.length - 1 && (
+                  <ArrowRight size={16} strokeWidth={1.75} className="text-gray-300" />
+                )}
+              </span>
+            ))}
+          </div>
+        </Reveal>
+      </div>
     </section>
   );
 }

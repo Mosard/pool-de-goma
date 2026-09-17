@@ -166,7 +166,7 @@ export function InteractiveCard({
   return (
     <div
       className={clsx(
-        "group relative rounded-2xl border border-gray-200 bg-white p-6 transition-all duration-300 ease-out",
+        "group relative rounded-2xl border border-gray-200 bg-white/80 p-6 transition-all duration-300 ease-out",
         "hover:-translate-y-1 hover:border-gray-300 hover:shadow-lg",
         className
       )}

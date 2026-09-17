@@ -1,11 +1,15 @@
 import { Reveal } from "@/components/reveal";
 import { SectionHeading, InteractiveCard, PersonSummary } from "./ui-blocks";
+import { RdcMapCanvas } from "./rdc-map-canvas";
 import { POOLS } from "./homepage-data";
 
 export function PoolsSection() {
   return (
-    <section id="pools" className="bg-gray-50 px-6 py-20 sm:px-10">
-      <div className="mx-auto max-w-6xl">
+    <section id="pools" className="relative overflow-hidden px-6 py-20 sm:px-10">
+      <div className="pointer-events-none absolute inset-0">
+        <RdcMapCanvas />
+      </div>
+      <div className="relative z-10 mx-auto max-w-6xl">
         <Reveal>
           <SectionHeading
             eyebrow="Organisation territoriale"

@@ -1,11 +1,15 @@
 import { Reveal } from "@/components/reveal";
 import { SectionHeading, InteractiveCard, PersonSummary } from "./ui-blocks";
+import { RdcMapCanvas } from "./rdc-map-canvas";
 import { IPP_LEADER, IPPA_MEMBERS } from "./homepage-data";
 
 export function LeadershipSection() {
   return (
-    <section id="direction" className="bg-white px-6 py-20 sm:px-10">
-      <div className="mx-auto max-w-6xl">
+    <section id="direction" className="relative overflow-hidden px-6 py-20 sm:px-10">
+      <div className="pointer-events-none absolute inset-0">
+        <RdcMapCanvas />
+      </div>
+      <div className="relative z-10 mx-auto max-w-6xl">
         <Reveal>
           <SectionHeading
             eyebrow="Gouvernance"
