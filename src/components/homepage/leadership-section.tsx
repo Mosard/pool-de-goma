@@ -1,5 +1,6 @@
+import Image from "next/image";
 import { Reveal } from "@/components/reveal";
-import { SectionHeading, PlaceholderMedia, ContactIcons } from "./ui-blocks";
+import { SectionHeading, GenericAvatar, ContactIcons } from "./ui-blocks";
 import { IPP_LEADER, IPPA_MEMBERS, type LeadershipMember } from "./homepage-data";
 
 export function LeadershipSection() {
@@ -16,11 +17,15 @@ export function LeadershipSection() {
         </Reveal>
 
         <Reveal delay={0.05} className="mx-auto mt-12 flex max-w-xs flex-col items-center text-center">
-          <PlaceholderMedia
-            label="Photo de l'IPP"
-            rounded="rounded-full"
-            className="aspect-square w-40 sm:w-48"
-          />
+          <div className="relative aspect-square w-40 overflow-hidden rounded-full bg-gray-100 sm:w-48">
+            <Image
+              src="/scrollytelling/ipp.png"
+              alt={IPP_LEADER.name}
+              fill
+              sizes="192px"
+              className="object-cover"
+            />
+          </div>
           <h3 className="mt-5 text-lg font-bold text-gray-900">{IPP_LEADER.name}</h3>
           <p className="mt-1 text-sm text-gray-500">{IPP_LEADER.role}</p>
           <div className="mt-3">
@@ -43,7 +48,7 @@ export function LeadershipSection() {
 function IppaCard({ member }: { member: LeadershipMember }) {
   return (
     <div className="flex flex-col items-center text-center">
-      <PlaceholderMedia label="Photo" rounded="rounded-full" className="aspect-square w-24" />
+      <GenericAvatar className="aspect-square w-24" />
       <h4 className="mt-4 text-sm font-semibold text-gray-900">{member.name}</h4>
       <p className="mt-0.5 text-xs text-gray-500">{member.role}</p>
       {member.attribution && <p className="mt-0.5 text-xs italic text-gray-400">{member.attribution}</p>}

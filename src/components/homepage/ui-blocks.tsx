@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Image as ImageIcon, Mail, MessageCircle, Phone } from "lucide-react";
+import { Image as ImageIcon, Mail, MessageCircle, Phone, UserRound } from "lucide-react";
 import type { LeadershipContact } from "./homepage-data";
 
 // Espace réservé propre et homogène pour les futurs visuels (générés
@@ -118,5 +118,43 @@ export function SectionHeading({
         </p>
       )}
     </div>
+  );
+}
+
+// Avatar générique (icône SVG sur fond uni) pour les membres de la direction
+// dont la photo réelle n'est pas encore disponible — volontairement neutre,
+// pour ne jamais faire passer une photo de tiers pour la leur.
+export function GenericAvatar({ className }: { className?: string }) {
+  return (
+    <div className={clsx("flex items-center justify-center rounded-full bg-blue-50 text-blue-300", className)}>
+      <UserRound className="h-1/2 w-1/2" strokeWidth={1.5} />
+    </div>
+  );
+}
+
+export function YoutubeEmbed({
+  videoId,
+  title,
+  caption,
+}: {
+  videoId: string;
+  title: string;
+  caption?: string;
+}) {
+  return (
+    <figure className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="relative aspect-video w-full bg-gray-100">
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+          title={title}
+          className="absolute inset-0 h-full w-full"
+          loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+        />
+      </div>
+      {caption && <figcaption className="px-5 py-4 text-sm text-gray-600">{caption}</figcaption>}
+    </figure>
   );
 }

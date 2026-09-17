@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { clsx } from "clsx";
-import { PlaceholderMedia } from "./ui-blocks";
 import type { TrilogyPillar } from "./homepage-data";
 
 export function TrilogyGrid({ pillars }: { pillars: TrilogyPillar[] }) {
@@ -33,7 +32,9 @@ export function TrilogyGrid({ pillars }: { pillars: TrilogyPillar[] }) {
                 !isHovered && !isSoftened && "border-gray-200 shadow-sm"
               )}
             >
-              <PlaceholderMedia label="Illustration" className="aspect-square w-20" />
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">
+                {pillar.number}
+              </span>
               <h3 className="mt-5 text-base font-bold text-gray-900">{pillar.title}</h3>
               <p className="mt-2 text-sm text-gray-500">{pillar.body}</p>
             </div>

@@ -1,10 +1,20 @@
-import { ClipboardCheck, HeartHandshake, ShieldCheck, Users, type LucideIcon } from "lucide-react";
+import {
+  BookOpenCheck,
+  ClipboardCheck,
+  GraduationCap,
+  HeartHandshake,
+  ShieldAlert,
+  ShieldCheck,
+  Smartphone,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
 // Contenu éditorial de la page d'accueil publique.
-// Tout ce fichier est volontairement provisoire (voir MASTER_INSPECTION_NORD_KIVU_1.md
-// §24 « Éléments encore à fournir ») : noms, attributions, contacts et chiffre
-// clé sont des espaces réservés destinés à être remplacés par les données
-// officielles de l'Inspection, sans toucher aux composants qui les affichent.
+// La trilogie, le chiffre IA (discours RAP2026) et les attributions IPPA
+// connues sont désormais du contenu réel fourni par l'Inspection. Ce qui
+// reste un espace réservé (noms/contacts nominatifs, 4 IPPA restants) est
+// signalé au cas par cas — voir MASTER_INSPECTION_NORD_KIVU_1.md §24.
 
 export type MissionItem = {
   title: string;
@@ -36,30 +46,81 @@ export const MISSION_ITEMS: MissionItem[] = [
 ];
 
 export type TrilogyPillar = {
+  number: string;
   title: string;
   body: string;
 };
 
-// Structure prête à recevoir la formulation officielle de la « trilogie de
-// l'Inspection » (MASTER_INSPECTION_NORD_KIVU_1.md §3 et §24) — ne pas
-// inventer de contenu définitif ici.
+// Formulation officielle de la « trilogie de l'Inspection » (fournie par
+// l'Inspection). Le contrôle administratif est volontairement distinct de
+// ces trois piliers — voir ADMINISTRATIVE_CONTROL plus bas.
 export const TRILOGY_PILLARS: TrilogyPillar[] = [
-  { title: "Pilier I", body: "Formulation officielle à venir." },
-  { title: "Pilier II", body: "Formulation officielle à venir." },
-  { title: "Pilier III", body: "Formulation officielle à venir." },
+  {
+    number: "01",
+    title: "Contrôle pédagogique",
+    body: "Qualité de l'enseignement, suivi des programmes et accompagnement des enseignants.",
+  },
+  {
+    number: "02",
+    title: "Contrôle financier",
+    body: "Transparence, traçabilité et gouvernance des ressources de l'enseignement.",
+  },
+  {
+    number: "03",
+    title: "Contrôle de la formation",
+    body: "Renforcement des capacités et amélioration continue des équipes.",
+  },
 ];
+
+// Bloc distinct, volontairement présenté à part de la trilogie (ce n'est pas
+// un quatrième pilier).
+export const ADMINISTRATIVE_CONTROL = {
+  title: "Contrôle administratif",
+  body: "Vérification du fonctionnement administratif des établissements et des services de l'Inspection.",
+};
 
 export type AiStat = {
   value: string;
   label: string;
+  source: string;
 };
 
-// "XX %" est un espace réservé assumé : ne jamais le remplacer par un chiffre
-// inventé. Seule l'Inspection peut fournir la donnée réelle.
+// Chiffre cité publiquement par l'Inspection (discours RAP2026) — à mettre à
+// jour si l'Inspection communique une donnée plus précise ou plus récente.
 export const AI_STAT: AiStat = {
-  value: "XX %",
-  label: "Constat à confirmer par l'Inspection — part des élèves et enseignants utilisant déjà l'intelligence artificielle sans encadrement.",
+  value: "+ 80 %",
+  label: "des téléphones confisqués pendant les épreuves auraient servi à interroger l'intelligence artificielle.",
+  source: "Discours RAP2026",
 };
+
+export type AiObservation = {
+  icon: LucideIcon;
+  title: string;
+  body: string;
+};
+
+export const AI_OBSERVATIONS: AiObservation[] = [
+  {
+    icon: Smartphone,
+    title: "Des élèves déjà utilisateurs",
+    body: "Sur le terrain, l'usage de l'intelligence artificielle par les élèves — y compris pendant les évaluations — est une réalité déjà installée.",
+  },
+  {
+    icon: BookOpenCheck,
+    title: "Des enseignants parfois sans méthode",
+    body: "Certains enseignants y recourent également, souvent sans méthode ni cadre pédagogique établi.",
+  },
+  {
+    icon: ShieldAlert,
+    title: "Des risques réels",
+    body: "Mal maîtrisée, l'intelligence artificielle expose à des erreurs factuelles et à la diffusion de contenus falsifiés (deepfakes).",
+  },
+  {
+    icon: GraduationCap,
+    title: "Préparer les métiers de demain",
+    body: "Au-delà du risque, l'enjeu est aussi de préparer dès à présent les élèves aux métiers que l'intelligence artificielle transforme déjà.",
+  },
+];
 
 export type ProgramStep = {
   step: string;
@@ -67,28 +128,32 @@ export type ProgramStep = {
   body: string;
 };
 
+// Programme « Former pour maîtriser ».
 export const PROGRAM_STEPS: ProgramStep[] = [
   {
     step: "1",
-    title: "Inspecteurs",
-    body: "Former les inspecteurs itinérants à la réalité et aux usages de l'intelligence artificielle en milieu scolaire.",
+    title: "Comprendre l'IA",
+    body: "Connaître ce qu'est l'intelligence artificielle, ce qu'elle permet et ses limites réelles.",
   },
   {
     step: "2",
-    title: "Enseignants",
-    body: "Accompagner les enseignants dans une intégration raisonnée de ces outils dans leurs pratiques pédagogiques.",
+    title: "Utiliser l'IA avec éthique",
+    body: "Adopter un usage responsable, transparent et conforme aux règles de l'enseignement.",
   },
   {
     step: "3",
-    title: "Établissements",
-    body: "Doter les établissements de repères clairs, cohérents avec les programmes officiels.",
+    title: "Créer avec l'IA",
+    body: "Exploiter ces outils pour préparer, enrichir et différencier les activités pédagogiques.",
   },
   {
     step: "4",
-    title: "Élèves",
-    body: "Sensibiliser les élèves à un usage éthique, critique et responsable de l'intelligence artificielle.",
+    title: "Évaluation certifiante",
+    body: "Vérifier et certifier la maîtrise acquise, plutôt que de simplement l'exiger.",
   },
 ];
+
+// Diffusion du programme de formation à travers la chaîne hiérarchique.
+export const DIFFUSION_CHAIN: string[] = ["IPP", "Inspecteurs", "Enseignants", "Élèves"];
 
 export type LeadershipContact = {
   phone?: string;
@@ -114,32 +179,63 @@ export const IPP_LEADER: LeadershipMember = {
   contact: {},
 };
 
+// Fonctions confirmées à ce stade (MASTER_INSPECTION_NORD_KIVU_1.md §13 +
+// précisions reçues) : formation, évaluation, titres, administration et
+// finances, exploitation, personnel. Ne pas en inventer d'autres — les 4
+// IPPA restants gardent une attribution à préciser tant qu'elle n'est pas
+// confirmée.
+const KNOWN_IPPA_ATTRIBUTIONS = [
+  "Formation",
+  "Évaluation",
+  "Titres",
+  "Administration et finances",
+  "Exploitation",
+  "Personnel",
+];
+
 export const IPPA_MEMBERS: LeadershipMember[] = Array.from({ length: 10 }, (_, i) => ({
   id: `ippa-${i + 1}`,
   name: `IPPA ${i + 1}`,
   role: "Inspecteur Principal Adjoint",
-  attribution: "Attribution à préciser",
+  attribution: KNOWN_IPPA_ATTRIBUTIONS[i] ?? "Attribution à préciser",
   contact: {},
 }));
 
 export type Activity = {
   title: string;
   body: string;
+  image?: string;
+  videoId?: string;
+  videoCaption?: string;
+  skills?: string[];
 };
 
-// Contenu de démonstration — remplacé par de vraies actions/reportages une
-// fois le back-office éditorial et les médias disponibles.
 export const ACTIVITIES: Activity[] = [
   {
-    title: "Formation des inspecteurs itinérants",
-    body: "Sessions de formation numérique organisées à l'attention des inspecteurs itinérants.",
+    title: "Transformation numérique du corps inspectoral",
+    body: "La montée en compétence des inspecteurs suit une progression claire, de l'informatique de base jusqu'à l'accompagnement des élèves.",
+    videoId: "nXDotxUYpHU",
+    videoCaption: "Formation numérique des responsables, agents et inspecteurs itinérants de l'Inspection.",
+    skills: [
+      "Informatique de base",
+      "Windows",
+      "Excel",
+      "Internet",
+      "Formation des inspecteurs",
+      "Formation des enseignants",
+      "Préparation des élèves",
+    ],
   },
   {
     title: "Rentrée scolaire 2026-2027",
     body: "Lancement de la rentrée sous le signe de la rigueur numérique, à l'Institut de Goma (INSTIGO).",
+    videoId: "SufOnpVGKtk",
+    videoCaption:
+      "Lancement de la rentrée scolaire 2026-2027 à l'INSTIGO : rigueur numérique et formation des enseignants aux outils numériques.",
   },
   {
     title: "Missions sur le terrain",
     body: "Contrôle et évaluation des établissements scolaires à travers les différents POOL de la province.",
+    image: "/homepage/bureau-ippnk1.jpg",
   },
 ];

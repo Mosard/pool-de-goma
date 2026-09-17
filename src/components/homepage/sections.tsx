@@ -1,9 +1,22 @@
 import Link from "next/link";
+import Image from "next/image";
+import { clsx } from "clsx";
+import { ArrowRight } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { Reveal } from "@/components/reveal";
-import { SectionHeading, PlaceholderMedia } from "./ui-blocks";
+import { SectionHeading, PlaceholderMedia, YoutubeEmbed } from "./ui-blocks";
 import { TrilogyGrid } from "./trilogy-grid";
-import { MISSION_ITEMS, TRILOGY_PILLARS, AI_STAT, PROGRAM_STEPS, ACTIVITIES } from "./homepage-data";
+import {
+  MISSION_ITEMS,
+  TRILOGY_PILLARS,
+  ADMINISTRATIVE_CONTROL,
+  AI_STAT,
+  AI_OBSERVATIONS,
+  PROGRAM_STEPS,
+  DIFFUSION_CHAIN,
+  ACTIVITIES,
+  type Activity,
+} from "./homepage-data";
 
 export function IppIntroSection() {
   return (
@@ -62,12 +75,16 @@ export function TrilogySection() {
           <SectionHeading
             eyebrow="Fondements"
             title="Trilogie de l'Inspection"
-            description="Trois piliers fondent l'action de l'Inspection. Leur formulation officielle sera intégrée prochainement."
+            description="Trois piliers fondent l'action de l'Inspection."
             align="center"
           />
         </Reveal>
         <Reveal delay={0.08}>
           <TrilogyGrid pillars={TRILOGY_PILLARS} />
+        </Reveal>
+        <Reveal delay={0.14} className="mx-auto mt-6 max-w-2xl rounded-2xl bg-gray-50 px-6 py-5 text-center">
+          <p className="text-sm font-semibold text-gray-900">{ADMINISTRATIVE_CONTROL.title}</p>
+          <p className="mt-1 text-sm text-gray-500">{ADMINISTRATIVE_CONTROL.body}</p>
         </Reveal>
       </div>
     </div>
@@ -77,24 +94,49 @@ export function TrilogySection() {
 export function AiObservationSection() {
   return (
     <section className="bg-[var(--color-navy)] px-6 py-20 text-white sm:px-10">
-      <div className="mx-auto max-w-4xl text-center">
+      <div className="mx-auto max-w-5xl">
         <Reveal>
           <SectionHeading
             eyebrow="Constat institutionnel"
-            title="Une réalité de terrain : l'intelligence artificielle est déjà là"
+            title="L'intelligence artificielle est déjà dans nos écoles"
             tone="light"
             align="center"
           />
-          <p className="mx-auto mt-5 max-w-2xl text-sm text-gray-300 sm:text-base">
-            Sur le terrain, les inspecteurs constatent une adoption rapide et souvent incontrôlée des
-            outils d&apos;intelligence artificielle par les élèves, et parfois les enseignants, sans
-            accompagnement ni cadre pédagogique clair.
-          </p>
         </Reveal>
-        <Reveal delay={0.1} className="mt-10">
-          <p className="text-6xl font-bold tracking-tight sm:text-7xl">{AI_STAT.value}</p>
-          <p className="mx-auto mt-4 max-w-xl text-sm text-gray-400">{AI_STAT.label}</p>
-        </Reveal>
+
+        <div className="mt-12 grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+          <Reveal delay={0.08} className="text-center lg:text-left">
+            <p className="text-6xl font-bold tracking-tight sm:text-7xl">{AI_STAT.value}</p>
+            <p className="mx-auto mt-4 max-w-md text-sm text-gray-300 lg:mx-0">{AI_STAT.label}</p>
+            <p className="mt-2 text-xs uppercase tracking-widest text-gray-500">— {AI_STAT.source}</p>
+          </Reveal>
+          <Reveal delay={0.14}>
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+              <Image
+                src="/homepage/eleves-numerique.jpg"
+                alt="Élèves utilisant des outils numériques en classe"
+                fill
+                sizes="(min-width: 1024px) 480px, 100vw"
+                className="object-cover"
+              />
+            </div>
+          </Reveal>
+        </div>
+
+        <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {AI_OBSERVATIONS.map((point, i) => {
+            const Icon = point.icon;
+            return (
+              <Reveal key={point.title} delay={0.05 * i}>
+                <div className="h-full rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <Icon size={20} strokeWidth={1.75} className="text-blue-300" />
+                  <h3 className="mt-3 text-sm font-bold text-white">{point.title}</h3>
+                  <p className="mt-2 text-sm text-gray-400">{point.body}</p>
+                </div>
+              </Reveal>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -105,15 +147,11 @@ export function AiResponseSection() {
     <section className="px-6 py-20 sm:px-10">
       <div className="mx-auto max-w-4xl text-center">
         <Reveal>
-          <SectionHeading
-            eyebrow="La réponse de l'IPP"
-            title="Interdire ne suffit pas : il faut éduquer"
-            align="center"
-          />
+          <SectionHeading eyebrow="La réponse de l'IPP" title="Former pour maîtriser" align="center" />
           <p className="mx-auto mt-5 max-w-2xl text-sm text-gray-600 sm:text-base">
             Plutôt que d&apos;interdire l&apos;intelligence artificielle, l&apos;Inspection Principale
-            Provinciale choisit de former et d&apos;accompagner l&apos;ensemble des acteurs de
-            l&apos;enseignement vers un usage responsable et pédagogique de ces outils.
+            Provinciale choisit de former l&apos;ensemble des acteurs de l&apos;enseignement à un usage
+            responsable, éthique et maîtrisé de ces outils.
           </p>
         </Reveal>
       </div>
@@ -130,6 +168,24 @@ export function AiResponseSection() {
           </Reveal>
         ))}
       </div>
+
+      <Reveal delay={0.2} className="mx-auto mt-14 max-w-4xl">
+        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-widest text-gray-400">
+          Une formation qui se diffuse
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-3">
+          {DIFFUSION_CHAIN.map((step, i) => (
+            <span key={step} className="flex items-center gap-3">
+              <span className="rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700">
+                {step}
+              </span>
+              {i < DIFFUSION_CHAIN.length - 1 && (
+                <ArrowRight size={16} strokeWidth={1.75} className="text-gray-300" />
+              )}
+            </span>
+          ))}
+        </div>
+      </Reveal>
     </section>
   );
 }
@@ -166,7 +222,15 @@ export function DigitalTransformationSection() {
           </p>
         </Reveal>
         <Reveal delay={0.1}>
-          <PlaceholderMedia label="Visuel — transformation numérique" className="aspect-[4/3] w-full" />
+          <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+            <Image
+              src="/homepage/formation-enseignants.jpg"
+              alt="Formation numérique des enseignants"
+              fill
+              sizes="(min-width: 1024px) 560px, 100vw"
+              className="object-cover"
+            />
+          </div>
         </Reveal>
       </div>
     </section>
@@ -199,31 +263,61 @@ export function SchoolSoftwareSection() {
 export function ActionSection() {
   return (
     <section className="bg-gray-50 px-6 py-20 sm:px-10">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-5xl">
         <Reveal>
           <SectionHeading eyebrow="Sur le terrain" title="L'Inspection en action" align="center" />
-          <p className="mx-auto mt-2 max-w-xl text-center text-xs font-semibold uppercase tracking-wide text-gray-400">
-            Contenu de démonstration — en attente des reportages réels
-          </p>
         </Reveal>
-        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+        <div className="mt-10 space-y-8">
           {ACTIVITIES.map((activity, i) => (
             <Reveal key={activity.title} delay={i * 0.06}>
-              <div className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <PlaceholderMedia
-                  label="Photo / vidéo"
-                  rounded="rounded-none"
-                  className="aspect-video w-full transition-transform duration-500 ease-out group-hover:scale-105"
-                />
-                <div className="p-5">
-                  <h3 className="text-sm font-bold text-gray-900">{activity.title}</h3>
-                  <p className="mt-1.5 text-sm text-gray-600">{activity.body}</p>
-                </div>
-              </div>
+              <ActivityCard activity={activity} />
             </Reveal>
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function ActivityCard({ activity }: { activity: Activity }) {
+  return (
+    <div className="grid grid-cols-1 gap-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8 lg:grid-cols-2 lg:items-center">
+      <div className={clsx(!activity.videoId && !activity.image && "lg:order-2")}>
+        <h3 className="text-base font-bold text-gray-900 sm:text-lg">{activity.title}</h3>
+        <p className="mt-2 text-sm text-gray-600">{activity.body}</p>
+        {activity.skills && (
+          <ol className="mt-5 flex flex-wrap gap-2">
+            {activity.skills.map((skill, i) => (
+              <li
+                key={skill}
+                className="flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700"
+              >
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                {skill}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div>
+        {activity.videoId ? (
+          <YoutubeEmbed videoId={activity.videoId} title={activity.title} caption={activity.videoCaption} />
+        ) : activity.image ? (
+          <div className="group relative aspect-video w-full overflow-hidden rounded-xl">
+            <Image
+              src={activity.image}
+              alt={activity.title}
+              fill
+              sizes="(min-width: 1024px) 480px, 100vw"
+              className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+            />
+          </div>
+        ) : (
+          <PlaceholderMedia label="Photo / vidéo" className="aspect-video w-full" />
+        )}
+      </div>
+    </div>
   );
 }
