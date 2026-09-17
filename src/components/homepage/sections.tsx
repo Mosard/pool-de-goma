@@ -6,6 +6,7 @@ import { Button, Card } from "@/components/ui";
 import { Reveal } from "@/components/reveal";
 import { SectionHeading, PlaceholderMedia, YoutubeEmbed } from "./ui-blocks";
 import { HeroSequence } from "@/components/hero-sequence";
+import { RdcMapCanvas } from "./rdc-map-canvas";
 import { TrilogyGrid } from "./trilogy-grid";
 import {
   MISSION_ITEMS,
@@ -65,6 +66,29 @@ export function MissionSection() {
   );
 }
 
+export function RdcMapSection() {
+  return (
+    <section className="bg-[var(--color-navy)] px-6 py-20 text-white sm:px-10">
+      <div className="mx-auto max-w-3xl text-center">
+        <Reveal>
+          <SectionHeading
+            eyebrow="Ancrage territorial"
+            title="De la RDC à la Province Éducationnelle Nord-Kivu 1"
+            description="L'Inspection Principale Provinciale s'inscrit dans l'organisation nationale de l'enseignement, avec une action concentrée sur la Province Éducationnelle Nord-Kivu 1 et les différents POOL qui la composent."
+            align="center"
+            tone="light"
+          />
+        </Reveal>
+        <Reveal delay={0.1} className="mx-auto mt-10 max-w-md">
+          <div className="relative aspect-square w-full overflow-hidden rounded-3xl">
+            <RdcMapCanvas />
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
 export function TrilogySection() {
   return (
     <div className="px-6 py-16 sm:px-10">
@@ -80,7 +104,7 @@ export function TrilogySection() {
         <Reveal delay={0.08}>
           <TrilogyGrid pillars={TRILOGY_PILLARS} />
         </Reveal>
-        <Reveal delay={0.14} className="mx-auto mt-6 max-w-2xl rounded-2xl bg-gray-50 px-6 py-5 text-center">
+        <Reveal delay={0.14} className="mx-auto mt-6 max-w-2xl rounded-2xl border border-gray-200 bg-white px-6 py-5 text-center shadow-sm">
           <p className="text-sm font-semibold text-gray-900">{ADMINISTRATIVE_CONTROL.title}</p>
           <p className="mt-1 text-sm text-gray-500">{ADMINISTRATIVE_CONTROL.body}</p>
         </Reveal>
