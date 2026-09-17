@@ -12,6 +12,7 @@ const PUBLIC_PREFIXES = [
   "/mot-de-passe-oublie",
   "/reinitialiser-mot-de-passe",
   "/pools",
+  "/inuka-tech",
 ];
 
 export default auth((req) => {

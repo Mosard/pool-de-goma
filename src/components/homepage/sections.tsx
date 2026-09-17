@@ -304,9 +304,14 @@ export function SchoolSoftwareSection() {
           })}
         </div>
 
-        <Reveal delay={0.3} className="mt-12 text-center">
+        <Reveal delay={0.3} className="mt-12 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link href="/demande-de-compte">
-            <Button>Découvrir le programme</Button>
+            <Button>Découvrir l&apos;application</Button>
+          </Link>
+          <Link href="/inuka-tech">
+            <Button variant="ghost" className="border border-gray-300 !text-gray-900 hover:!bg-gray-100">
+              Découvrir INUKA TECH
+            </Button>
           </Link>
         </Reveal>
       </div>
