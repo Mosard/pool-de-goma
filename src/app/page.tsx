@@ -1,8 +1,22 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { Button, Card, EmptyState } from "@/components/ui";
-import { Scrollytelling } from "@/components/scrollytelling/scrollytelling";
+import { Button } from "@/components/ui";
 import { InstitutionalCarousel } from "@/components/institutional-carousel";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { LeadershipSection } from "@/components/homepage/leadership-section";
+import { PoolsSection } from "@/components/homepage/pools-section";
+import {
+  IppIntroSection,
+  MissionSection,
+  TrilogySection,
+  AiObservationSection,
+  AiResponseSection,
+  AiMessageSection,
+  DigitalTransformationSection,
+  SchoolSoftwareSection,
+  ActionSection,
+} from "@/components/homepage/sections";
 
 export default async function Home() {
   const session = await auth();
@@ -10,21 +24,7 @@ export default async function Home() {
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* Navigation */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[var(--color-navy)] px-6 py-4 text-white sm:px-10">
-        <span className="text-base font-bold">IPP Nord-Kivu 1</span>
-        <nav className="hidden items-center gap-6 text-sm text-gray-300 md:flex">
-          <a href="#accueil" className="hover:text-white">Accueil</a>
-          <a href="#inspection" className="hover:text-white">L&apos;Inspection</a>
-          <a href="#actualites" className="hover:text-white">Actualités</a>
-          <a href="#contacts" className="hover:text-white">Contacts</a>
-        </nav>
-        <Link href={isConnected ? "/dashboard" : "/login"}>
-          <Button className="!min-h-0 !bg-white !text-blue-700 px-4 py-2 text-sm hover:!bg-gray-100">
-            {isConnected ? "Mon espace" : "Connexion"}
-          </Button>
-        </Link>
-      </header>
+      <SiteHeader isConnected={isConnected} />
 
       {/* Hero institutionnel */}
       <section id="accueil" className="hero-gradient flex min-h-[80vh] flex-col items-center justify-center px-6 text-center text-white">
@@ -50,57 +50,38 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Séquence narrative (scrollytelling) */}
+      {/* L'Inspection : qui elle est, sa mission, ses piliers */}
       <section id="inspection">
-        <Scrollytelling />
+        <IppIntroSection />
+        <MissionSection />
+        <TrilogySection />
       </section>
 
-      {/* Après la partie immersive : simple et pratique */}
-      <main className="mx-auto w-full max-w-5xl space-y-10 px-6 py-16">
-        <section>
+      {/* Constat de terrain sur l'IA, puis réponse de l'IPP */}
+      <AiObservationSection />
+      <AiResponseSection />
+      <AiMessageSection />
+
+      {/* Modernisation de l'administration et outil gratuit pour les écoles */}
+      <DigitalTransformationSection />
+      <SchoolSoftwareSection />
+
+      {/* Gouvernance de l'Inspection */}
+      <LeadershipSection />
+
+      {/* Vie institutionnelle */}
+      <ActionSection />
+
+      <section id="actualites" className="bg-white px-6 py-20 sm:px-10">
+        <div className="mx-auto max-w-5xl">
+          <h2 className="mb-8 text-center text-2xl font-bold text-gray-900 sm:text-3xl">Actualités</h2>
           <InstitutionalCarousel />
-        </section>
+        </div>
+      </section>
 
-        <section id="actualites">
-          <h2 className="mb-4 text-xl font-bold text-gray-900">Actualités</h2>
-          <EmptyState message="Aucune actualité publiée pour le moment. Le back-office éditorial arrive prochainement." />
-        </section>
+      <PoolsSection />
 
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Card>
-            <h3 className="mb-1 text-sm font-semibold text-gray-900">Espace professionnel</h3>
-            <p className="text-sm text-gray-600">
-              Accès réservé aux agents et inspecteurs de l&apos;Inspection, selon leur rôle et leur pool.
-            </p>
-            <Link href="/login" className="mt-3 inline-block text-sm font-medium text-blue-600 hover:underline">
-              Se connecter →
-            </Link>
-          </Card>
-          <Card>
-            <h3 className="mb-1 text-sm font-semibold text-gray-900">Demande d&apos;accès</h3>
-            <p className="text-sm text-gray-600">
-              Vous travaillez pour l&apos;Inspection et n&apos;avez pas encore de compte ? Faites votre demande.
-            </p>
-            <Link href="/demande-de-compte" className="mt-3 inline-block text-sm font-medium text-blue-600 hover:underline">
-              Demander un accès →
-            </Link>
-          </Card>
-        </section>
-
-        <section id="contacts">
-          <h2 className="mb-4 text-xl font-bold text-gray-900">Contacts</h2>
-          <Card>
-            <p className="text-sm text-gray-600">
-              Inspection Principale Provinciale de l&apos;Enseignement — Province Éducationnelle Nord-Kivu 1, Goma,
-              République Démocratique du Congo.
-            </p>
-          </Card>
-        </section>
-      </main>
-
-      <footer className="border-t border-gray-200 px-6 py-6 text-center text-xs text-gray-400">
-        Inspection Principale Provinciale — Nord-Kivu 1
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
