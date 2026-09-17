@@ -40,8 +40,11 @@ export function IppIntroSection() {
 
 export function MissionSection() {
   return (
-    <div className="bg-gray-50 px-6 py-16 sm:px-10">
-      <div className="mx-auto max-w-6xl">
+    <div className="relative overflow-hidden bg-gray-50 px-6 py-16 sm:px-10">
+      <div className="pointer-events-none absolute inset-0">
+        <RdcMapCanvas />
+      </div>
+      <div className="relative z-10 mx-auto max-w-6xl">
         <Reveal>
           <SectionHeading eyebrow="Mission" title="Ce que fait l'Inspection" align="center" />
         </Reveal>
@@ -63,29 +66,6 @@ export function MissionSection() {
         </div>
       </div>
     </div>
-  );
-}
-
-export function RdcMapSection() {
-  return (
-    <section className="bg-[var(--color-navy)] px-6 py-20 text-white sm:px-10">
-      <div className="mx-auto max-w-3xl text-center">
-        <Reveal>
-          <SectionHeading
-            eyebrow="Ancrage territorial"
-            title="De la RDC à la Province Éducationnelle Nord-Kivu 1"
-            description="L'Inspection Principale Provinciale s'inscrit dans l'organisation nationale de l'enseignement, avec une action concentrée sur la Province Éducationnelle Nord-Kivu 1 et les différents POOL qui la composent."
-            align="center"
-            tone="light"
-          />
-        </Reveal>
-        <Reveal delay={0.1} className="mx-auto mt-10 max-w-md">
-          <div className="relative aspect-square w-full overflow-hidden rounded-3xl">
-            <RdcMapCanvas />
-          </div>
-        </Reveal>
-      </div>
-    </section>
   );
 }
 

@@ -9,7 +9,6 @@ import { PoolsSection } from "@/components/homepage/pools-section";
 import {
   IppIntroSection,
   MissionSection,
-  RdcMapSection,
   TrilogySection,
   AiObservationSection,
   AiResponseSection,
@@ -55,7 +54,6 @@ export default async function Home() {
       <section id="inspection">
         <IppIntroSection />
         <MissionSection />
-        <RdcMapSection />
         <TrilogySection />
       </section>
 
