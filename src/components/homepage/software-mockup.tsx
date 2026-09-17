@@ -23,7 +23,7 @@ export function SoftwareMockup() {
     const ctx = gsap.context(() => {
       gsap.to(float, {
         y: -10,
-        duration: 5,
+        duration: 3.2,
         ease: "sine.inOut",
         yoyo: true,
         repeat: -1,
@@ -31,7 +31,7 @@ export function SoftwareMockup() {
       gsap.to(glow, {
         opacity: 0.7,
         scale: 1.06,
-        duration: 6,
+        duration: 4,
         ease: "sine.inOut",
         yoyo: true,
         repeat: -1,
@@ -49,7 +49,7 @@ export function SoftwareMockup() {
         className="absolute inset-x-6 inset-y-8 -z-10 rounded-[3rem] bg-blue-400/25 opacity-40 blur-3xl"
       />
       <div ref={floatRef}>
-        <div className="relative aspect-[2/1] w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/5">
+        <div className="relative aspect-[8/3] w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/5">
           <Image
             src="/homepage/logiciel-mockup.jpg"
             alt="Aperçu du logiciel de gestion scolaire : tableau de bord, gestion des élèves et des classes"
@@ -57,7 +57,7 @@ export function SoftwareMockup() {
             priority
             sizes="(min-width: 1024px) 640px, 100vw"
             className="object-cover"
-            style={{ objectPosition: "center 88%" }}
+            style={{ objectPosition: "center 97%" }}
           />
           <span className="absolute right-[9%] top-[10%] flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
