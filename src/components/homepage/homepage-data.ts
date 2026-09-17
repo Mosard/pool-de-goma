@@ -165,17 +165,22 @@ export type LeadershipMember = {
   id: string;
   name: string;
   role: string;
+  // Chemin public vers la photo réelle. Absent => avatar générique. Le
+  // champ correspondra directement à une colonne "photoUrl" le jour où la
+  // direction sera gérée depuis l'admin plutôt que depuis ce fichier.
+  photo?: string;
   attribution?: string;
   contact: LeadershipContact;
 };
 
-// Nom, photo et contacts réels à fournir par l'Inspection — voir
+// Nom et contacts réels à fournir par l'Inspection — voir
 // MASTER_INSPECTION_NORD_KIVU_1.md §13 et §24 (liste des dix IPPA et de
 // leurs attributions non encore confirmée).
 export const IPP_LEADER: LeadershipMember = {
   id: "ipp",
   name: "Nom de l'Inspecteur Principal Provincial",
   role: "Inspecteur Principal Provincial — Nord-Kivu 1",
+  photo: "/scrollytelling/ipp.png",
   contact: {},
 };
 

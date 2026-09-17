@@ -30,9 +30,8 @@ export function PlaceholderMedia({
   );
 }
 
-const contactLinkClass =
-  "flex items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600";
-
+// Icônes nues (pas de bouton, pas de fond) — seule la couleur change au
+// survol, très légèrement, pour rester discret sur les cartes de direction.
 export function ContactIcons({
   contact,
   size = "sm",
@@ -40,20 +39,18 @@ export function ContactIcons({
   contact: LeadershipContact;
   size?: "sm" | "md";
 }) {
-  const dim = size === "md" ? 40 : 32;
-  const iconSize = size === "md" ? 18 : 15;
+  const iconSize = size === "md" ? 18 : 16;
   const { phone, whatsapp, email } = contact;
 
   if (!phone && !whatsapp && !email) return null;
 
   return (
-    <div className="flex items-center justify-center gap-2">
+    <div className="flex items-center justify-center gap-3">
       {phone && (
         <a
           href={`tel:${phone}`}
           aria-label="Appeler"
-          className={contactLinkClass}
-          style={{ width: dim, height: dim }}
+          className="text-gray-400 transition-colors duration-200 hover:text-blue-600"
         >
           <Phone size={iconSize} strokeWidth={1.75} />
         </a>
@@ -64,8 +61,7 @@ export function ContactIcons({
           target="_blank"
           rel="noreferrer"
           aria-label="Contacter sur WhatsApp"
-          className={contactLinkClass}
-          style={{ width: dim, height: dim }}
+          className="text-gray-400 transition-colors duration-200 hover:text-emerald-600"
         >
           <MessageCircle size={iconSize} strokeWidth={1.75} />
         </a>
@@ -74,8 +70,7 @@ export function ContactIcons({
         <a
           href={`mailto:${email}`}
           aria-label="Envoyer un e-mail"
-          className={contactLinkClass}
-          style={{ width: dim, height: dim }}
+          className="text-gray-400 transition-colors duration-200 hover:text-blue-600"
         >
           <Mail size={iconSize} strokeWidth={1.75} />
         </a>

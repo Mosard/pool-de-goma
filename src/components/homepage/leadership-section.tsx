@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { clsx } from "clsx";
 import { Reveal } from "@/components/reveal";
 import { SectionHeading, GenericAvatar, ContactIcons } from "./ui-blocks";
 import { IPP_LEADER, IPPA_MEMBERS, type LeadershipMember } from "./homepage-data";
@@ -16,27 +17,14 @@ export function LeadershipSection() {
           />
         </Reveal>
 
-        <Reveal delay={0.05} className="mx-auto mt-12 flex max-w-xs flex-col items-center text-center">
-          <div className="relative aspect-square w-40 overflow-hidden rounded-full bg-gray-100 sm:w-48">
-            <Image
-              src="/scrollytelling/ipp.png"
-              alt={IPP_LEADER.name}
-              fill
-              sizes="192px"
-              className="object-cover"
-            />
-          </div>
-          <h3 className="mt-5 text-lg font-bold text-gray-900">{IPP_LEADER.name}</h3>
-          <p className="mt-1 text-sm text-gray-500">{IPP_LEADER.role}</p>
-          <div className="mt-3">
-            <ContactIcons contact={IPP_LEADER.contact} size="md" />
-          </div>
+        <Reveal delay={0.05} className="mx-auto mt-12">
+          <PersonCard member={IPP_LEADER} size="lg" />
         </Reveal>
 
         <div className="mt-16 grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-5">
           {IPPA_MEMBERS.map((member, i) => (
             <Reveal key={member.id} delay={Math.min(i * 0.04, 0.3)}>
-              <IppaCard member={member} />
+              <PersonCard member={member} size="sm" />
             </Reveal>
           ))}
         </div>
@@ -45,15 +33,34 @@ export function LeadershipSection() {
   );
 }
 
-function IppaCard({ member }: { member: LeadershipMember }) {
+// Un seul gabarit pour l'IPP et les IPPA : même structure (photo ou avatar
+// générique, nom, fonction, attribution, contacts), seule la taille change.
+// Prêt à être alimenté par une vraie liste "direction" venant d'une base de
+// données plutôt que de ce fichier, sans réécrire le rendu.
+function PersonCard({ member, size }: { member: LeadershipMember; size: "lg" | "sm" }) {
+  const isLg = size === "lg";
+  const photoSize = isLg ? "w-40 sm:w-48" : "w-24";
+
   return (
-    <div className="flex flex-col items-center text-center">
-      <GenericAvatar className="aspect-square w-24" />
-      <h4 className="mt-4 text-sm font-semibold text-gray-900">{member.name}</h4>
-      <p className="mt-0.5 text-xs text-gray-500">{member.role}</p>
+    <div className={clsx("mx-auto flex flex-col items-center text-center", isLg && "max-w-xs")}>
+      {member.photo ? (
+        <div className={clsx("relative aspect-square overflow-hidden rounded-full bg-gray-100", photoSize)}>
+          <Image
+            src={member.photo}
+            alt={member.name}
+            fill
+            sizes={isLg ? "192px" : "96px"}
+            className="object-cover"
+          />
+        </div>
+      ) : (
+        <GenericAvatar className={clsx("aspect-square", photoSize)} />
+      )}
+      <h3 className={clsx("font-bold text-gray-900", isLg ? "mt-5 text-lg" : "mt-4 text-sm")}>{member.name}</h3>
+      <p className={clsx("text-gray-500", isLg ? "mt-1 text-sm" : "mt-0.5 text-xs")}>{member.role}</p>
       {member.attribution && <p className="mt-0.5 text-xs italic text-gray-400">{member.attribution}</p>}
-      <div className="mt-2">
-        <ContactIcons contact={member.contact} />
+      <div className={isLg ? "mt-3" : "mt-2"}>
+        <ContactIcons contact={member.contact} size={isLg ? "md" : "sm"} />
       </div>
     </div>
   );
