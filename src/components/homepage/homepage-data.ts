@@ -1,11 +1,16 @@
 import {
+  BarChart3,
+  BookOpen,
   BookOpenCheck,
+  CalendarCheck,
   ClipboardCheck,
   GraduationCap,
   HeartHandshake,
+  MessagesSquare,
   ShieldAlert,
   ShieldCheck,
   Smartphone,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -241,6 +246,25 @@ export const POOLS: PoolProfile[] = POOL_NAMES.map((name) => {
     },
   };
 });
+
+export type SoftwareFeature = {
+  icon: LucideIcon;
+  title: string;
+};
+
+// 6 des 10 fonctionnalités citées par l'Inspection, retenues pour éviter la
+// surcharge visuelle de la vitrine — les autres (inscriptions, frais
+// scolaires, archivage, traçabilité) restent réelles mais non affichées ici.
+export const SOFTWARE_FEATURES: SoftwareFeature[] = [
+  { icon: Users, title: "Gestion des élèves" },
+  { icon: BookOpen, title: "Gestion des classes" },
+  { icon: UserCog, title: "Gestion des enseignants" },
+  { icon: CalendarCheck, title: "Suivi des présences" },
+  { icon: BarChart3, title: "Rapports et statistiques" },
+  { icon: MessagesSquare, title: "Communication école – administration" },
+];
+
+export const SOFTWARE_BADGES: string[] = ["100 % Gratuit", "Conforme aux normes", "Adapté aux écoles"];
 
 export type Activity = {
   title: string;

@@ -1,13 +1,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { clsx } from "clsx";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { Reveal } from "@/components/reveal";
-import { SectionHeading, PlaceholderMedia, YoutubeEmbed } from "./ui-blocks";
+import { SectionHeading, PlaceholderMedia, YoutubeEmbed, InteractiveCard } from "./ui-blocks";
 import { HeroSequence } from "@/components/hero-sequence";
 import { RdcMapCanvas } from "./rdc-map-canvas";
 import { TrilogyGrid } from "./trilogy-grid";
+import { SoftwareMockup } from "./software-mockup";
 import {
   MISSION_ITEMS,
   TRILOGY_PILLARS,
@@ -18,6 +19,8 @@ import {
   DIFFUSION_CHAIN,
   ACTIVITIES,
   type Activity,
+  SOFTWARE_FEATURES,
+  SOFTWARE_BADGES,
 } from "./homepage-data";
 
 export function IppIntroSection() {
@@ -249,23 +252,60 @@ export function DigitalTransformationSection() {
 
 export function SchoolSoftwareSection() {
   return (
-    <section className="px-6 py-20 sm:px-10">
-      <Reveal className="mx-auto max-w-4xl rounded-3xl bg-[var(--color-primary)] px-8 py-14 text-center text-white shadow-lg sm:px-16">
-        <p className="text-xs font-semibold uppercase tracking-widest text-blue-100">
-          Initiative institutionnelle
-        </p>
-        <h2 className="mt-3 text-2xl font-bold sm:text-3xl">
-          Un logiciel de gestion scolaire, gratuit pour les établissements
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-sm text-blue-50 sm:text-base">
-          Dans le cadre de sa stratégie de transformation numérique, l&apos;Inspection met à la
-          disposition des établissements scolaires un outil numérique gratuit pour moderniser la gestion
-          administrative et pédagogique des écoles.
-        </p>
-        <Link href="/demande-de-compte" className="mt-8 inline-block">
-          <Button className="!bg-white !text-blue-700 hover:!bg-gray-100">Découvrir le programme</Button>
-        </Link>
-      </Reveal>
+    <section className="overflow-hidden bg-gray-50 px-6 py-20 sm:px-10">
+      <div className="mx-auto max-w-5xl">
+        <Reveal className="text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
+            Initiative institutionnelle
+          </p>
+          <h2 className="mx-auto mt-3 max-w-2xl text-3xl font-bold text-gray-900 sm:text-4xl">
+            Logiciel de gestion scolaire gratuit
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-sm text-gray-600 sm:text-base">
+            Une solution numérique complète, pensée par l&apos;Inspection pour moderniser la gestion des
+            établissements scolaires.
+          </p>
+          <div className="mx-auto mt-7 inline-flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-white px-6 py-4 shadow-sm sm:px-10">
+            <p className="text-sm font-bold text-gray-900 sm:text-base">Mis à disposition par l&apos;Inspection</p>
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5">
+              {SOFTWARE_BADGES.map((badge) => (
+                <span key={badge} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 sm:text-sm">
+                  <CheckCircle2 size={14} strokeWidth={2} className="text-emerald-500" />
+                  {badge}
+                </span>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.15} className="mt-14">
+          <SoftwareMockup />
+        </Reveal>
+
+        <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {SOFTWARE_FEATURES.map((feature, i) => {
+            const Icon = feature.icon;
+            return (
+              <Reveal key={feature.title} delay={0.05 * i}>
+                <InteractiveCard className="!p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                      <Icon size={18} strokeWidth={1.75} />
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900">{feature.title}</span>
+                  </div>
+                </InteractiveCard>
+              </Reveal>
+            );
+          })}
+        </div>
+
+        <Reveal delay={0.3} className="mt-12 text-center">
+          <Link href="/demande-de-compte">
+            <Button>Découvrir le programme</Button>
+          </Link>
+        </Reveal>
+      </div>
     </section>
   );
 }
