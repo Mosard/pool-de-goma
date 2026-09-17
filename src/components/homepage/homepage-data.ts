@@ -1,3 +1,5 @@
+import { ClipboardCheck, HeartHandshake, ShieldCheck, Users, type LucideIcon } from "lucide-react";
+
 // Contenu éditorial de la page d'accueil publique.
 // Tout ce fichier est volontairement provisoire (voir MASTER_INSPECTION_NORD_KIVU_1.md
 // §24 « Éléments encore à fournir ») : noms, attributions, contacts et chiffre
@@ -7,24 +9,29 @@
 export type MissionItem = {
   title: string;
   description: string;
+  icon: LucideIcon;
 };
 
 export const MISSION_ITEMS: MissionItem[] = [
   {
     title: "Contrôler",
     description: "Vérifier que les établissements scolaires respectent les normes et procédures en vigueur.",
+    icon: ShieldCheck,
   },
   {
     title: "Évaluer",
     description: "Mesurer la qualité de l'enseignement et le niveau d'apprentissage des élèves.",
+    icon: ClipboardCheck,
   },
   {
     title: "Encadrer",
     description: "Accompagner les enseignants et les directions d'école dans l'amélioration de leurs pratiques.",
+    icon: Users,
   },
   {
     title: "Accompagner",
     description: "Soutenir la transformation numérique et pédagogique de l'enseignement, jusqu'à l'élève.",
+    icon: HeartHandshake,
   },
 ];
 

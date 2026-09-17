@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button, Card } from "@/components/ui";
 import { Reveal } from "@/components/reveal";
 import { SectionHeading, PlaceholderMedia } from "./ui-blocks";
+import { TrilogyGrid } from "./trilogy-grid";
 import { MISSION_ITEMS, TRILOGY_PILLARS, AI_STAT, PROGRAM_STEPS, ACTIVITIES } from "./homepage-data";
 
 export function IppIntroSection() {
@@ -33,14 +34,20 @@ export function MissionSection() {
           <SectionHeading eyebrow="Mission" title="Ce que fait l'Inspection" align="center" />
         </Reveal>
         <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {MISSION_ITEMS.map((item, i) => (
-            <Reveal key={item.title} delay={i * 0.05}>
-              <Card className="h-full">
-                <h3 className="text-lg font-bold text-gray-900">{item.title}</h3>
-                <p className="mt-2 text-sm text-gray-600">{item.description}</p>
-              </Card>
-            </Reveal>
-          ))}
+          {MISSION_ITEMS.map((item, i) => {
+            const Icon = item.icon;
+            return (
+              <Reveal key={item.title} delay={i * 0.05}>
+                <Card className="group h-full transition-all duration-300 ease-out hover:-translate-y-1 hover:border-gray-300 hover:shadow-md">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110">
+                    <Icon size={20} strokeWidth={1.75} />
+                  </span>
+                  <h3 className="mt-4 text-lg font-bold text-gray-900">{item.title}</h3>
+                  <p className="mt-2 text-sm text-gray-600">{item.description}</p>
+                </Card>
+              </Reveal>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -59,17 +66,9 @@ export function TrilogySection() {
             align="center"
           />
         </Reveal>
-        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
-          {TRILOGY_PILLARS.map((pillar, i) => (
-            <Reveal key={pillar.title} delay={i * 0.06}>
-              <div className="flex h-full flex-col items-center rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
-                <PlaceholderMedia label="Illustration" className="aspect-square w-20" />
-                <h3 className="mt-5 text-base font-bold text-gray-900">{pillar.title}</h3>
-                <p className="mt-2 text-sm text-gray-500">{pillar.body}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+        <Reveal delay={0.08}>
+          <TrilogyGrid pillars={TRILOGY_PILLARS} />
+        </Reveal>
       </div>
     </div>
   );
@@ -210,8 +209,12 @@ export function ActionSection() {
         <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
           {ACTIVITIES.map((activity, i) => (
             <Reveal key={activity.title} delay={i * 0.06}>
-              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <PlaceholderMedia label="Photo / vidéo" rounded="rounded-none" className="aspect-video w-full" />
+              <div className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <PlaceholderMedia
+                  label="Photo / vidéo"
+                  rounded="rounded-none"
+                  className="aspect-video w-full transition-transform duration-500 ease-out group-hover:scale-105"
+                />
                 <div className="p-5">
                   <h3 className="text-sm font-bold text-gray-900">{activity.title}</h3>
                   <p className="mt-1.5 text-sm text-gray-600">{activity.body}</p>
