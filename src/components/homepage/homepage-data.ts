@@ -206,6 +206,42 @@ export const IPPA_MEMBERS: LeadershipMember[] = Array.from({ length: 10 }, (_, i
   contact: {},
 }));
 
+export type PoolProfile = {
+  slug: string;
+  name: string;
+  chief: LeadershipMember;
+};
+
+// Noms repris de la liste déjà présente dans le projet (src/lib/demo-seed.ts :
+// Goma, Karisimbi, Nyiragongo, Rutshuru 1-5), avec Karisimbi distingué en
+// Karisimbi 1 / Karisimbi 2 comme précisé par l'Inspection. Aucun autre POOL
+// ajouté ou supprimé. Nom, photo et contacts du Chef de POOL réels à fournir.
+const POOL_NAMES = [
+  "Goma",
+  "Karisimbi 1",
+  "Karisimbi 2",
+  "Nyiragongo",
+  "Rutshuru 1",
+  "Rutshuru 2",
+  "Rutshuru 3",
+  "Rutshuru 4",
+  "Rutshuru 5",
+];
+
+export const POOLS: PoolProfile[] = POOL_NAMES.map((name) => {
+  const slug = name.toLowerCase().replace(/\s+/g, "-");
+  return {
+    slug,
+    name,
+    chief: {
+      id: `chef-${slug}`,
+      name: `Chef du POOL de ${name}`,
+      role: "Chef de POOL",
+      contact: {},
+    },
+  };
+});
+
 export type Activity = {
   title: string;
   body: string;

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui";
 import { InstitutionalCarousel } from "@/components/institutional-carousel";
+import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LeadershipSection } from "@/components/homepage/leadership-section";
 import { PoolsSection } from "@/components/homepage/pools-section";
@@ -18,41 +18,13 @@ import {
   ActionSection,
 } from "@/components/homepage/sections";
 
-async function getPublicPools() {
-  try {
-    return await prisma.pool.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    });
-  } catch {
-    // Le site public ne doit jamais tomber si la base est momentanément
-    // indisponible — PoolsSection affiche un message de repli sur liste vide.
-    return [];
-  }
-}
-
 export default async function Home() {
-  const [session, pools] = await Promise.all([auth(), getPublicPools()]);
+  const session = await auth();
   const isConnected = Boolean(session?.user);
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* Navigation */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[var(--color-navy)] px-6 py-4 text-white sm:px-10">
-        <span className="text-base font-bold">IPP Nord-Kivu 1</span>
-        <nav className="hidden items-center gap-6 text-sm text-gray-300 md:flex">
-          <a href="#accueil" className="hover:text-white">Accueil</a>
-          <a href="#inspection" className="hover:text-white">L&apos;Inspection</a>
-          <a href="#actualites" className="hover:text-white">Actualités</a>
-          <a href="#contacts" className="hover:text-white">Contacts</a>
-        </nav>
-        <Link href={isConnected ? "/dashboard" : "/login"}>
-          <Button className="!min-h-0 !bg-white !text-blue-700 px-4 py-2 text-sm hover:!bg-gray-100">
-            {isConnected ? "Mon espace" : "Connexion"}
-          </Button>
-        </Link>
-      </header>
+      <SiteHeader isConnected={isConnected} />
 
       {/* Hero institutionnel */}
       <section id="accueil" className="hero-gradient flex min-h-[80vh] flex-col items-center justify-center px-6 text-center text-white">
@@ -107,7 +79,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <PoolsSection pools={pools} />
+      <PoolsSection />
 
       <SiteFooter />
     </div>

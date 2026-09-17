@@ -1,6 +1,8 @@
+import Link from "next/link";
+import Image from "next/image";
 import { clsx } from "clsx";
 import { Image as ImageIcon, Mail, MessageCircle, Phone, UserRound } from "lucide-react";
-import type { LeadershipContact } from "./homepage-data";
+import type { LeadershipContact, LeadershipMember } from "./homepage-data";
 
 // Espace réservé propre et homogène pour les futurs visuels (générés
 // ultérieurement) — même gabarit partout pour garantir la cohérence des
@@ -123,6 +125,81 @@ export function GenericAvatar({ className }: { className?: string }) {
   return (
     <div className={clsx("flex items-center justify-center rounded-full bg-blue-50 text-blue-300", className)}>
       <UserRound className="h-1/2 w-1/2" strokeWidth={1.5} />
+    </div>
+  );
+}
+
+// Langage visuel commun (inspiré de Rapyogo) pour toutes les cartes
+// cliquables/interactives du site : bordure fine, lumière intérieure très
+// discrète et petite translation au survol, contraste légèrement renforcé —
+// pas de rebond ni d'effet agressif. Utilisé par les cartes IPP/IPPA et les
+// cartes POOL pour qu'elles appartiennent visiblement à la même famille.
+export function InteractiveCard({
+  href,
+  ariaLabel,
+  className,
+  children,
+}: {
+  href?: string;
+  ariaLabel?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={clsx(
+        "group relative rounded-2xl border border-gray-200 bg-white p-6 transition-all duration-300 ease-out",
+        "hover:-translate-y-1 hover:border-gray-300 hover:shadow-lg",
+        className
+      )}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100"
+        style={{
+          boxShadow:
+            "inset 0 1px 0 rgba(255,255,255,0.9), inset 0 0 28px rgba(37,99,235,0.06)",
+        }}
+      />
+      {href && (
+        <Link href={href} aria-label={ariaLabel} className="absolute inset-0 z-0 rounded-2xl">
+          <span className="sr-only">{ariaLabel}</span>
+        </Link>
+      )}
+      <div className="relative z-10">{children}</div>
+    </div>
+  );
+}
+
+// Contenu d'une fiche personne (photo ou avatar générique, nom, fonction,
+// attribution, contacts) — sans chrome de carte, pour être réutilisé aussi
+// bien à l'intérieur d'une InteractiveCard (IPP, IPPA, chef de POOL sur une
+// carte POOL) que dans une vue détaillée.
+export function PersonSummary({ member, size }: { member: LeadershipMember; size: "lg" | "sm" }) {
+  const isLg = size === "lg";
+  const photoSize = isLg ? "w-40 sm:w-48" : "w-24";
+
+  return (
+    <div className={clsx("flex flex-col items-center text-center", isLg && "mx-auto max-w-xs")}>
+      {member.photo ? (
+        <div className={clsx("relative aspect-square overflow-hidden rounded-full bg-gray-100", photoSize)}>
+          <Image
+            src={member.photo}
+            alt={member.name}
+            fill
+            sizes={isLg ? "192px" : "96px"}
+            className="object-cover"
+          />
+        </div>
+      ) : (
+        <GenericAvatar className={clsx("aspect-square", photoSize)} />
+      )}
+      <h3 className={clsx("font-bold text-gray-900", isLg ? "mt-5 text-lg" : "mt-4 text-sm")}>{member.name}</h3>
+      <p className={clsx("text-gray-500", isLg ? "mt-1 text-sm" : "mt-0.5 text-xs")}>{member.role}</p>
+      {member.attribution && <p className="mt-0.5 text-xs italic text-gray-400">{member.attribution}</p>}
+      <div className={clsx("relative z-10", isLg ? "mt-3" : "mt-2")}>
+        <ContactIcons contact={member.contact} size={isLg ? "md" : "sm"} />
+      </div>
     </div>
   );
 }
