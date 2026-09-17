@@ -21,25 +21,16 @@ import {
 
 export function IppIntroSection() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-20 text-center sm:px-10">
-      <Reveal>
+    <div className="relative flex min-h-[70vh] flex-col items-center justify-center overflow-hidden px-6 py-20 text-center sm:px-10">
+      <HeroSequence overlay />
+      <Reveal className="relative z-10 mx-auto max-w-3xl">
         <SectionHeading
           eyebrow="L'Inspection"
           title="Qui est l'IPP Nord-Kivu 1 ?"
           align="center"
+          tone="light"
+          description="L'Inspection Principale Provinciale de l'Enseignement — Nord-Kivu 1 est l'autorité provinciale chargée de veiller à la qualité et à la conformité de l'enseignement dans la Province Éducationnelle Nord-Kivu 1. Elle contrôle le fonctionnement des établissements, évalue la qualité pédagogique, encadre les inspecteurs et le personnel enseignant, et accompagne la modernisation de l'enseignement à travers les différents POOL qui composent la province."
         />
-        <p className="mt-5 text-base leading-relaxed text-gray-600 sm:text-lg">
-          L&apos;Inspection Principale Provinciale de l&apos;Enseignement — Nord-Kivu 1 est l&apos;autorité
-          provinciale chargée de veiller à la qualité et à la conformité de l&apos;enseignement dans la
-          Province Éducationnelle Nord-Kivu 1. Elle contrôle le fonctionnement des établissements, évalue
-          la qualité pédagogique, encadre les inspecteurs et le personnel enseignant, et accompagne la
-          modernisation de l&apos;enseignement à travers les différents POOL qui composent la province.
-        </p>
-      </Reveal>
-      <Reveal delay={0.12} className="mt-10">
-        <div className="relative aspect-video w-full overflow-hidden rounded-3xl shadow-lg">
-          <HeroSequence />
-        </div>
       </Reveal>
     </div>
   );
