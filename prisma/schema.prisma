@@ -172,6 +172,7 @@ model User {
   statutAdministratif String?
   mecanise            Boolean?
   nombreEnfants       Int?
+  photoUrl            String?      @db.Text
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 

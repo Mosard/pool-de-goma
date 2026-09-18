@@ -8,7 +8,7 @@ import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { toggleUserStatusAction } from "./actions";
 
-export default async function UtilisateursPage({
+export default async function InspecteursPage({
   searchParams,
 }: {
   searchParams: Promise<{ poolId?: string; roleKey?: string; status?: string; sex?: string }>;
@@ -38,15 +38,15 @@ export default async function UtilisateursPage({
   return (
     <div>
       <PageHeader
-        title="Utilisateurs"
-        description={`${users.length} utilisateur(s)`}
+        title="Inspecteurs"
+        description={`${users.length} inspecteur(s)`}
         actions={
           <div className="flex gap-2">
             <Link href="/comptes">
               <Button variant="secondary">Demandes de compte</Button>
             </Link>
-            <Link href="/utilisateurs/nouveau">
-              <Button>Nouvel utilisateur</Button>
+            <Link href="/inspecteurs/nouveau">
+              <Button>Nouvel inspecteur</Button>
             </Link>
           </div>
         }

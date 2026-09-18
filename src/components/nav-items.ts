@@ -7,6 +7,7 @@ import {
   Share2,
   UserPlus,
   ScrollText,
+  Settings,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 
@@ -23,7 +24,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/affectations", label: "Affectations", icon: Share2, permission: PERMISSIONS.ASSIGNMENTS_MANAGE },
   { href: "/inspections", label: "Inspections & fiches", icon: ClipboardList },
   { href: "/rapports", label: "Rapports", icon: FileCheck2 },
-  { href: "/utilisateurs", label: "Utilisateurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
+  { href: "/inspecteurs", label: "Inspecteurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
   { href: "/comptes", label: "Demandes de compte", icon: UserPlus, permission: PERMISSIONS.ACCOUNTS_MANAGE },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
+  { href: "/parametres", label: "Paramètres", icon: Settings, permission: PERMISSIONS.POOLS_MANAGE },
 ];

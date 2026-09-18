@@ -82,8 +82,8 @@ export async function createUserAction(
     newValue: { email: user.email, roleId: role.id },
   });
 
-  revalidatePath("/utilisateurs");
-  redirect("/utilisateurs");
+  revalidatePath("/inspecteurs");
+  redirect("/inspecteurs");
 }
 
 export async function toggleUserStatusAction(userId: string) {
@@ -107,5 +107,5 @@ export async function toggleUserStatusAction(userId: string) {
     newValue: { status: nextStatus },
   });
 
-  revalidatePath("/utilisateurs");
+  revalidatePath("/inspecteurs");
 }

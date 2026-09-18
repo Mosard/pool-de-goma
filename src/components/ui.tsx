@@ -64,7 +64,11 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={clsx("animate-pulse rounded-xl bg-gray-200/70", className)} />;
 }
 
-export function Avatar({ name, className }: { name: string; className?: string }) {
+export function Avatar({ name, src, className }: { name: string; src?: string | null; className?: string }) {
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element -- photo utilisateur en data URL, pas un asset statique optimisable
+    return <img src={src} alt={name} className={clsx("h-10 w-10 shrink-0 rounded-full object-cover", className)} />;
+  }
   const initials = name
     .split(" ")
     .filter(Boolean)

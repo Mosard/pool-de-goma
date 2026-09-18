@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+export const poolSchema = z.object({
+  name: z.string().min(2, "Nom requis"),
+  code: z.string().min(2, "Code requis"),
+});
+
+export const functionSchema = z.object({
+  label: z.string().min(2, "Nom requis"),
+  description: z.string().optional().or(z.literal("")),
+  scope: z.enum(["PROVINCE", "POOL"]),
+});
+
 export const schoolSchema = z.object({
   poolId: z.string().min(1, "Pool requis"),
   name: z.string().min(2, "Nom requis"),

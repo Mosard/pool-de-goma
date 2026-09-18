@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Avatar, Card, PageHeader } from "@/components/ui";
+import { Card, PageHeader } from "@/components/ui";
 import { ProfileForm } from "./profile-form";
+import { PhotoForm } from "./photo-form";
 
 export default async function ProfilPage() {
   const session = await auth();
@@ -18,12 +19,9 @@ export default async function ProfilPage() {
     <div className="space-y-6">
       <PageHeader title="Mon profil" description="Vos informations personnelles et professionnelles" />
 
-      <Card className="flex items-center gap-4">
-        <Avatar name={user.name} className="h-14 w-14 text-base" />
-        <div>
-          <p className="text-base font-semibold text-gray-900">{user.name}</p>
-          <p className="text-sm text-gray-500">{user.email}</p>
-        </div>
+      <Card>
+        <PhotoForm name={user.name} photoUrl={user.photoUrl} />
+        <p className="mt-3 text-sm text-gray-500">{user.email}</p>
       </Card>
 
       <ProfileForm

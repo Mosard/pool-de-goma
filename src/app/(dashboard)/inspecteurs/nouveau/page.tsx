@@ -5,10 +5,10 @@ import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { NewUserForm } from "../new-user-form";
 
-export default async function NouvelUtilisateurPage() {
+export default async function NouvelInspecteurPage() {
   const session = await auth();
   if (!session?.user || !hasPermissionAnyPool(session.user.permissions, PERMISSIONS.USERS_MANAGE)) {
-    redirect("/utilisateurs");
+    redirect("/inspecteurs");
   }
 
   const [roles, pools] = await Promise.all([

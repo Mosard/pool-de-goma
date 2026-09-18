@@ -50,17 +50,19 @@ export function Topbar({
   roleLabels,
   notifications,
   permissions,
+  photoUrl,
 }: {
   name: string;
   roleLabels: string[];
   notifications: NotificationItem[];
   permissions: SessionPermission[];
+  photoUrl?: string | null;
 }) {
   return (
     <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 sm:px-6">
       <div className="flex items-center gap-3">
         <MobileNav permissions={permissions} />
-        <Avatar name={name} className="hidden sm:flex" />
+        <Avatar name={name} src={photoUrl} className="hidden sm:flex" />
         <div>
           <p className="text-sm font-semibold text-gray-900">{name}</p>
           <p className="text-xs text-gray-500">{roleLabels.length > 0 ? roleLabels.join(", ") : "Aucun rôle attribué"}</p>
