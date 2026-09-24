@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MapPin } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { InteractiveCard, PersonSummary } from "@/components/homepage/ui-blocks";
-import { POOLS, POOL_ROLES, POOL_REPORT_STEPS } from "@/components/homepage/homepage-data";
+import { POOLS, POOL_ROLES, POOL_REPORT_STEPS, POOL_STAFF_GROUPS } from "@/components/homepage/homepage-data";
 
 export function generateStaticParams() {
   return POOLS.map((pool) => ({ slug: pool.slug }));
@@ -62,11 +62,42 @@ export default async function PoolDetailPage({
           rattachés à ce POOL sera ajouté prochainement.
         </p>
 
+        <p className="mt-4 flex items-start gap-2 text-sm text-gray-700 sm:text-base">
+          <MapPin size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-blue-600" aria-hidden />
+          <span>
+            <span className="font-semibold text-gray-900">Adresse du POOL : </span>
+            {pool.address ?? <span className="text-gray-500">à préciser</span>}
+          </span>
+        </p>
+
         <div className="mt-10 max-w-xs">
           <InteractiveCard>
             <PersonSummary member={pool.chief} size="lg" />
           </InteractiveCard>
         </div>
+
+        <section className="mt-14">
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Personnel du POOL</h2>
+          {POOL_STAFF_GROUPS.map((group) => {
+            const members = pool.staff[group.key];
+            return (
+              <div key={group.key} className="mt-6">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">{group.label}</h3>
+                {members.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {members.map((member) => (
+                      <InteractiveCard key={member.id} className="p-4">
+                        <PersonSummary member={member} size="sm" />
+                      </InteractiveCard>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">Liste à publier prochainement.</p>
+                )}
+              </div>
+            );
+          })}
+        </section>
 
         <section className="mt-14">
           <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Le rôle du POOL de {pool.name}</h2>

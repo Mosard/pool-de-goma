@@ -184,7 +184,11 @@ export function InteractiveCard({
           <span className="sr-only">{ariaLabel}</span>
         </Link>
       )}
-      <div className="relative z-10">{children}</div>
+      {/* With a card link, the content lets clicks through to it; nested
+          links (tel:, mailto:) stay clickable. */}
+      <div className={clsx("relative z-10", href && "pointer-events-none [&_a]:pointer-events-auto")}>
+        {children}
+      </div>
     </div>
   );
 }

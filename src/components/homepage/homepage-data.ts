@@ -211,11 +211,39 @@ export const IPPA_MEMBERS: LeadershipMember[] = Array.from({ length: 10 }, (_, i
   contact: {},
 }));
 
+export type PoolStaffGroupKey = "inspecteursItinerants" | "inspecteursExploitants" | "agentsBureau";
+
+export type PoolStaff = Record<PoolStaffGroupKey, LeadershipMember[]>;
+
+// Ordre et libellés des groupes de personnel affichés sur chaque page POOL.
+export const POOL_STAFF_GROUPS: { key: PoolStaffGroupKey; label: string }[] = [
+  { key: "inspecteursItinerants", label: "Inspecteurs itinérants" },
+  { key: "inspecteursExploitants", label: "Inspecteurs exploitants" },
+  { key: "agentsBureau", label: "Agents des bureaux" },
+];
+
 export type PoolProfile = {
   slug: string;
   name: string;
+  // Adresse du bureau du POOL. Absente => « Adresse à préciser ».
+  address?: string;
   chief: LeadershipMember;
+  staff: PoolStaff;
 };
+
+// Informations réelles propres à chaque POOL, à compléter au fur et à mesure
+// que l'Inspection les transmet (clé = slug du POOL). Les photos se placent
+// dans public/pools/<slug>/ et se référencent par "/pools/<slug>/<fichier>".
+// Exemple :
+//   goma: {
+//     address: "Avenue …, Goma",
+//     chief: { name: "Nom du Chef de POOL", photo: "/pools/goma/chef.jpg", contact: { phone: "+243…" } },
+//     staff: { inspecteursItinerants: [{ id: "goma-ii-1", name: "…", role: "Inspecteur itinérant", photo: "/pools/goma/ii-1.jpg", contact: {} }] },
+//   },
+const POOL_DETAILS: Record<
+  string,
+  { address?: string; chief?: Partial<LeadershipMember>; staff?: Partial<PoolStaff> }
+> = {};
 
 // Noms repris de la liste déjà présente dans le projet (src/lib/demo-seed.ts :
 // Goma, Karisimbi, Nyiragongo, Rutshuru 1-5), avec Karisimbi distingué en
@@ -235,14 +263,22 @@ const POOL_NAMES = [
 
 export const POOLS: PoolProfile[] = POOL_NAMES.map((name) => {
   const slug = name.toLowerCase().replace(/\s+/g, "-");
+  const details = POOL_DETAILS[slug] ?? {};
   return {
     slug,
     name,
+    address: details.address,
     chief: {
       id: `chef-${slug}`,
       name: `Chef du POOL de ${name}`,
       role: "Chef de POOL",
       contact: {},
+      ...details.chief,
+    },
+    staff: {
+      inspecteursItinerants: details.staff?.inspecteursItinerants ?? [],
+      inspecteursExploitants: details.staff?.inspecteursExploitants ?? [],
+      agentsBureau: details.staff?.agentsBureau ?? [],
     },
   };
 });
