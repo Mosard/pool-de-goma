@@ -19,9 +19,10 @@ import {
 import { JrsCollaborationSection } from "@/components/inuka-tech/jrs-section";
 
 export const metadata = {
-  title: "INUKA TECH — Partenaire technologique de l'IPP Nord-Kivu 1",
+  title: { absolute: "INUKA TECH — Partenaire technologique de l'IPP Nord-Kivu 1" },
   description:
     "INUKA TECH conçoit, déploie et accompagne des solutions numériques pour les institutions, les écoles et les organisations éducatives du Nord-Kivu.",
+  alternates: { canonical: "/inuka-tech" },
 };
 
 export default async function InukaTechPage() {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -9,6 +10,23 @@ import { POOLS } from "@/components/homepage/homepage-data";
 
 export function generateStaticParams() {
   return POOLS.map((pool) => ({ slug: pool.slug }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const pool = POOLS.find((p) => p.slug === slug);
+
+  if (!pool) return {};
+
+  return {
+    title: `POOL de ${pool.name}`,
+    description: `POOL de ${pool.name} de l'Inspection Principale Provinciale de l'Enseignement Nord-Kivu 1 : informations générales et contact du Chef de POOL.`,
+    alternates: { canonical: `/pools/${pool.slug}` },
+  };
 }
 
 export default async function PoolDetailPage({

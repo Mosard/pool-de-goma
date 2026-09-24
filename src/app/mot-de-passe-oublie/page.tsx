@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { ForgotPasswordForm } from "./forgot-password-form";
+
+export const metadata: Metadata = {
+  title: "Mot de passe oublié",
+  robots: { index: false, follow: true },
+};
 
 export default function MotDePasseOubliePage() {
   return (

@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { ResetPasswordForm } from "./reset-password-form";
+
+// The URL can carry a reset token: never index it nor follow its links.
+export const metadata: Metadata = {
+  title: "Réinitialiser le mot de passe",
+  robots: { index: false, follow: false },
+};
 
 export const dynamic = "force-dynamic";
 

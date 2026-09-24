@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { getDefaultOrganization } from "@/lib/organization";
 import { AccountRequestForm } from "./account-request-form";
+
+export const metadata: Metadata = {
+  title: "Demande de compte",
+  robots: { index: false, follow: true },
+};
 
 // Ne pas prérendre au build : évite toute dépendance à une connexion DB
 // disponible pendant le build (voir contraintes de déploiement Vercel).

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui";
@@ -18,6 +19,13 @@ import {
   SchoolSoftwareSection,
   ActionSection,
 } from "@/components/homepage/sections";
+
+export const metadata: Metadata = {
+  title: { absolute: "IPP Nord-Kivu 1 — Inspection Principale de l'Enseignement" },
+  description:
+    "Inspection Principale Provinciale de l'Enseignement, Province Éducationnelle Nord-Kivu 1 : organisation, direction, POOL d'inspection et accès des agents.",
+  alternates: { canonical: "/" },
+};
 
 export default async function Home() {
   const session = await auth();
