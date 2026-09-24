@@ -247,6 +247,41 @@ export const POOLS: PoolProfile[] = POOL_NAMES.map((name) => {
   };
 });
 
+export type PoolRole = {
+  title: string;
+  description: string;
+};
+
+// Contenu commun aux pages POOL, repris des rôles et du circuit décrits dans
+// la spécification de l'Inspection (§6, §9, §12). Les données propres à
+// chaque POOL (écoles, territoires, contacts) restent à fournir.
+export const POOL_ROLES: PoolRole[] = [
+  {
+    title: "Chef de POOL",
+    description:
+      "Responsable du POOL, il suit les écoles rattachées, organise l'affectation des inspecteurs et supervise l'exploitation des rapports.",
+  },
+  {
+    title: "Inspecteurs itinérants",
+    description: "Rattachés au POOL, ils réalisent les inspections dans les écoles qui leur sont affectées.",
+  },
+  {
+    title: "Exploitant du POOL",
+    description: "Il analyse les rapports d'inspection reçus au niveau du POOL.",
+  },
+  {
+    title: "Secrétariat du POOL",
+    description: "Il assure la gestion administrative des fiches des écoles.",
+  },
+];
+
+export const POOL_REPORT_STEPS: string[] = [
+  "L'inspecteur itinérant effectue l'inspection et soumet son rapport.",
+  "Le rapport est reçu et exploité au niveau du POOL.",
+  "Les éléments nécessaires sont transmis au Bureau d'exploitation de l'IPP, qui formule ses observations et recommandations.",
+  "Après validation par l'autorité compétente, le résultat revient vers l'inspecteur concerné et les acteurs autorisés.",
+];
+
 export type SoftwareFeature = {
   icon: LucideIcon;
   title: string;

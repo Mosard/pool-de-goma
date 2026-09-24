@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { InteractiveCard, PersonSummary } from "@/components/homepage/ui-blocks";
-import { POOLS } from "@/components/homepage/homepage-data";
+import { POOLS, POOL_ROLES, POOL_REPORT_STEPS } from "@/components/homepage/homepage-data";
 
 export function generateStaticParams() {
   return POOLS.map((pool) => ({ slug: pool.slug }));
@@ -67,6 +67,51 @@ export default async function PoolDetailPage({
             <PersonSummary member={pool.chief} size="lg" />
           </InteractiveCard>
         </div>
+
+        <section className="mt-14">
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Le rôle du POOL de {pool.name}</h2>
+          <p className="mt-3 text-sm leading-relaxed text-gray-600 sm:text-base">
+            Le POOL de {pool.name} fait partie de l&apos;organisation territoriale de la Province Éducationnelle
+            Nord-Kivu 1. Il assure, au plus près des établissements scolaires qui lui sont rattachés, le suivi
+            pédagogique et administratif conduit par l&apos;Inspection Principale Provinciale de l&apos;Enseignement.
+          </p>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Organisation du POOL</h2>
+          <ul className="mt-4 space-y-3">
+            {POOL_ROLES.map((role) => (
+              <li key={role.title} className="text-sm leading-relaxed text-gray-600 sm:text-base">
+                <span className="font-semibold text-gray-900">{role.title}</span> : {role.description}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Le circuit d&apos;un rapport d&apos;inspection</h2>
+          <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-gray-600 sm:text-base">
+            {POOL_REPORT_STEPS.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Les autres POOL de l&apos;Inspection</h2>
+          <ul className="mt-4 flex flex-wrap gap-2">
+            {POOLS.filter((p) => p.slug !== pool.slug).map((p) => (
+              <li key={p.slug}>
+                <Link
+                  href={`/pools/${p.slug}`}
+                  className="inline-block rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-blue-300 hover:text-blue-700"
+                >
+                  POOL de {p.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       </main>
 
       <SiteFooter />
