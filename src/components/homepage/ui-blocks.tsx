@@ -210,6 +210,7 @@ export function PersonSummary({ member, size }: { member: LeadershipMember; size
             alt={member.name}
             fill
             sizes={isLg ? "192px" : "96px"}
+            unoptimized={member.photoUnoptimized}
             className="object-cover"
           />
         </div>

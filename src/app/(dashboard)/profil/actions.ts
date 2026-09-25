@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { profileSchema } from "@/lib/validations";
 import { logAudit } from "@/lib/audit";
+import { normalizeProfilePhoto } from "@/lib/profile-photo";
+import { revalidatePublicPools } from "@/lib/public-pools";
 
 export type ProfileFormState = {
   errors?: Record<string, string>;
@@ -75,19 +77,28 @@ export async function updatePhotoAction(
   if (!(file instanceof File) || file.size === 0) {
     return { formError: "Aucune image sélectionnée." };
   }
-  if (!file.type.startsWith("image/")) {
-    return { formError: "Le fichier doit être une image." };
-  }
   if (file.size > MAX_PHOTO_BYTES) {
     return { formError: "L'image ne doit pas dépasser 2 Mo." };
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const dataUrl = `data:${file.type};base64,${buffer.toString("base64")}`;
+  // Type vérifié sur le contenu réel (JPEG/PNG/WebP), puis image réduite à
+  // 512 px : la data URL stockée reste légère.
+  const dataUrl = await normalizeProfilePhoto(Buffer.from(await file.arrayBuffer()));
+  if (!dataUrl) {
+    return { formError: "Le fichier doit être une image JPEG, PNG ou WebP." };
+  }
 
+  const previous = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { publishPhoto: true },
+  });
+
+  // Une nouvelle photo n'a pas encore été examinée : l'autorisation de
+  // publier la photo est retirée jusqu'à une nouvelle décision de
+  // l'administration (le nom et la fonction restent publiés).
   await prisma.user.update({
     where: { id: session.user.id },
-    data: { photoUrl: dataUrl },
+    data: { photoUrl: dataUrl, photoUpdatedAt: new Date(), publishPhoto: false },
   });
 
   await logAudit({
@@ -96,9 +107,11 @@ export async function updatePhotoAction(
     action: "profile.photo_update",
     entityType: "User",
     entityId: session.user.id,
+    metadata: previous?.publishPhoto ? { publishPhotoReset: true } : undefined,
   });
 
   revalidatePath("/profil");
   revalidatePath("/dashboard");
+  revalidatePublicPools();
   return { success: true };
 }

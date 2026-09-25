@@ -2,6 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
+  experimental: {
+    serverActions: {
+      // Photo de profil : 2 Mo max côté action (profil/actions.ts), plus la
+      // surcharge multipart. La limite par défaut (1 Mo) refusait en silence
+      // les photos entre 1 et 2 Mo.
+      bodySizeLimit: "3mb",
+    },
+  },
   async headers() {
     return [
       {

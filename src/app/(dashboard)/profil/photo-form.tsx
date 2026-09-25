@@ -7,10 +7,15 @@ import { updatePhotoAction, type PhotoFormState } from "./actions";
 
 const initialState: PhotoFormState = {};
 
+// Même limite que updatePhotoAction (profil/actions.ts).
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+
 export function PhotoForm({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
   const [state, formAction, pending] = useActionState(updatePhotoAction, initialState);
   const [preview, setPreview] = useState<string | null>(null);
+  const [sizeError, setSizeError] = useState<string | null>(null);
   const inputId = useId();
+  const error = sizeError ?? state.formError;
 
   return (
     <form action={formAction} className="flex items-center gap-4">
@@ -27,11 +32,19 @@ export function PhotoForm({ name, photoUrl }: { name: string; photoUrl?: string 
         id={inputId}
         type="file"
         name="photo"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (!file) return;
+          // Au-delà de la limite d'envoi du serveur, la requête échouerait
+          // sans message exploitable : on bloque avant l'envoi.
+          if (file.size > MAX_PHOTO_BYTES) {
+            setSizeError("L'image ne doit pas dépasser 2 Mo.");
+            e.target.value = "";
+            return;
+          }
+          setSizeError(null);
           setPreview(URL.createObjectURL(file));
           e.target.form?.requestSubmit();
         }}
@@ -45,9 +58,9 @@ export function PhotoForm({ name, photoUrl }: { name: string; photoUrl?: string 
           <Camera size={14} strokeWidth={1.75} />
           {pending ? "Envoi..." : "Changer la photo"}
         </label>
-        {state.formError && (
+        {error && (
           <div className="mt-2">
-            <Alert variant="error">{state.formError}</Alert>
+            <Alert variant="error">{error}</Alert>
           </div>
         )}
       </div>

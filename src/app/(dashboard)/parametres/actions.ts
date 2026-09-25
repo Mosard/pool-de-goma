@@ -8,6 +8,7 @@ import { poolSchema, functionSchema } from "@/lib/validations";
 import { requirePermission } from "@/lib/permissions";
 import { PERMISSIONS, PERMISSION_CATALOG } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
+import { revalidatePublicPools } from "@/lib/public-pools";
 
 export type PoolFormState = {
   errors?: Record<string, string>;
@@ -94,6 +95,8 @@ export async function togglePoolStatusAction(poolId: string) {
   });
 
   revalidatePath("/parametres");
+  // Un POOL désactivé disparaît du site public.
+  revalidatePublicPools();
 }
 
 export async function createFunctionAction(

@@ -7,8 +7,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { userSchema } from "@/lib/validations";
 import { requirePermission } from "@/lib/permissions";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { ASSIGNMENT_END_REASONS, PERMISSIONS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
+import { revalidatePublicPools } from "@/lib/public-pools";
 
 export type UserFormState = {
   errors?: Record<string, string>;
@@ -95,7 +96,23 @@ export async function toggleUserStatusAction(userId: string) {
   if (!user || user.organizationId !== session.user.organizationId) return;
 
   const nextStatus = user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
-  await prisma.user.update({ where: { id: userId }, data: { status: nextStatus } });
+
+  // Suspendre un compte met fin à ses affectations en cours : un compte
+  // suspendu n'est plus habilité dans aucune école. Une réactivation ne les
+  // rétablit pas — elles doivent être réattribuées explicitement.
+  let endedAssignments = 0;
+  if (nextStatus === "SUSPENDED") {
+    const [, ended] = await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { status: nextStatus } }),
+      prisma.assignment.updateMany({
+        where: { inspectorId: userId, active: true },
+        data: { active: false, endedAt: new Date(), endReason: ASSIGNMENT_END_REASONS.ACCOUNT_SUSPENDED },
+      }),
+    ]);
+    endedAssignments = ended.count;
+  } else {
+    await prisma.user.update({ where: { id: userId }, data: { status: nextStatus } });
+  }
 
   await logAudit({
     actorId: session.user.id,
@@ -105,7 +122,11 @@ export async function toggleUserStatusAction(userId: string) {
     entityId: userId,
     oldValue: { status: user.status },
     newValue: { status: nextStatus },
+    metadata: endedAssignments > 0 ? { endedAssignments } : undefined,
   });
 
   revalidatePath("/inspecteurs");
+  revalidatePath("/affectations");
+  // Un compte suspendu disparaît du site public (chef de POOL compris).
+  revalidatePublicPools();
 }

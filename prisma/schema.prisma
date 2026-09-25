@@ -84,6 +84,12 @@ model Pool {
   name           String
   code           String       @unique
   active         Boolean      @default(true)
+  // Fiche publique : un POOL n'apparaît sur le site que s'il est actif et
+  // qu'un slug lui a été attribué depuis l'administration. Le slug fixe son
+  // URL publique (/pools/<slug>) et n'est jamais recalculé à partir du nom.
+  slug           String?      @unique
+  address        String?
+  phones         String[]     @default([])
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -173,6 +179,13 @@ model User {
   mecanise            Boolean?
   nombreEnfants       Int?
   photoUrl            String?      @db.Text
+  photoUpdatedAt      DateTime?
+  // Autorisations de publication sur le site public, accordées par
+  // l'administration (permission publication.manage). La photo n'est
+  // publiable que si l'identité l'est aussi ; un changement de photo
+  // retire l'autorisation photo jusqu'à une nouvelle décision.
+  publishIdentity     Boolean      @default(false)
+  publishPhoto        Boolean      @default(false)
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -265,6 +278,8 @@ model Assignment {
   assignedById String
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+  endedAt      DateTime?
+  endReason    String?
 
   @@index([inspectorId])
   @@index([schoolId])

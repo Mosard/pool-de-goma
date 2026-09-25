@@ -8,9 +8,17 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ compte?: string }>;
+}) {
+  const { compte } = await searchParams;
+  // Compte suspendu/désactivé dont le JWT est encore valide : le layout du
+  // tableau de bord le renvoie ici — ne pas le rediriger à nouveau (boucle).
+  const isInactive = compte === "inactif";
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (session?.user && !isInactive) redirect("/dashboard");
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
@@ -21,6 +29,11 @@ export default async function LoginPage() {
             Plateforme de l&apos;Inspection Principale Provinciale — Nord-Kivu 1
           </p>
         </div>
+        {isInactive && (
+          <p role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+            Ce compte n&apos;est pas actif. Contactez l&apos;administration de l&apos;Inspection.
+          </p>
+        )}
         <LoginForm />
         <div className="mt-6 rounded-xl bg-blue-50 p-4 text-xs text-blue-700">
           <p className="font-semibold">Comptes de démonstration :</p>

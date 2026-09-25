@@ -174,6 +174,9 @@ export type LeadershipMember = {
   // champ correspondra directement à une colonne "photoUrl" le jour où la
   // direction sera gérée depuis l'admin plutôt que depuis ce fichier.
   photo?: string;
+  // Vignette déjà dimensionnée servie par une route (ex. photo du Chef de
+  // POOL) : affichée telle quelle, sans passer par l'optimiseur d'images.
+  photoUnoptimized?: boolean;
   attribution?: string;
   contact: LeadershipContact;
 };
@@ -211,77 +214,33 @@ export const IPPA_MEMBERS: LeadershipMember[] = Array.from({ length: 10 }, (_, i
   contact: {},
 }));
 
-export type PoolStaffGroupKey = "inspecteursItinerants" | "inspecteursExploitants" | "agentsBureau";
-
-export type PoolStaff = Record<PoolStaffGroupKey, LeadershipMember[]>;
-
-// Ordre et libellés des groupes de personnel affichés sur chaque page POOL.
-export const POOL_STAFF_GROUPS: { key: PoolStaffGroupKey; label: string }[] = [
+// Groupes de personnel affichés sur chaque page POOL. Leurs listes ne sont
+// pas encore publiées : seuls le Chef de POOL et la fiche du POOL
+// proviennent aujourd'hui du back-office (src/lib/public-pools.ts).
+export const POOL_STAFF_GROUPS: { key: string; label: string }[] = [
   { key: "inspecteursItinerants", label: "Inspecteurs itinérants" },
   { key: "inspecteursExploitants", label: "Inspecteurs exploitants" },
   { key: "agentsBureau", label: "Agents des bureaux" },
 ];
 
-export type PoolProfile = {
-  slug: string;
-  name: string;
-  // Adresse du bureau du POOL. Absente => « Adresse à préciser ».
-  address?: string;
-  chief: LeadershipMember;
-  staff: PoolStaff;
-};
-
-// Informations réelles propres à chaque POOL, à compléter au fur et à mesure
-// que l'Inspection les transmet (clé = slug du POOL). Les photos se placent
-// dans public/pools/<slug>/ et se référencent par "/pools/<slug>/<fichier>".
-// Exemple :
-//   goma: {
-//     address: "Avenue …, Goma",
-//     chief: { name: "Nom du Chef de POOL", photo: "/pools/goma/chef.jpg", contact: { phone: "+243…" } },
-//     staff: { inspecteursItinerants: [{ id: "goma-ii-1", name: "…", role: "Inspecteur itinérant", photo: "/pools/goma/ii-1.jpg", contact: {} }] },
-//   },
-const POOL_DETAILS: Record<
-  string,
-  { address?: string; chief?: Partial<LeadershipMember>; staff?: Partial<PoolStaff> }
-> = {};
-
-// Noms repris de la liste déjà présente dans le projet (src/lib/demo-seed.ts :
-// Goma, Karisimbi, Nyiragongo, Rutshuru 1-5), avec Karisimbi distingué en
-// Karisimbi 1 / Karisimbi 2 comme précisé par l'Inspection. Aucun autre POOL
-// ajouté ou supprimé. Nom, photo et contacts du Chef de POOL réels à fournir.
-const POOL_NAMES = [
-  "Goma",
-  "Karisimbi 1",
-  "Karisimbi 2",
-  "Nyiragongo",
-  "Rutshuru 1",
-  "Rutshuru 2",
-  "Rutshuru 3",
-  "Rutshuru 4",
-  "Rutshuru 5",
+// URL publiques déjà en ligne (et indexées) avant la liaison au back-office.
+// Elles NE sont PAS une source de données : un POOL n'est présenté comme
+// confirmé que lorsqu'un POOL actif de la base porte ce slug (attribué depuis
+// Paramètres). Tant que ce n'est pas le cas, l'URL reste accessible avec une
+// page neutre « fiche en cours de confirmation », pour ne casser aucun lien.
+// Aucune correspondance n'est supposée entre ces libellés et les POOL de la
+// base (notamment Karisimbi / Karisimbi 1 / Karisimbi 2).
+export const LEGACY_POOL_PAGES: { slug: string; name: string }[] = [
+  { slug: "goma", name: "Goma" },
+  { slug: "karisimbi-1", name: "Karisimbi 1" },
+  { slug: "karisimbi-2", name: "Karisimbi 2" },
+  { slug: "nyiragongo", name: "Nyiragongo" },
+  { slug: "rutshuru-1", name: "Rutshuru 1" },
+  { slug: "rutshuru-2", name: "Rutshuru 2" },
+  { slug: "rutshuru-3", name: "Rutshuru 3" },
+  { slug: "rutshuru-4", name: "Rutshuru 4" },
+  { slug: "rutshuru-5", name: "Rutshuru 5" },
 ];
-
-export const POOLS: PoolProfile[] = POOL_NAMES.map((name) => {
-  const slug = name.toLowerCase().replace(/\s+/g, "-");
-  const details = POOL_DETAILS[slug] ?? {};
-  return {
-    slug,
-    name,
-    address: details.address,
-    chief: {
-      id: `chef-${slug}`,
-      name: `Chef du POOL de ${name}`,
-      role: "Chef de POOL",
-      contact: {},
-      ...details.chief,
-    },
-    staff: {
-      inspecteursItinerants: details.staff?.inspecteursItinerants ?? [],
-      inspecteursExploitants: details.staff?.inspecteursExploitants ?? [],
-      agentsBureau: details.staff?.agentsBureau ?? [],
-    },
-  };
-});
 
 export type PoolRole = {
   title: string;

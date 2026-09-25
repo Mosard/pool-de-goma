@@ -5,6 +5,23 @@ export const poolSchema = z.object({
   code: z.string().min(2, "Code requis"),
 });
 
+// Fiche publique d'un POOL (Paramètres → POOL). Le slug fixe l'URL
+// /pools/<slug> ; vide = POOL non publié sur le site.
+export const POOL_PHONES_MAX = 3;
+
+export const poolProfileSchema = z.object({
+  name: z.string().trim().min(2, "Nom officiel requis").max(120),
+  slug: z
+    .string()
+    .trim()
+    .max(60, "60 caractères maximum")
+    .regex(/^([a-z0-9]+(-[a-z0-9]+)*)?$/, "Minuscules, chiffres et tirets uniquement (ex. rutshuru-1)"),
+  address: z.string().trim().max(300, "300 caractères maximum"),
+  phones: z
+    .array(z.string().trim().regex(/^\+?[0-9][0-9 .()-]{5,19}$/, "Numéro invalide (ex. +243 81 234 5678)"))
+    .max(POOL_PHONES_MAX, `${POOL_PHONES_MAX} numéros maximum`),
+});
+
 export const functionSchema = z.object({
   label: z.string().min(2, "Nom requis"),
   description: z.string().optional().or(z.literal("")),

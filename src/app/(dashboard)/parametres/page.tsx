@@ -51,20 +51,33 @@ export default async function ParametresPage() {
                   <th className="px-6 py-3">Écoles</th>
                   <th className="px-6 py-3">Utilisateurs</th>
                   <th className="px-6 py-3">Statut</th>
+                  <th className="px-6 py-3">Site public</th>
                   <th className="px-6 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {pools.map((p) => (
                   <tr key={p.id} className="hover:bg-blue-50/40">
-                    <td className="px-6 py-3 font-medium text-gray-900">{p.name}</td>
+                    <td className="px-6 py-3 font-medium text-gray-900">
+                      <Link href={`/parametres/pools/${p.id}`} className="hover:text-blue-700 hover:underline">
+                        {p.name}
+                      </Link>
+                    </td>
                     <td className="px-6 py-3 text-gray-600">{p.code}</td>
                     <td className="px-6 py-3 text-gray-600">{p._count.schools}</td>
                     <td className="px-6 py-3 text-gray-600">{p._count.users}</td>
                     <td className="px-6 py-3">
                       <Badge color={p.active ? "green" : "gray"}>{p.active ? "Actif" : "Inactif"}</Badge>
                     </td>
-                    <td className="px-6 py-3 text-right">
+                    <td className="px-6 py-3 text-gray-600">
+                      {p.slug && p.active ? `/pools/${p.slug}` : <span className="text-gray-400">Non publié</span>}
+                    </td>
+                    <td className="space-x-2 whitespace-nowrap px-6 py-3 text-right">
+                      <Link href={`/parametres/pools/${p.id}`}>
+                        <Button variant="secondary" className="!min-h-0 px-3 py-1.5 text-xs">
+                          Fiche et chef
+                        </Button>
+                      </Link>
                       <ConfirmButton
                         label={p.active ? "Désactiver" : "Activer"}
                         confirmLabel={p.active ? "Désactiver" : "Activer"}

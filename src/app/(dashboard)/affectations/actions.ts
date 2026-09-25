@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assignmentSchema } from "@/lib/validations";
 import { requirePermission } from "@/lib/permissions";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { ASSIGNMENT_END_REASONS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 
 export type AssignmentFormState = {
@@ -30,12 +30,28 @@ export async function createAssignmentAction(
   }
 
   const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId }, include: { pool: true } });
-  if (!school) return { formError: "École introuvable." };
+  if (!school || !school.active) return { formError: "École introuvable ou inactive." };
 
   await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
     poolId: school.poolId,
     organizationId: school.pool.organizationId,
   });
+
+  // L'identifiant vient du formulaire : on revérifie côté serveur que c'est
+  // bien un compte actif, de la même organisation, qui détient la fonction
+  // d'inspecteur dans le POOL de l'école.
+  const inspector = await prisma.user.findFirst({
+    where: {
+      id: parsed.data.inspectorId,
+      organizationId: school.pool.organizationId,
+      status: "ACTIVE",
+      roles: { some: { poolId: school.poolId, role: { key: ROLE_KEYS.INSPECTEUR } } },
+    },
+    select: { id: true },
+  });
+  if (!inspector) {
+    return { errors: { inspectorId: "Cet inspecteur n'est pas un inspecteur actif du POOL de cette école." } };
+  }
 
   const existing = await prisma.assignment.findFirst({
     where: { schoolId: parsed.data.schoolId, inspectorId: parsed.data.inspectorId, active: true },
@@ -73,14 +89,17 @@ export async function revokeAssignmentAction(assignmentId: string) {
     where: { id: assignmentId },
     include: { school: { include: { pool: true } } },
   });
-  if (!assignment) return;
+  if (!assignment || !assignment.active) return;
 
   await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
     poolId: assignment.school.poolId,
     organizationId: assignment.school.pool.organizationId,
   });
 
-  await prisma.assignment.update({ where: { id: assignmentId }, data: { active: false } });
+  await prisma.assignment.update({
+    where: { id: assignmentId },
+    data: { active: false, endedAt: new Date(), endReason: ASSIGNMENT_END_REASONS.REVOKED },
+  });
 
   await logAudit({
     actorId: session.user.id,
@@ -88,6 +107,8 @@ export async function revokeAssignmentAction(assignmentId: string) {
     action: "assignment.revoke",
     entityType: "Assignment",
     entityId: assignmentId,
+    oldValue: { active: true, schoolId: assignment.schoolId, inspectorId: assignment.inspectorId },
+    newValue: { active: false, endReason: ASSIGNMENT_END_REASONS.REVOKED },
   });
 
   revalidatePath("/affectations");

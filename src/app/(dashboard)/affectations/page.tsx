@@ -6,28 +6,37 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { AssignmentForm } from "./assignment-form";
 import { revokeAssignmentAction } from "./actions";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
-import { hasPermissionAnyPool } from "@/lib/permissions";
+import { hasPermissionAnyPool, poolsWithPermission } from "@/lib/permissions";
 
 export default async function AffectationsPage() {
   const session = await auth();
   const user = session!.user;
   if (!hasPermissionAnyPool(user.permissions, PERMISSIONS.ASSIGNMENTS_MANAGE)) redirect("/dashboard");
 
-  const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
-  const poolFilter = isProvinceScoped
-    ? { pool: { organizationId: user.organizationId } }
-    : { poolId: user.poolId ?? "__none__" };
+  // POOL couverts par la permission (et non User.poolId) : même règle que la
+  // vérification serveur de createAssignmentAction.
+  const scope = poolsWithPermission(user.permissions, PERMISSIONS.ASSIGNMENTS_MANAGE);
+  const poolFilter =
+    scope === "ALL" ? { pool: { organizationId: user.organizationId } } : { poolId: { in: scope } };
 
   const [schools, inspectors, assignments] = await Promise.all([
     prisma.school.findMany({
       where: { active: true, ...poolFilter },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, pool: { select: { name: true } } },
     }),
     prisma.user.findMany({
-      where: { status: "ACTIVE", ...poolFilter, roles: { some: { role: { key: ROLE_KEYS.INSPECTEUR } } } },
+      where: {
+        status: "ACTIVE",
+        organizationId: user.organizationId,
+        roles: { some: { role: { key: ROLE_KEYS.INSPECTEUR }, ...poolFilter } },
+      },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        roles: { where: { role: { key: ROLE_KEYS.INSPECTEUR } }, select: { pool: { select: { name: true } } } },
+      },
     }),
     prisma.assignment.findMany({
       where: { active: true, school: poolFilter },
@@ -39,7 +48,13 @@ export default async function AffectationsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Affectations" description="Attribuer des écoles aux inspecteurs itinérants" />
-      <AssignmentForm schools={schools} inspectors={inspectors} />
+      <AssignmentForm
+        schools={schools.map((s) => ({ id: s.id, name: `${s.name} — ${s.pool.name}` }))}
+        inspectors={inspectors.map((i) => ({
+          id: i.id,
+          name: `${i.name} — ${i.roles.map((r) => r.pool?.name ?? "?").join(", ")}`,
+        }))}
+      />
 
       <Card className="overflow-x-auto p-0">
         {assignments.length === 0 ? (

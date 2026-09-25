@@ -24,8 +24,12 @@ export default async function DashboardLayout({
       take: 20,
       select: { id: true, title: true, body: true },
     }),
-    prisma.user.findUnique({ where: { id: session.user.id }, select: { photoUrl: true } }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { photoUrl: true, status: true } }),
   ]);
+
+  // Le JWT reste valide jusqu'à son expiration : on revérifie le statut en
+  // base pour qu'une suspension prenne effet immédiatement, pages comprises.
+  if (!currentUser || currentUser.status !== "ACTIVE") redirect("/login?compte=inactif");
 
   const roleLabels = session.user.roles.map((r) => r.label);
 

@@ -5,8 +5,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { schoolSchema } from "@/lib/validations";
-import { requirePermission } from "@/lib/permissions";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermission, loadUserAccess, requirePermission } from "@/lib/permissions";
+import { ASSIGNMENT_END_REASONS, PERMISSIONS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 
 export type SchoolFormState = {
@@ -89,15 +89,42 @@ export async function updateSchoolAction(
     organizationId: existing.pool.organizationId,
   });
 
-  if (parsed.data.poolId !== existing.poolId) {
+  const poolChanged = parsed.data.poolId !== existing.poolId;
+  if (poolChanged) {
     const targetPool = await prisma.pool.findUnique({ where: { id: parsed.data.poolId } });
     if (!targetPool || targetPool.organizationId !== existing.pool.organizationId) {
       return { errors: { poolId: "Pool introuvable." } };
     }
+    // Déplacer une école engage aussi le POOL de destination : il faut y
+    // détenir le même droit (un chef de POOL ne peut pas « pousser » une
+    // école vers un POOL qu'il ne gère pas).
+    const access = await loadUserAccess(session.user.id);
+    if (
+      !hasPermission(access.permissions, PERMISSIONS.SCHOOLS_MANAGE, {
+        poolId: targetPool.id,
+        organizationId: targetPool.organizationId,
+      })
+    ) {
+      return { errors: { poolId: "Vous n'avez pas le droit de rattacher une école à ce POOL." } };
+    }
   }
 
+  // Changer de POOL met fin aux affectations en cours : les inspecteurs de
+  // l'ancien POOL ne sont plus habilités dans cette école.
+  let endedAssignments = 0;
   try {
-    await prisma.school.update({ where: { id }, data: parsed.data });
+    if (poolChanged) {
+      const [, ended] = await prisma.$transaction([
+        prisma.school.update({ where: { id }, data: parsed.data }),
+        prisma.assignment.updateMany({
+          where: { schoolId: id, active: true },
+          data: { active: false, endedAt: new Date(), endReason: ASSIGNMENT_END_REASONS.SCHOOL_POOL_CHANGED },
+        }),
+      ]);
+      endedAssignments = ended.count;
+    } else {
+      await prisma.school.update({ where: { id }, data: parsed.data });
+    }
   } catch {
     return { formError: "Ce code d'école existe déjà." };
   }
@@ -110,9 +137,11 @@ export async function updateSchoolAction(
     entityId: id,
     oldValue: existing,
     newValue: parsed.data,
+    metadata: endedAssignments > 0 ? { endedAssignments } : undefined,
   });
 
   revalidatePath("/ecoles");
+  revalidatePath("/affectations");
   revalidatePath(`/ecoles/${id}`);
   redirect(`/ecoles/${id}`);
 }

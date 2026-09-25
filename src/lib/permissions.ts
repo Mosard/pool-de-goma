@@ -11,12 +11,17 @@ export class ForbiddenError extends Error {
   }
 }
 
-/** Charge les rôles + permissions d'un utilisateur directement depuis la base. */
+/**
+ * Charge les rôles + permissions d'un utilisateur directement depuis la base.
+ * Un compte qui n'est pas ACTIVE (suspendu, désactivé, en attente) n'a aucune
+ * permission, même si son jeton de session (JWT) est encore valide.
+ */
 export async function loadUserAccess(userId: string): Promise<{
   roles: SessionRole[];
   permissions: SessionPermission[];
 }> {
-  const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { organizationId: true } });
+  const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, status: true } });
+  if (!dbUser || dbUser.status !== "ACTIVE") return { roles: [], permissions: [] };
 
   const userRoles = await prisma.userRole.findMany({
     where: { userId },

@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   REPORTS_VALIDATE: "reports.validate",
   AUDIT_VIEW: "audit.view",
   FORM_TEMPLATES_MANAGE: "form_templates.manage",
+  PUBLICATION_MANAGE: "publication.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -30,6 +31,7 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.REPORTS_VALIDATE, label: "Valider ou rejeter un rapport", category: "Circuit de validation" },
   { key: PERMISSIONS.AUDIT_VIEW, label: "Consulter le journal d'audit", category: "Administration" },
   { key: PERMISSIONS.FORM_TEMPLATES_MANAGE, label: "Gérer les catégories et fiches d'inspection", category: "Administration" },
+  { key: PERMISSIONS.PUBLICATION_MANAGE, label: "Autoriser la publication publique des profils (nom, fonction, photo)", category: "Publication" },
 ];
 
 export const ROLE_KEYS = {
@@ -47,6 +49,13 @@ export const ROLE_KEYS = {
 } as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[keyof typeof ROLE_KEYS];
+
+// Motif de fin d'une affectation (Assignment.endReason).
+export const ASSIGNMENT_END_REASONS = {
+  REVOKED: "revoked",
+  ACCOUNT_SUSPENDED: "account_suspended",
+  SCHOOL_POOL_CHANGED: "school_pool_changed",
+} as const;
 
 export const WORKFLOW_STATUS_KEYS = {
   BROUILLON: "BROUILLON",
