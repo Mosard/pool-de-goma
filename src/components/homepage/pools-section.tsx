@@ -2,34 +2,34 @@ import { Reveal } from "@/components/reveal";
 import { SectionHeading, InteractiveCard, PersonSummary } from "./ui-blocks";
 import { RdcMapCanvas } from "./rdc-map-canvas";
 import type { LeadershipMember } from "./homepage-data";
-import { getPublicPools, type PublicPerson } from "@/lib/public-pools";
+import { getPoolCards, type PoolCard } from "@/lib/pool-showcase";
 
-/** Carte d'un agent publié : nom, fonction, photo autorisée ou visuel neutre. */
-export function personMember(person: PublicPerson): LeadershipMember {
+/**
+ * Bloc « Chef de POOL » d'une carte : nom et fonction issus de la nomination
+ * officielle (avec accord et autorisation de publication) ; sinon visuel
+ * neutre. Une maquette n'affiche jamais de personne fictive sur l'accueil.
+ */
+function chiefMember(card: PoolCard): LeadershipMember {
+  if (!card.chief) {
+    return {
+      id: `chef-${card.slug}`,
+      name: "Chef de POOL",
+      role: card.mode === "demo" ? "Page en maquette" : "Nom à publier",
+      contact: {},
+    };
+  }
   return {
-    id: person.key,
-    name: person.name,
-    role: person.functionLabel,
-    photo: person.photoPath ?? undefined,
+    id: card.chief.key,
+    name: card.chief.name,
+    role: card.chief.functionLabel,
+    photo: card.chief.photo ?? undefined,
     photoUnoptimized: true,
     contact: {},
   };
 }
 
-/**
- * Bloc « Chef de POOL » : nom et fonction issus de la nomination en base,
- * seulement avec l'accord de l'agent et l'autorisation de publication ;
- * sinon visuel neutre et aucun nom inventé.
- */
-export function chiefMember(slug: string, chief: PublicPerson | null): LeadershipMember {
-  if (!chief) {
-    return { id: `chef-${slug}`, name: "Chef de POOL", role: "Nom à publier", contact: {} };
-  }
-  return personMember(chief);
-}
-
 export async function PoolsSection() {
-  const pools = await getPublicPools();
+  const cards = await getPoolCards();
 
   return (
     <section id="pools" className="relative overflow-hidden px-6 py-20 sm:px-10">
@@ -46,18 +46,25 @@ export async function PoolsSection() {
           />
         </Reveal>
 
-        {pools.length === 0 ? (
+        {cards.length === 0 ? (
           <p className="mt-10 text-center text-sm text-gray-500">
             Les fiches des POOL sont en cours de confirmation par l&apos;Inspection.
           </p>
         ) : (
           <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {pools.map((pool, i) => (
-              <Reveal key={pool.slug} delay={Math.min(i * 0.03, 0.3)}>
-                <InteractiveCard href={`/pools/${pool.slug}`} ariaLabel={`Voir le POOL de ${pool.name}`}>
-                  <p className="text-sm font-bold text-gray-900">POOL de {pool.name}</p>
+            {cards.map((card, i) => (
+              <Reveal key={card.slug} delay={Math.min(i * 0.03, 0.3)}>
+                <InteractiveCard href={`/pools/${card.slug}`} ariaLabel={`Voir le POOL de ${card.name}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-gray-900">POOL de {card.name}</p>
+                    {card.mode === "demo" && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                        Maquette
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-4">
-                    <PersonSummary member={chiefMember(pool.slug, pool.chief)} size="sm" />
+                    <PersonSummary member={chiefMember(card)} size="sm" />
                   </div>
                 </InteractiveCard>
               </Reveal>

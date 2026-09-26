@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getPublicPools } from "@/lib/public-pools";
+import { getIndexablePoolSlugs } from "@/lib/pool-showcase";
 
 const BASE_URL = "https://ippnk1.online";
 
@@ -8,14 +8,15 @@ const BASE_URL = "https://ippnk1.online";
 export const revalidate = 3600;
 
 // Only public pages meant to be indexed — no login, account or dashboard routes.
-// POOL : uniquement ceux confirmés en base (actifs, avec slug attribué).
+// POOL : uniquement ceux confirmés en base qui affichent des données
+// officielles (jamais une maquette fictive).
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const pools = await getPublicPools();
+  const slugs = await getIndexablePoolSlugs();
   return [
     { url: BASE_URL, changeFrequency: "weekly", priority: 1 },
     { url: `${BASE_URL}/inuka-tech`, changeFrequency: "monthly", priority: 0.8 },
-    ...pools.map((pool) => ({
-      url: `${BASE_URL}/pools/${pool.slug}`,
+    ...slugs.map((slug) => ({
+      url: `${BASE_URL}/pools/${slug}`,
       changeFrequency: "monthly" as const,
       priority: 0.7,
     })),

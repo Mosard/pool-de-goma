@@ -54,3 +54,16 @@ body {
   0%, 100% { transform: translateX(-70%); opacity: 0.35; }
   50% { transform: translateX(70%); opacity: 1; }
 }
+
+/* Pages POOL : apparition douce, en CSS seul (aucun JavaScript). Le délai se
+   règle par la variable --pool-rise-delay ; la règle prefers-reduced-motion
+   ci-dessus neutralise l'animation. */
+@keyframes pool-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+.pool-rise {
+  animation: pool-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--pool-rise-delay, 0s);
+}
