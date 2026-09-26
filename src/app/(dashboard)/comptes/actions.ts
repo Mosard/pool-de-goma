@@ -6,8 +6,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/permissions";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
+import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { emailChannel } from "@/lib/notifications/channels/email";
 
@@ -19,12 +19,20 @@ export async function approveAccountRequestAction(requestId: string) {
   const request = await prisma.accountRequest.findUnique({ where: { id: requestId } });
   if (!request || request.status !== "PENDING" || request.organizationId !== session.user.organizationId) return;
 
+  // Seules les demandes de test (adresse en .test) peuvent être traitées par
+  // un compte de démonstration ; le compte créé est alors lui-même de démo.
+  const isDemo = request.email.toLowerCase().endsWith(".test");
+  await requireOfficialActorUnlessDemoTarget(session.user.id, isDemo);
+
   const tempPassword = crypto.randomBytes(9).toString("base64url");
   const passwordHash = await bcrypt.hash(tempPassword, 10);
 
-  const role = request.requestedRoleId
+  const requestedRole = request.requestedRoleId
     ? await prisma.roleDefinition.findUnique({ where: { id: request.requestedRoleId } })
     : null;
+  // La fonction de chef ne s'attribue que par nomination (un seul chef par
+  // POOL, inspecteur du POOL) : elle n'est pas accordée à l'approbation.
+  const role = requestedRole?.key === ROLE_KEYS.CHEF_POOL ? null : requestedRole;
 
   const user = await prisma.user.create({
     data: {
@@ -33,6 +41,7 @@ export async function approveAccountRequestAction(requestId: string) {
       passwordHash,
       phone: request.phone,
       status: "ACTIVE",
+      isDemo,
       organizationId: request.organizationId,
       poolId: request.poolId,
       roles: role

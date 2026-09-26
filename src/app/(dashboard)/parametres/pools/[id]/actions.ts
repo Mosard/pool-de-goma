@@ -6,17 +6,25 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { poolProfileSchema } from "@/lib/validations";
-import { requirePermission } from "@/lib/permissions";
-import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import {
+  requireOfficialActor,
+  requireOfficialActorUnlessDemoTarget,
+  requirePermission,
+  requirePublicationAuthority,
+} from "@/lib/permissions";
+import { ASSIGNMENT_END_REASONS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
+import { applyPublicationDecision } from "@/lib/publication";
 
-// Droits (vérifiés en base à chaque appel, portée organisation) :
-// - fiche du POOL (nom officiel, slug, adresse, téléphones) : pools.manage ;
-// - désignation / retrait du Chef de POOL : users.manage (c'est une
-//   attribution de fonction, donc de droits sur le POOL) ;
-// - autorisation de publier nom, fonction et photo : publication.manage.
-// Le Chef de POOL ne détient aucun de ces droits par défaut.
+// Droits (vérifiés en base à chaque appel, portée organisation, comptes
+// officiels uniquement — jamais un compte de démonstration) :
+// - fiche du POOL (nom officiel, slug, adresse, e-mail institutionnel) :
+//   pools.manage ;
+// - nomination / retrait du chef, ajout / retrait d'une fonction dans le
+//   POOL : users.manage ;
+// - autorisation de publier un agent : IPP ou Informaticien
+//   (requirePublicationAuthority). Le Chef de POOL n'a aucun de ces droits.
 
 export type PoolAdminFormState = {
   errors?: Record<string, string>;
@@ -38,9 +46,14 @@ async function currentActor() {
   return session.user;
 }
 
+async function findPool(poolId: string, organizationId: string) {
+  return prisma.pool.findFirst({ where: { id: poolId, organizationId } });
+}
+
 function revalidatePoolAdmin(poolId: string) {
   revalidatePath(`/parametres/pools/${poolId}`);
   revalidatePath("/parametres");
+  revalidatePath("/affectations");
   revalidatePublicPools();
 }
 
@@ -51,18 +64,16 @@ export async function updatePoolProfileAction(
 ): Promise<PoolAdminFormState> {
   const actor = await currentActor();
   await requirePermission(actor.id, PERMISSIONS.POOLS_MANAGE);
+  await requireOfficialActor(actor.id);
 
-  const pool = await prisma.pool.findFirst({ where: { id: poolId, organizationId: actor.organizationId } });
+  const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return { formError: "POOL introuvable." };
 
   const parsed = poolProfileSchema.safeParse({
     name: formData.get("name") ?? "",
     slug: formData.get("slug") ?? "",
     address: formData.get("address") ?? "",
-    phones: formData
-      .getAll("phones")
-      .map((v) => String(v).trim())
-      .filter(Boolean),
+    officialEmail: formData.get("officialEmail") ?? "",
   });
   if (!parsed.success) {
     return { errors: firstErrors(parsed.error.flatten().fieldErrors) };
@@ -72,7 +83,7 @@ export async function updatePoolProfileAction(
     name: parsed.data.name,
     slug: parsed.data.slug || null,
     address: parsed.data.address || null,
-    phones: parsed.data.phones,
+    officialEmail: parsed.data.officialEmail || null,
   };
 
   try {
@@ -90,7 +101,7 @@ export async function updatePoolProfileAction(
     action: "pool.profile_update",
     entityType: "Pool",
     entityId: pool.id,
-    oldValue: { name: pool.name, slug: pool.slug, address: pool.address, phones: pool.phones },
+    oldValue: { name: pool.name, slug: pool.slug, address: pool.address, officialEmail: pool.officialEmail },
     newValue: data,
   });
 
@@ -105,18 +116,20 @@ export async function designateChiefAction(
 ): Promise<PoolAdminFormState> {
   const actor = await currentActor();
   await requirePermission(actor.id, PERMISSIONS.USERS_MANAGE);
+  await requireOfficialActor(actor.id);
 
-  const pool = await prisma.pool.findFirst({ where: { id: poolId, organizationId: actor.organizationId } });
+  const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return { formError: "POOL introuvable." };
 
   const userId = String(formData.get("userId") ?? "");
-  // Règle validée : le chef est un inspecteur affecté à ce POOL (fonction
-  // d'inspecteur sur ce POOL), avec un compte actif.
+  // Décision de l'Inspection : le chef est un inspecteur du POOL (compte
+  // actif, officiel) nommé à cette fonction ; un seul chef à la fois.
   const candidate = await prisma.user.findFirst({
     where: {
       id: userId,
       organizationId: actor.organizationId,
       status: "ACTIVE",
+      isDemo: false,
       roles: { some: { poolId: pool.id, role: { key: ROLE_KEYS.INSPECTEUR } } },
     },
     select: { id: true },
@@ -134,8 +147,8 @@ export async function designateChiefAction(
   });
   const alreadyChief = previous.some((p) => p.userId === candidate.id);
 
-  // Un seul chef par POOL : la nouvelle nomination retire la fonction aux
-  // titulaires précédents, dans la même transaction.
+  // La nouvelle nomination retire la fonction aux titulaires précédents,
+  // dans la même transaction.
   await prisma.$transaction([
     prisma.userRole.deleteMany({ where: { poolId: pool.id, roleId: chiefRole.id, userId: { not: candidate.id } } }),
     ...(alreadyChief ? [] : [prisma.userRole.create({ data: { userId: candidate.id, roleId: chiefRole.id, poolId: pool.id } })]),
@@ -158,8 +171,9 @@ export async function designateChiefAction(
 export async function removeChiefAction(poolId: string) {
   const actor = await currentActor();
   await requirePermission(actor.id, PERMISSIONS.USERS_MANAGE);
+  await requireOfficialActor(actor.id);
 
-  const pool = await prisma.pool.findFirst({ where: { id: poolId, organizationId: actor.organizationId } });
+  const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return;
 
   const chiefRole = await prisma.roleDefinition.findUnique({ where: { key: ROLE_KEYS.CHEF_POOL } });
@@ -186,42 +200,131 @@ export async function removeChiefAction(poolId: string) {
   revalidatePoolAdmin(pool.id);
 }
 
-export async function updatePublicationAction(
+/** Attribue à un compte existant une fonction de ce POOL (hors chef, qui passe par la nomination). */
+export async function addPoolRoleAction(
+  poolId: string,
+  _prevState: PoolAdminFormState,
+  formData: FormData
+): Promise<PoolAdminFormState> {
+  const actor = await currentActor();
+  await requirePermission(actor.id, PERMISSIONS.USERS_MANAGE);
+  await requireOfficialActor(actor.id);
+
+  const pool = await findPool(poolId, actor.organizationId);
+  if (!pool) return { formError: "POOL introuvable." };
+
+  const role = await prisma.roleDefinition.findUnique({ where: { id: String(formData.get("roleId") ?? "") } });
+  if (!role || role.scope !== "POOL" || role.key === ROLE_KEYS.CHEF_POOL) {
+    return { errors: { roleId: "Choisissez une fonction de POOL (le chef se nomme séparément)." } };
+  }
+  const user = await prisma.user.findFirst({
+    where: { id: String(formData.get("userId") ?? ""), organizationId: actor.organizationId, status: "ACTIVE", isDemo: false },
+    select: { id: true },
+  });
+  if (!user) return { errors: { userId: "Choisissez un compte actif." } };
+
+  const exists = await prisma.userRole.findFirst({ where: { userId: user.id, roleId: role.id, poolId: pool.id } });
+  if (exists) return { formError: "Ce compte détient déjà cette fonction dans ce POOL." };
+
+  const created = await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, poolId: pool.id } });
+
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: "user.role_add",
+    entityType: "User",
+    entityId: user.id,
+    newValue: { userRoleId: created.id, roleKey: role.key, poolId: pool.id },
+  });
+
+  revalidatePoolAdmin(pool.id);
+  return { success: true };
+}
+
+/**
+ * Retire une fonction de ce POOL à un agent (départ, mutation…). Il disparaît
+ * de l'affichage correspondant. Retirer la fonction d'inspecteur met aussi fin
+ * à ses affectations dans les écoles du POOL et, le cas échéant, à sa
+ * fonction de chef (le chef doit être inspecteur du POOL).
+ */
+export async function removePoolRoleAction(poolId: string, userRoleId: string) {
+  const actor = await currentActor();
+  await requirePermission(actor.id, PERMISSIONS.USERS_MANAGE);
+
+  const pool = await findPool(poolId, actor.organizationId);
+  if (!pool) return;
+
+  const userRole = await prisma.userRole.findFirst({
+    where: { id: userRoleId, poolId: pool.id },
+    include: { role: true, user: { select: { id: true, isDemo: true, organizationId: true } } },
+  });
+  if (!userRole || userRole.user.organizationId !== actor.organizationId) return;
+  await requireOfficialActorUnlessDemoTarget(actor.id, userRole.user.isDemo);
+
+  const userId = userRole.user.id;
+  let endedAssignments = 0;
+  let chiefRemoved = false;
+
+  if (userRole.role.key === ROLE_KEYS.INSPECTEUR) {
+    const [, ended, chief] = await prisma.$transaction([
+      prisma.userRole.delete({ where: { id: userRole.id } }),
+      prisma.assignment.updateMany({
+        where: { inspectorId: userId, active: true, school: { poolId: pool.id } },
+        data: {
+          active: false,
+          endedAt: new Date(),
+          endReason: ASSIGNMENT_END_REASONS.ROLE_REMOVED,
+          endedById: actor.id,
+        },
+      }),
+      prisma.userRole.deleteMany({ where: { userId, poolId: pool.id, role: { key: ROLE_KEYS.CHEF_POOL } } }),
+    ]);
+    endedAssignments = ended.count;
+    chiefRemoved = chief.count > 0;
+  } else {
+    await prisma.userRole.delete({ where: { id: userRole.id } });
+  }
+
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: "user.role_remove",
+    entityType: "User",
+    entityId: userId,
+    oldValue: { roleKey: userRole.role.key, poolId: pool.id },
+    metadata: { ...(endedAssignments > 0 && { endedAssignments }), ...(chiefRemoved && { chiefRemoved }) },
+  });
+
+  revalidatePoolAdmin(pool.id);
+}
+
+/** Autorisation (ou retrait) de l'IPP ou de l'informaticien pour un agent. */
+export async function updatePublicationAuthorizationAction(
   poolId: string,
   userId: string,
   _prevState: PoolAdminFormState,
   formData: FormData
 ): Promise<PoolAdminFormState> {
   const actor = await currentActor();
-  await requirePermission(actor.id, PERMISSIONS.PUBLICATION_MANAGE);
+  await requirePublicationAuthority(actor.id);
 
   const user = await prisma.user.findFirst({
-    where: { id: userId, organizationId: actor.organizationId },
-    select: { id: true, publishIdentity: true, publishPhoto: true, photoUrl: true },
+    where: { id: userId, organizationId: actor.organizationId, isDemo: false },
+    select: { id: true, photoUrl: true },
   });
   if (!user) return { formError: "Compte introuvable." };
 
-  const publishIdentity = formData.get("publishIdentity") === "on";
-  // La photo n'est publiable qu'avec l'identité, et seulement si elle existe.
-  const publishPhoto = publishIdentity && Boolean(user.photoUrl) && formData.get("publishPhoto") === "on";
-
-  if (publishIdentity === user.publishIdentity && publishPhoto === user.publishPhoto) {
-    return { success: true };
-  }
-
-  await prisma.user.update({ where: { id: user.id }, data: { publishIdentity, publishPhoto } });
-
-  await logAudit({
+  await applyPublicationDecision({
+    userId: user.id,
     actorId: actor.id,
     organizationId: actor.organizationId,
-    action: "user.publication_update",
-    entityType: "User",
-    entityId: user.id,
-    oldValue: { publishIdentity: user.publishIdentity, publishPhoto: user.publishPhoto },
-    newValue: { publishIdentity, publishPhoto },
+    kind: "AUTHORIZATION",
+    identity: formData.get("authIdentity") === "on",
+    // Une photo absente ne peut pas être autorisée.
+    photo: Boolean(user.photoUrl) && formData.get("authPhoto") === "on",
     metadata: { poolId },
   });
 
-  revalidatePoolAdmin(poolId);
+  revalidatePath(`/parametres/pools/${poolId}`);
   return { success: true };
 }

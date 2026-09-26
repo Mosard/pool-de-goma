@@ -288,7 +288,9 @@ async function seedPools(organizationId: string) {
     POOLS.map((p) =>
       prisma.pool.upsert({
         where: { code: p.code },
-        update: { name: p.name, organizationId },
+        // Ne jamais écraser le nom officiel saisi depuis la fiche du POOL si
+        // le seed est relancé sur une base existante.
+        update: { organizationId },
         create: { code: p.code, name: p.name, organizationId },
       })
     )
@@ -367,6 +369,7 @@ async function upsertDemoUser(params: {
     update: {
       name: params.name,
       status: "ACTIVE",
+      isDemo: true,
       organizationId: params.organizationId,
       poolId: params.poolId ?? null,
       sex: params.sex,
@@ -378,6 +381,7 @@ async function upsertDemoUser(params: {
       name: params.name,
       passwordHash: params.passwordHash,
       status: "ACTIVE",
+      isDemo: true,
       organizationId: params.organizationId,
       poolId: params.poolId ?? null,
       sex: params.sex,
@@ -429,8 +433,9 @@ async function seedDemoSchools(poolByCode: Map<string, PoolRow>) {
 
     const school = await prisma.school.upsert({
       where: { code },
-      update: { poolId: pool.id, name, type, director },
+      update: { poolId: pool.id, name, type, director, isDemo: true },
       create: {
+        isDemo: true,
         code,
         poolId: pool.id,
         name,
@@ -748,8 +753,9 @@ export async function runDemoSeed() {
 
   const school1 = await prisma.school.upsert({
     where: { code: "EP-GOMA-001" },
-    update: { poolId: goma.id },
+    update: { isDemo: true, poolId: goma.id },
     create: {
+      isDemo: true,
       name: "EP Les Volcans",
       code: "EP-GOMA-001",
       poolId: goma.id,
@@ -762,8 +768,9 @@ export async function runDemoSeed() {
 
   const school2 = await prisma.school.upsert({
     where: { code: "INST-GOMA-002" },
-    update: { poolId: goma.id },
+    update: { isDemo: true, poolId: goma.id },
     create: {
+      isDemo: true,
       name: "Institut La Paix",
       code: "INST-GOMA-002",
       poolId: goma.id,
@@ -776,8 +783,9 @@ export async function runDemoSeed() {
 
   await prisma.school.upsert({
     where: { code: "EP-KARISIMBI-001" },
-    update: { poolId: karisimbi.id },
+    update: { isDemo: true, poolId: karisimbi.id },
     create: {
+      isDemo: true,
       name: "EP Mont Karisimbi",
       code: "EP-KARISIMBI-001",
       poolId: karisimbi.id,

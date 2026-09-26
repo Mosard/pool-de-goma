@@ -8,6 +8,7 @@ import { profileSchema } from "@/lib/validations";
 import { logAudit } from "@/lib/audit";
 import { normalizeProfilePhoto } from "@/lib/profile-photo";
 import { revalidatePublicPools } from "@/lib/public-pools";
+import { applyPublicationDecision, PUBLICATION_REASONS } from "@/lib/publication";
 
 export type ProfileFormState = {
   errors?: Record<string, string>;
@@ -88,17 +89,9 @@ export async function updatePhotoAction(
     return { formError: "Le fichier doit être une image JPEG, PNG ou WebP." };
   }
 
-  const previous = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { publishPhoto: true },
-  });
-
-  // Une nouvelle photo n'a pas encore été examinée : l'autorisation de
-  // publier la photo est retirée jusqu'à une nouvelle décision de
-  // l'administration (le nom et la fonction restent publiés).
   await prisma.user.update({
     where: { id: session.user.id },
-    data: { photoUrl: dataUrl, photoUpdatedAt: new Date(), publishPhoto: false },
+    data: { photoUrl: dataUrl, photoUpdatedAt: new Date() },
   });
 
   await logAudit({
@@ -107,11 +100,61 @@ export async function updatePhotoAction(
     action: "profile.photo_update",
     entityType: "User",
     entityId: session.user.id,
-    metadata: previous?.publishPhoto ? { publishPhotoReset: true } : undefined,
+  });
+
+  // Une nouvelle photo n'a pas encore été examinée : l'autorisation de la
+  // publier est retirée (trace « photo_changed ») jusqu'à une nouvelle
+  // décision de l'IPP ou de l'informaticien. L'accord de l'agent, le nom et
+  // la fonction ne changent pas.
+  const current = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { publicationAuthIdentity: true },
+  });
+  await applyPublicationDecision({
+    userId: session.user.id,
+    actorId: null,
+    organizationId: session.user.organizationId,
+    kind: "AUTHORIZATION",
+    identity: current?.publicationAuthIdentity ?? false,
+    photo: false,
+    reason: PUBLICATION_REASONS.PHOTO_CHANGED,
   });
 
   revalidatePath("/profil");
   revalidatePath("/dashboard");
   revalidatePublicPools();
+  return { success: true };
+}
+
+export type ConsentFormState = {
+  formError?: string;
+  success?: boolean;
+};
+
+/**
+ * Accord (ou retrait d'accord) de l'agent lui-même pour la publication de
+ * son nom et de sa fonction, et de sa photo de profil. Sans l'autorisation
+ * de l'IPP ou de l'informaticien, l'accord seul ne publie rien.
+ */
+export async function updatePublicationConsentAction(
+  _prevState: ConsentFormState,
+  formData: FormData
+): Promise<ConsentFormState> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { status: true } });
+  if (user?.status !== "ACTIVE") return { formError: "Compte inactif." };
+
+  await applyPublicationDecision({
+    userId: session.user.id,
+    actorId: session.user.id,
+    organizationId: session.user.organizationId,
+    kind: "CONSENT",
+    identity: formData.get("consentIdentity") === "on",
+    photo: formData.get("consentPhoto") === "on",
+  });
+
+  revalidatePath("/profil");
   return { success: true };
 }

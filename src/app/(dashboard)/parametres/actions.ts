@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { poolSchema, functionSchema } from "@/lib/validations";
-import { requirePermission } from "@/lib/permissions";
+import { requireOfficialActor, requirePermission } from "@/lib/permissions";
 import { PERMISSIONS, PERMISSION_CATALOG } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
@@ -77,6 +77,8 @@ export async function togglePoolStatusAction(poolId: string) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   await requirePermission(session.user.id, PERMISSIONS.POOLS_MANAGE);
+  // Rend visible ou masque un POOL sur le site officiel.
+  await requireOfficialActor(session.user.id);
 
   const pool = await prisma.pool.findUnique({ where: { id: poolId } });
   if (!pool || pool.organizationId !== session.user.organizationId) return;

@@ -5,9 +5,16 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { schoolSchema } from "@/lib/validations";
-import { hasPermission, loadUserAccess, requirePermission } from "@/lib/permissions";
+import {
+  hasPermission,
+  isDemoActor,
+  loadUserAccess,
+  requireOfficialActorUnlessDemoTarget,
+  requirePermission,
+} from "@/lib/permissions";
 import { ASSIGNMENT_END_REASONS, PERMISSIONS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
+import { revalidatePublicPools } from "@/lib/public-pools";
 
 export type SchoolFormState = {
   errors?: Record<string, string>;
@@ -50,7 +57,8 @@ export async function createSchoolAction(
 
   let school;
   try {
-    school = await prisma.school.create({ data: parsed.data });
+    // École créée depuis un compte de démonstration : démo (jamais publiée).
+    school = await prisma.school.create({ data: { ...parsed.data, isDemo: await isDemoActor(session.user.id) } });
   } catch {
     return { formError: "Ce code d'école existe déjà." };
   }
@@ -65,6 +73,7 @@ export async function createSchoolAction(
   });
 
   revalidatePath("/ecoles");
+  revalidatePublicPools();
   redirect("/ecoles");
 }
 
@@ -88,6 +97,9 @@ export async function updateSchoolAction(
     poolId: existing.poolId,
     organizationId: existing.pool.organizationId,
   });
+  // Nom et adresse d'une école réelle sont publiés : pas de modification
+  // depuis un compte de démonstration.
+  await requireOfficialActorUnlessDemoTarget(session.user.id, existing.isDemo);
 
   const poolChanged = parsed.data.poolId !== existing.poolId;
   if (poolChanged) {
@@ -118,7 +130,12 @@ export async function updateSchoolAction(
         prisma.school.update({ where: { id }, data: parsed.data }),
         prisma.assignment.updateMany({
           where: { schoolId: id, active: true },
-          data: { active: false, endedAt: new Date(), endReason: ASSIGNMENT_END_REASONS.SCHOOL_POOL_CHANGED },
+          data: {
+            active: false,
+            endedAt: new Date(),
+            endReason: ASSIGNMENT_END_REASONS.SCHOOL_POOL_CHANGED,
+            endedById: session.user.id,
+          },
         }),
       ]);
       endedAssignments = ended.count;
@@ -142,6 +159,7 @@ export async function updateSchoolAction(
 
   revalidatePath("/ecoles");
   revalidatePath("/affectations");
+  revalidatePublicPools();
   revalidatePath(`/ecoles/${id}`);
   redirect(`/ecoles/${id}`);
 }

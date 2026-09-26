@@ -214,15 +214,6 @@ export const IPPA_MEMBERS: LeadershipMember[] = Array.from({ length: 10 }, (_, i
   contact: {},
 }));
 
-// Groupes de personnel affichés sur chaque page POOL. Leurs listes ne sont
-// pas encore publiées : seuls le Chef de POOL et la fiche du POOL
-// proviennent aujourd'hui du back-office (src/lib/public-pools.ts).
-export const POOL_STAFF_GROUPS: { key: string; label: string }[] = [
-  { key: "inspecteursItinerants", label: "Inspecteurs itinérants" },
-  { key: "inspecteursExploitants", label: "Inspecteurs exploitants" },
-  { key: "agentsBureau", label: "Agents des bureaux" },
-];
-
 // URL publiques déjà en ligne (et indexées) avant la liaison au back-office.
 // Elles NE sont PAS une source de données : un POOL n'est présenté comme
 // confirmé que lorsqu'un POOL actif de la base porte ce slug (attribué depuis

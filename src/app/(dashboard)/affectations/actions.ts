@@ -8,6 +8,7 @@ import { assignmentSchema } from "@/lib/validations";
 import { requirePermission } from "@/lib/permissions";
 import { ASSIGNMENT_END_REASONS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
+import { revalidatePublicPools } from "@/lib/public-pools";
 
 export type AssignmentFormState = {
   errors?: Record<string, string>;
@@ -24,10 +25,15 @@ export async function createAssignmentAction(
   const parsed = assignmentSchema.safeParse({
     schoolId: formData.get("schoolId"),
     inspectorId: formData.get("inspectorId"),
+    effectiveFrom: formData.get("effectiveFrom") ?? "",
   });
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
+  // Date d'effet : celle saisie, sinon maintenant. Aucune date de fin
+  // (décision de l'Inspection) : l'affectation vaut jusqu'à son retrait.
+  const effectiveFrom = parsed.data.effectiveFrom ? new Date(`${parsed.data.effectiveFrom}T00:00:00Z`) : new Date();
+  if (Number.isNaN(effectiveFrom.getTime())) return { errors: { effectiveFrom: "Date invalide" } };
 
   const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId }, include: { pool: true } });
   if (!school || !school.active) return { formError: "École introuvable ou inactive." };
@@ -65,6 +71,7 @@ export async function createAssignmentAction(
       schoolId: parsed.data.schoolId,
       inspectorId: parsed.data.inspectorId,
       assignedById: session.user.id,
+      effectiveFrom,
     },
   });
 
@@ -74,10 +81,11 @@ export async function createAssignmentAction(
     action: "assignment.create",
     entityType: "Assignment",
     entityId: assignment.id,
-    newValue: parsed.data,
+    newValue: { ...parsed.data, effectiveFrom: effectiveFrom.toISOString() },
   });
 
   revalidatePath("/affectations");
+  revalidatePublicPools();
   return {};
 }
 
@@ -98,7 +106,12 @@ export async function revokeAssignmentAction(assignmentId: string) {
 
   await prisma.assignment.update({
     where: { id: assignmentId },
-    data: { active: false, endedAt: new Date(), endReason: ASSIGNMENT_END_REASONS.REVOKED },
+    data: {
+      active: false,
+      endedAt: new Date(),
+      endReason: ASSIGNMENT_END_REASONS.REVOKED,
+      endedById: session.user.id,
+    },
   });
 
   await logAudit({
@@ -112,4 +125,5 @@ export async function revokeAssignmentAction(assignmentId: string) {
   });
 
   revalidatePath("/affectations");
+  revalidatePublicPools();
 }

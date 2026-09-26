@@ -5,7 +5,7 @@ import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import { AssignmentForm } from "./assignment-form";
 import { revokeAssignmentAction } from "./actions";
-import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { ASSIGNMENT_END_REASON_LABELS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, poolsWithPermission } from "@/lib/permissions";
 
 export default async function AffectationsPage() {
@@ -45,6 +45,21 @@ export default async function AffectationsPage() {
     }),
   ]);
 
+  // Historique : affectations terminées (jamais supprimées), plus récentes
+  // d'abord.
+  const history = await prisma.assignment.findMany({
+    where: { active: false, school: poolFilter },
+    orderBy: [{ endedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+    take: 100,
+    include: {
+      school: { select: { name: true } },
+      inspector: { select: { name: true } },
+      endedBy: { select: { name: true } },
+    },
+  });
+  const today = new Date();
+  const fmt = (d: Date | null) => (d ? d.toLocaleDateString("fr-FR", { timeZone: "Africa/Lubumbashi" }) : "—");
+
   return (
     <div className="space-y-6">
       <PageHeader title="Affectations" description="Attribuer des écoles aux inspecteurs itinérants" />
@@ -67,6 +82,7 @@ export default async function AffectationsPage() {
               <tr>
                 <th className="px-6 py-3">École</th>
                 <th className="px-6 py-3">Inspecteur</th>
+                <th className="px-6 py-3">Date d&apos;effet</th>
                 <th className="px-6 py-3" />
               </tr>
             </thead>
@@ -75,6 +91,10 @@ export default async function AffectationsPage() {
                 <tr key={a.id} className="hover:bg-blue-50/40">
                   <td className="px-6 py-3 font-medium text-gray-900">{a.school.name}</td>
                   <td className="px-6 py-3 text-gray-600">{a.inspector.name}</td>
+                  <td className="px-6 py-3 text-gray-600">
+                    {fmt(a.effectiveFrom)}
+                    {a.effectiveFrom > today && <span className="ml-1 text-xs text-amber-700">(à venir)</span>}
+                  </td>
                   <td className="px-6 py-3 text-right">
                     <ConfirmButton
                       label="Révoquer"
@@ -90,6 +110,44 @@ export default async function AffectationsPage() {
           </table>
         )}
       </Card>
+
+      <div>
+        <h2 className="mb-3 text-base font-semibold text-gray-900">Historique des affectations terminées</h2>
+        <Card className="overflow-x-auto p-0">
+          {history.length === 0 ? (
+            <div className="p-6">
+              <EmptyState message="Aucune affectation terminée." />
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+                <tr>
+                  <th className="px-6 py-3">École</th>
+                  <th className="px-6 py-3">Inspecteur</th>
+                  <th className="px-6 py-3">Date d&apos;effet</th>
+                  <th className="px-6 py-3">Fin</th>
+                  <th className="px-6 py-3">Motif</th>
+                  <th className="px-6 py-3">Par</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {history.map((a) => (
+                  <tr key={a.id}>
+                    <td className="px-6 py-3 text-gray-900">{a.school.name}</td>
+                    <td className="px-6 py-3 text-gray-600">{a.inspector.name}</td>
+                    <td className="px-6 py-3 text-gray-600">{fmt(a.effectiveFrom)}</td>
+                    <td className="px-6 py-3 text-gray-600">{fmt(a.endedAt)}</td>
+                    <td className="px-6 py-3 text-gray-600">
+                      {a.endReason ? ASSIGNMENT_END_REASON_LABELS[a.endReason] ?? a.endReason : "Non renseigné (antérieur)"}
+                    </td>
+                    <td className="px-6 py-3 text-gray-600">{a.endedBy?.name ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

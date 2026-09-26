@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, PageHeader } from "@/components/ui";
 import { ProfileForm } from "./profile-form";
 import { PhotoForm } from "./photo-form";
+import { ConsentForm } from "./consent-form";
 
 export default async function ProfilPage() {
   const session = await auth();
@@ -23,6 +24,16 @@ export default async function ProfilPage() {
         <PhotoForm name={user.name} photoUrl={user.photoUrl} />
         <p className="mt-3 text-sm text-gray-500">{user.email}</p>
       </Card>
+
+      {!user.isDemo && (
+        <ConsentForm
+          consentIdentity={user.publicationConsentIdentity}
+          consentPhoto={user.publicationConsentPhoto}
+          authIdentity={user.publicationAuthIdentity}
+          authPhoto={user.publicationAuthPhoto}
+          hasPhoto={Boolean(user.photoUrl)}
+        />
+      )}
 
       <ProfileForm
         defaultValues={{

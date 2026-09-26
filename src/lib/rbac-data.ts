@@ -55,7 +55,19 @@ export const ASSIGNMENT_END_REASONS = {
   REVOKED: "revoked",
   ACCOUNT_SUSPENDED: "account_suspended",
   SCHOOL_POOL_CHANGED: "school_pool_changed",
+  ROLE_REMOVED: "role_removed",
 } as const;
+
+export const ASSIGNMENT_END_REASON_LABELS: Record<string, string> = {
+  [ASSIGNMENT_END_REASONS.REVOKED]: "Retirée",
+  [ASSIGNMENT_END_REASONS.ACCOUNT_SUSPENDED]: "Compte suspendu",
+  [ASSIGNMENT_END_REASONS.SCHOOL_POOL_CHANGED]: "École changée de POOL",
+  [ASSIGNMENT_END_REASONS.ROLE_REMOVED]: "Fonction d'inspecteur retirée",
+};
+
+// Décision de l'Inspection : seuls l'IPP et l'informaticien autorisent la
+// publication d'un agent (le Chef de POOL, notamment, ne le peut pas).
+export const PUBLICATION_AUTHORITY_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN];
 
 export const WORKFLOW_STATUS_KEYS = {
   BROUILLON: "BROUILLON",

@@ -6,9 +6,8 @@ export const poolSchema = z.object({
 });
 
 // Fiche publique d'un POOL (Paramètres → POOL). Le slug fixe l'URL
-// /pools/<slug> ; vide = POOL non publié sur le site.
-export const POOL_PHONES_MAX = 3;
-
+// /pools/<slug> ; vide = POOL non publié sur le site. Coordonnées publiées :
+// adresse officielle et e-mail institutionnel uniquement.
 export const poolProfileSchema = z.object({
   name: z.string().trim().min(2, "Nom officiel requis").max(120),
   slug: z
@@ -17,9 +16,7 @@ export const poolProfileSchema = z.object({
     .max(60, "60 caractères maximum")
     .regex(/^([a-z0-9]+(-[a-z0-9]+)*)?$/, "Minuscules, chiffres et tirets uniquement (ex. rutshuru-1)"),
   address: z.string().trim().max(300, "300 caractères maximum"),
-  phones: z
-    .array(z.string().trim().regex(/^\+?[0-9][0-9 .()-]{5,19}$/, "Numéro invalide (ex. +243 81 234 5678)"))
-    .max(POOL_PHONES_MAX, `${POOL_PHONES_MAX} numéros maximum`),
+  officialEmail: z.union([z.literal(""), z.string().trim().toLowerCase().email("E-mail invalide").max(120)]),
 });
 
 export const functionSchema = z.object({
@@ -62,6 +59,11 @@ export const accountRequestSchema = z.object({
 export const assignmentSchema = z.object({
   schoolId: z.string().min(1, "École requise"),
   inspectorId: z.string().min(1, "Inspecteur requis"),
+  // Date d'effet (AAAA-MM-JJ), facultative : aujourd'hui par défaut.
+  effectiveFrom: z
+    .string()
+    .regex(/^(\d{4}-\d{2}-\d{2})?$/, "Date invalide")
+    .optional(),
 });
 
 export const inspectionSchema = z.object({

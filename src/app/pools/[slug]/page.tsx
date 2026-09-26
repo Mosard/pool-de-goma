@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, Mail, MapPin, School as SchoolIcon } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { InteractiveCard, PersonSummary } from "@/components/homepage/ui-blocks";
-import { chiefMember } from "@/components/homepage/pools-section";
-import { POOL_ROLES, POOL_REPORT_STEPS, POOL_STAFF_GROUPS } from "@/components/homepage/homepage-data";
-import { getPublicPoolPage, getPublicPools } from "@/lib/public-pools";
+import { chiefMember, personMember } from "@/components/homepage/pools-section";
+import { POOL_ROLES, POOL_REPORT_STEPS } from "@/components/homepage/homepage-data";
+import { getPublicPoolPage, getPublicPools, type PublicPerson } from "@/lib/public-pools";
 
 // Données issues du back-office (src/lib/public-pools.ts), mises en cache et
 // invalidées par les actions d'administration — pas de pré-rendu figé.
@@ -26,12 +26,40 @@ export async function generateMetadata({
   const name = page.kind === "confirmed" ? page.pool.name : page.name;
   return {
     title: `POOL de ${name}`,
-    description: `POOL de ${name} de l'Inspection Principale Provinciale de l'Enseignement Nord-Kivu 1 : informations générales et contact du Chef de POOL.`,
+    description: `POOL de ${name} de l'Inspection Principale Provinciale de l'Enseignement Nord-Kivu 1 : bureau, Chef de POOL, inspecteurs et établissements rattachés.`,
     alternates: { canonical: `/pools/${slug}` },
     // Fiche pas encore confirmée en base : l'URL reste accessible mais n'est
     // pas proposée à l'indexation.
     ...(page.kind === "pending" && { robots: { index: false, follow: true } }),
   };
+}
+
+function AssignedSchools({ schools }: { schools: string[] }) {
+  if (schools.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3 text-left">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Écoles suivies</p>
+      <ul className="mt-1 space-y-0.5 text-xs text-gray-600">
+        {schools.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PeopleGrid({ people, emptyText }: { people: PublicPerson[]; emptyText: string }) {
+  if (people.length === 0) return <p className="mt-2 text-sm text-gray-500">{emptyText}</p>;
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {people.map((person) => (
+        <InteractiveCard key={person.key} className="p-4">
+          <PersonSummary member={personMember(person)} size="sm" />
+          <AssignedSchools schools={person.schools} />
+        </InteractiveCard>
+      ))}
+    </div>
+  );
 }
 
 export default async function PoolDetailPage({
@@ -67,8 +95,8 @@ export default async function PoolDetailPage({
         <h1 className="mt-2 text-2xl font-bold text-gray-900 sm:text-3xl">POOL de {name}</h1>
         {pool ? (
           <p className="mt-3 max-w-xl text-sm text-gray-600 sm:text-base">
-            Informations générales et contact du Chef de POOL. Le détail des établissements et des inspecteurs
-            rattachés à ce POOL sera ajouté prochainement.
+            Bureau, Chef de POOL, inspecteurs et établissements rattachés à ce POOL. Seules les informations dont la
+            publication a été autorisée sont affichées.
           </p>
         ) : (
           <p className="mt-3 max-w-xl text-sm text-gray-600 sm:text-base">
@@ -80,26 +108,18 @@ export default async function PoolDetailPage({
         <p className="mt-4 flex items-start gap-2 text-sm text-gray-700 sm:text-base">
           <MapPin size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-blue-600" aria-hidden />
           <span>
-            <span className="font-semibold text-gray-900">Adresse du POOL : </span>
+            <span className="font-semibold text-gray-900">Adresse du bureau : </span>
             {pool?.address ?? <span className="text-gray-500">à préciser</span>}
           </span>
         </p>
-
-        {pool && pool.phones.length > 0 && (
+        {pool?.officialEmail && (
           <p className="mt-2 flex items-start gap-2 text-sm text-gray-700 sm:text-base">
-            <Phone size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-blue-600" aria-hidden />
+            <Mail size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-blue-600" aria-hidden />
             <span>
-              <span className="font-semibold text-gray-900">
-                {pool.phones.length > 1 ? "Téléphones du POOL : " : "Téléphone du POOL : "}
-              </span>
-              {pool.phones.map((phone, i) => (
-                <span key={phone}>
-                  {i > 0 && ", "}
-                  <a href={`tel:${phone.replace(/[^+\d]/g, "")}`} className="text-blue-700 hover:underline">
-                    {phone}
-                  </a>
-                </span>
-              ))}
+              <span className="font-semibold text-gray-900">E-mail : </span>
+              <a href={`mailto:${pool.officialEmail}`} className="text-blue-700 hover:underline">
+                {pool.officialEmail}
+              </a>
             </span>
           </p>
         )}
@@ -107,18 +127,42 @@ export default async function PoolDetailPage({
         <div className="mt-10 max-w-xs">
           <InteractiveCard>
             <PersonSummary member={chiefMember(slug, pool?.chief ?? null)} size="lg" />
+            {pool?.chief && <AssignedSchools schools={pool.chief.schools} />}
           </InteractiveCard>
         </div>
 
-        <section className="mt-14">
-          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Personnel du POOL</h2>
-          {POOL_STAFF_GROUPS.map((group) => (
-            <div key={group.key} className="mt-6">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">{group.label}</h3>
-              <p className="mt-2 text-sm text-gray-500">Liste à publier prochainement.</p>
-            </div>
-          ))}
-        </section>
+        {pool && (
+          <>
+            <section className="mt-14">
+              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Inspecteurs itinérants</h2>
+              <PeopleGrid people={pool.inspectors} emptyText="Liste à publier prochainement." />
+            </section>
+
+            <section className="mt-10">
+              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Autres agents du POOL</h2>
+              <PeopleGrid people={pool.agents} emptyText="Liste à publier prochainement." />
+            </section>
+
+            <section className="mt-10">
+              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Établissements rattachés</h2>
+              {pool.schools.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">Liste à publier prochainement.</p>
+              ) : (
+                <ul className="mt-4 divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white">
+                  {pool.schools.map((school, i) => (
+                    <li key={`${school.name}-${i}`} className="flex items-start gap-3 px-4 py-3">
+                      <SchoolIcon size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-blue-600" aria-hidden />
+                      <span className="text-sm">
+                        <span className="font-medium text-gray-900">{school.name}</span>
+                        {school.address && <span className="block text-gray-500">{school.address}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </>
+        )}
 
         <section className="mt-14">
           <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Le rôle du POOL de {name}</h2>

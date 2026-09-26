@@ -2,25 +2,30 @@ import { Reveal } from "@/components/reveal";
 import { SectionHeading, InteractiveCard, PersonSummary } from "./ui-blocks";
 import { RdcMapCanvas } from "./rdc-map-canvas";
 import type { LeadershipMember } from "./homepage-data";
-import { getPublicPools, type PublicChief } from "@/lib/public-pools";
+import { getPublicPools, type PublicPerson } from "@/lib/public-pools";
 
-/**
- * Bloc « Chef de POOL » : nom et fonction issus de la nomination en base,
- * photo seulement si sa publication est autorisée ; sinon visuel neutre et
- * aucun nom inventé.
- */
-export function chiefMember(slug: string, chief: PublicChief | null): LeadershipMember {
-  if (!chief) {
-    return { id: `chef-${slug}`, name: "Chef de POOL", role: "Nom à publier", contact: {} };
-  }
+/** Carte d'un agent publié : nom, fonction, photo autorisée ou visuel neutre. */
+export function personMember(person: PublicPerson): LeadershipMember {
   return {
-    id: `chef-${slug}`,
-    name: chief.name,
-    role: chief.functionLabel,
-    photo: chief.photoPath ?? undefined,
+    id: person.key,
+    name: person.name,
+    role: person.functionLabel,
+    photo: person.photoPath ?? undefined,
     photoUnoptimized: true,
     contact: {},
   };
+}
+
+/**
+ * Bloc « Chef de POOL » : nom et fonction issus de la nomination en base,
+ * seulement avec l'accord de l'agent et l'autorisation de publication ;
+ * sinon visuel neutre et aucun nom inventé.
+ */
+export function chiefMember(slug: string, chief: PublicPerson | null): LeadershipMember {
+  if (!chief) {
+    return { id: `chef-${slug}`, name: "Chef de POOL", role: "Nom à publier", contact: {} };
+  }
+  return personMember(chief);
 }
 
 export async function PoolsSection() {

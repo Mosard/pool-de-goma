@@ -6,8 +6,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { userSchema } from "@/lib/validations";
-import { requirePermission } from "@/lib/permissions";
-import { ASSIGNMENT_END_REASONS, PERMISSIONS } from "@/lib/rbac-data";
+import { isDemoActor, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
+import { ASSIGNMENT_END_REASONS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
 
@@ -40,6 +40,11 @@ export async function createUserAction(
 
   const role = await prisma.roleDefinition.findUnique({ where: { id: parsed.data.roleId } });
   if (!role) return { formError: "Rôle introuvable." };
+  // Un seul chef par POOL, obligatoirement inspecteur du POOL : la fonction
+  // s'attribue uniquement par la nomination (Paramètres → POOL).
+  if (role.key === ROLE_KEYS.CHEF_POOL) {
+    return { errors: { roleId: "Créez le compte comme inspecteur, puis nommez-le chef depuis la fiche du POOL." } };
+  }
   if (role.scope === "POOL" && !parsed.data.poolId) {
     return { errors: { poolId: "Ce rôle nécessite un pool." } };
   }
@@ -52,14 +57,18 @@ export async function createUserAction(
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  const email = parsed.data.email.toLowerCase();
+  // Compte créé par un compte de démonstration, ou adresse en .test : démo.
+  const isDemo = email.endsWith(".test") || (await isDemoActor(session.user.id));
 
   let user;
   try {
     user = await prisma.user.create({
       data: {
         name: parsed.data.name,
-        email: parsed.data.email.toLowerCase(),
+        email,
         passwordHash,
+        isDemo,
         phone: parsed.data.phone || null,
         sex: parsed.data.sex || null,
         status: "ACTIVE",
@@ -95,6 +104,8 @@ export async function toggleUserStatusAction(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.organizationId !== session.user.organizationId) return;
 
+  await requireOfficialActorUnlessDemoTarget(session.user.id, user.isDemo);
+
   const nextStatus = user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
 
   // Suspendre un compte met fin à ses affectations en cours : un compte
@@ -106,7 +117,12 @@ export async function toggleUserStatusAction(userId: string) {
       prisma.user.update({ where: { id: userId }, data: { status: nextStatus } }),
       prisma.assignment.updateMany({
         where: { inspectorId: userId, active: true },
-        data: { active: false, endedAt: new Date(), endReason: ASSIGNMENT_END_REASONS.ACCOUNT_SUSPENDED },
+        data: {
+          active: false,
+          endedAt: new Date(),
+          endReason: ASSIGNMENT_END_REASONS.ACCOUNT_SUSPENDED,
+          endedById: session.user.id,
+        },
       }),
     ]);
     endedAssignments = ended.count;

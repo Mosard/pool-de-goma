@@ -88,8 +88,10 @@ model Pool {
   // qu'un slug lui a été attribué depuis l'administration. Le slug fixe son
   // URL publique (/pools/<slug>) et n'est jamais recalculé à partir du nom.
   slug           String?      @unique
+  // Seules coordonnées publiées pour le bureau du POOL (décision de
+  // l'Inspection) : adresse officielle et e-mail institutionnel.
   address        String?
-  phones         String[]     @default([])
+  officialEmail  String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -180,17 +182,25 @@ model User {
   nombreEnfants       Int?
   photoUrl            String?      @db.Text
   photoUpdatedAt      DateTime?
-  // Autorisations de publication sur le site public, accordées par
-  // l'administration (permission publication.manage). La photo n'est
-  // publiable que si l'identité l'est aussi ; un changement de photo
-  // retire l'autorisation photo jusqu'à une nouvelle décision.
-  publishIdentity     Boolean      @default(false)
-  publishPhoto        Boolean      @default(false)
+  // Compte de démonstration (seed) : jamais publié ni présenté comme
+  // officiel, et sans effet sur les informations officielles.
+  isDemo              Boolean      @default(false)
+  // Publication sur le site public : il faut À LA FOIS l'accord de l'agent
+  // (consent*, donné depuis son profil) et l'autorisation de l'IPP ou de
+  // l'informaticien (auth*). La photo exige en plus l'accord et
+  // l'autorisation sur l'identité. Historique : PublicationRecord.
+  publicationConsentIdentity Boolean @default(false)
+  publicationConsentPhoto    Boolean @default(false)
+  publicationAuthIdentity    Boolean @default(false)
+  publicationAuthPhoto       Boolean @default(false)
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
   roles                   UserRole[]
   assignmentsGiven        Assignment[]          @relation("AssignedBy")
+  assignmentsEnded        Assignment[]          @relation("EndedBy")
+  publicationRecords      PublicationRecord[]   @relation("PublicationSubject")
+  publicationDecisions    PublicationRecord[]   @relation("PublicationActor")
   assignments             Assignment[]          @relation("Inspector")
   inspections             Inspection[]          @relation("InspectorInspections")
   comments                Comment[]
@@ -258,6 +268,8 @@ model School {
   phone      String?
   type       String?
   active     Boolean  @default(true)
+  // École de démonstration (seed) : jamais publiée.
+  isDemo     Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -278,11 +290,45 @@ model Assignment {
   assignedById String
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+  // Date d'effet (pas de date de fin obligatoire). Une affectation n'est
+  // valable qu'à partir de cette date et tant qu'elle n'est pas terminée.
+  effectiveFrom DateTime @default(now())
+  // Historique : une affectation terminée est conservée (jamais supprimée).
   endedAt      DateTime?
   endReason    String?
+  endedById    String?
+  endedBy      User?    @relation("EndedBy", fields: [endedById], references: [id])
 
   @@index([inspectorId])
   @@index([schoolId])
+}
+
+enum PublicationDecisionKind {
+  CONSENT       // accord de l'agent lui-même
+  AUTHORIZATION // autorisation de l'IPP ou de l'informaticien
+}
+
+enum PublicationScope {
+  IDENTITY // nom et fonction
+  PHOTO
+}
+
+// Trace interne des accords, autorisations et retraits de publication
+// (granted = false pour un retrait). Jamais modifiée ni supprimée.
+model PublicationRecord {
+  id        String                  @id @default(cuid())
+  userId    String
+  user      User                    @relation("PublicationSubject", fields: [userId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?                   @relation("PublicationActor", fields: [actorId], references: [id])
+  kind      PublicationDecisionKind
+  scope     PublicationScope
+  granted   Boolean
+  // Motif système éventuel (ex. "photo_changed", "account_suspended").
+  reason    String?
+  createdAt DateTime                @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
