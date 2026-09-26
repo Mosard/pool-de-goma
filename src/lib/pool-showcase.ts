@@ -1,5 +1,6 @@
 import { getPublicPoolPage, getPublicPools, type PublicPerson, type PublicPool } from "@/lib/public-pools";
 import { DEMO_POOL_SHOWCASES } from "@/lib/pool-demo";
+import { LEGACY_POOL_PAGES } from "@/components/homepage/homepage-data";
 
 // Modèle d'affichage unique des pages POOL (bloc du chef, cartes de
 // l'équipe, liste latérale des écoles). Il est alimenté SOIT par les données
@@ -86,12 +87,22 @@ export async function resolvePoolPage(slug: string): Promise<ResolvedPoolPage | 
   return null;
 }
 
-export type PoolCard = { slug: string; name: string; chief: ShowcasePerson | null; mode: PoolShowcase["mode"] };
+export type PoolCard = {
+  slug: string;
+  name: string;
+  chief: ShowcasePerson | null;
+  // "pending" : URL existante dont la fiche n'est pas encore confirmée en base.
+  mode: PoolShowcase["mode"] | "pending";
+};
 
 /**
  * POOL présentés sur l'accueil et entre les pages POOL : ceux confirmés en
- * base, plus les maquettes (signalées). Les cartes d'une maquette n'affichent
- * aucune personne fictive (chef neutre + mention « Maquette »).
+ * base, les maquettes (signalées) et les autres POOL déjà connus du site,
+ * affichés « en cours de confirmation ». Seules les cartes officielles
+ * montrent une personne : une maquette ou une fiche en attente affiche un
+ * visuel neutre, jamais une personne fictive.
+ * Ordre : celui de la liste historique du site, puis les autres POOL
+ * confirmés par ordre alphabétique.
  */
 export async function getPoolCards(): Promise<PoolCard[]> {
   const pools = await getPublicPools();
@@ -105,7 +116,16 @@ export async function getPoolCards(): Promise<PoolCard[]> {
       cards.push({ slug: demo.slug, name: demo.name, chief: null, mode: "demo" });
     }
   }
-  return cards.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  for (const legacy of LEGACY_POOL_PAGES) {
+    if (!cards.some((c) => c.slug === legacy.slug)) {
+      cards.push({ slug: legacy.slug, name: legacy.name, chief: null, mode: "pending" });
+    }
+  }
+  const order = (slug: string) => {
+    const i = LEGACY_POOL_PAGES.findIndex((p) => p.slug === slug);
+    return i === -1 ? LEGACY_POOL_PAGES.length : i;
+  };
+  return cards.sort((a, b) => order(a.slug) - order(b.slug) || a.name.localeCompare(b.name, "fr"));
 }
 
 /** Slugs à proposer à l'indexation : POOL confirmés qui n'affichent pas une maquette. */
