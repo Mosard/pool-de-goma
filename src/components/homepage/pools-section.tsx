@@ -64,7 +64,7 @@ export async function PoolsSection() {
                     )}
                     {card.mode === "pending" && (
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                        En cours de confirmation
+                        Fiche en cours de confirmation
                       </span>
                     )}
                   </div>

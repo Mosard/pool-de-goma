@@ -102,7 +102,7 @@ export default async function PoolDetailPage({
                       )}
                       {p.mode === "pending" && (
                         <span className="rounded-full bg-gray-100 px-1.5 text-[10px] font-semibold uppercase text-gray-600">
-                          En cours de confirmation
+                          Fiche en cours de confirmation
                         </span>
                       )}
                     </Link>

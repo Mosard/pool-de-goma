@@ -29,6 +29,9 @@ export type PublicPool = {
   name: string;
   address: string | null;
   officialEmail: string | null;
+  // Passage explicite en mode officiel décidé par l'administration
+  // (Pool.officialPageSince renseigné).
+  officialPage: boolean;
   chief: PublicPerson | null;
   inspectors: PublicPerson[];
   agents: PublicPerson[];
@@ -77,7 +80,7 @@ async function queryPublicPools(): Promise<PublicPoolRecord[]> {
   const pools = await prisma.pool.findMany({
     where: { organizationId: organization.id, active: true, slug: { not: null } },
     orderBy: { name: "asc" },
-    select: { id: true, slug: true, name: true, address: true, officialEmail: true },
+    select: { id: true, slug: true, name: true, address: true, officialEmail: true, officialPageSince: true },
   });
   if (pools.length === 0) return [];
   const poolIds = pools.map((p) => p.id);
@@ -229,6 +232,7 @@ async function queryPublicPools(): Promise<PublicPoolRecord[]> {
       name: pool.name,
       address: pool.address,
       officialEmail: pool.officialEmail,
+      officialPage: pool.officialPageSince !== null,
       chief,
       inspectors,
       agents,
@@ -238,7 +242,7 @@ async function queryPublicPools(): Promise<PublicPoolRecord[]> {
   });
 }
 
-const getPublicPoolRecords = unstable_cache(queryPublicPools, ["public-pools-v2"], {
+const getPublicPoolRecords = unstable_cache(queryPublicPools, ["public-pools-v3"], {
   tags: [PUBLIC_POOLS_TAG],
   // Filet de sécurité (ex. une date d'effet atteinte, une modification faite
   // directement en base) : les actions du back-office invalident le cache
@@ -253,6 +257,7 @@ function toPublic(record: PublicPoolRecord): PublicPool {
     name: record.name,
     address: record.address,
     officialEmail: record.officialEmail,
+    officialPage: record.officialPage,
     chief: record.chief,
     inspectors: record.inspectors,
     agents: record.agents,

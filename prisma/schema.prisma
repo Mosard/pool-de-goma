@@ -92,6 +92,12 @@ model Pool {
   // l'Inspection) : adresse officielle et e-mail institutionnel.
   address        String?
   officialEmail  String?
+  // Passage EXPLICITE de la page publique en mode officiel, décidé par
+  // l'IPP ou l'informaticien. Tant qu'il est vide, un POOL qui dispose d'une
+  // maquette (src/lib/pool-demo) l'affiche entièrement, même si une école ou
+  // un agent est déjà publié ; une fois renseigné, plus aucune donnée
+  // fictive n'apparaît sur la page.
+  officialPageSince DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

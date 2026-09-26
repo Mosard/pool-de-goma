@@ -328,3 +328,34 @@ export async function updatePublicationAuthorizationAction(
   revalidatePath(`/parametres/pools/${poolId}`);
   return { success: true };
 }
+
+/**
+ * Passage EXPLICITE de la page publique en mode officiel (ou retour à la
+ * maquette). Décision de l'IPP ou de l'informaticien, compte officiel,
+ * tracée dans l'audit. Tant que ce passage n'est pas décidé, un POOL qui
+ * dispose d'une maquette l'affiche entièrement, même si des données
+ * officielles sont déjà publiées ; ensuite, aucune donnée fictive.
+ */
+export async function setOfficialPageAction(poolId: string, enable: boolean) {
+  const actor = await currentActor();
+  await requirePublicationAuthority(actor.id);
+
+  const pool = await findPool(poolId, actor.organizationId);
+  if (!pool || !pool.slug) return;
+  if (enable === (pool.officialPageSince !== null)) return;
+
+  const officialPageSince = enable ? new Date() : null;
+  await prisma.pool.update({ where: { id: pool.id }, data: { officialPageSince } });
+
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: enable ? "pool.official_page_enable" : "pool.official_page_disable",
+    entityType: "Pool",
+    entityId: pool.id,
+    oldValue: { officialPageSince: pool.officialPageSince?.toISOString() ?? null },
+    newValue: { officialPageSince: officialPageSince?.toISOString() ?? null },
+  });
+
+  revalidatePoolAdmin(pool.id);
+}

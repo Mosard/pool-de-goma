@@ -49,9 +49,13 @@ function fromPublicPool(pool: PublicPool): PoolShowcase {
   };
 }
 
-/** Au moins une information de personnel ou d'école officiellement publiée. */
-function hasOfficialContent(s: PoolShowcase) {
-  return Boolean(s.chief) || s.staff.length > 0 || s.schools.length > 0;
+/**
+ * La maquette d'un POOL n'est remplacée par les données officielles que sur
+ * décision EXPLICITE de l'administration (Pool.officialPageSince), jamais
+ * automatiquement parce qu'une école ou un agent vient d'être publié.
+ */
+function showsDemo(pool: PublicPool | null, slug: string) {
+  return Boolean(DEMO_POOL_SHOWCASES[slug]) && !pool?.officialPage;
 }
 
 export type ResolvedPoolPage = {
@@ -62,22 +66,20 @@ export type ResolvedPoolPage = {
 
 /**
  * Règle de choix (sans mélange) :
- * 1. POOL confirmé avec du contenu officiel publié → données officielles ;
- * 2. sinon, si une maquette existe pour ce slug → maquette (entièrement
- *    fictive, signalée, non indexée) ;
- * 3. sinon → modèle officiel avec les informations disponibles (blocs vides
- *    « à publier »).
- * Dès que du contenu officiel est publié, la maquette cesse d'être utilisée.
+ * 1. POOL disposant d'une maquette et pas encore passé en mode officiel →
+ *    maquette entière (fictive, signalée, non indexée), même si des données
+ *    officielles existent déjà ;
+ * 2. POOL confirmé (passé en mode officiel, ou sans maquette) → données
+ *    officielles uniquement, blocs vides « à publier » si besoin ;
+ * 3. URL existante non confirmée → modèle officiel vide.
  */
 export async function resolvePoolPage(slug: string): Promise<ResolvedPoolPage | null> {
   const page = await getPublicPoolPage(slug);
-  const demo = DEMO_POOL_SHOWCASES[slug];
-  const official = page?.kind === "confirmed" ? fromPublicPool(page.pool) : null;
+  const confirmedPool = page?.kind === "confirmed" ? page.pool : null;
   const confirmed = page?.kind === "confirmed";
 
-  if (official && hasOfficialContent(official)) return { showcase: official, confirmed };
-  if (demo) return { showcase: demo, confirmed };
-  if (official) return { showcase: official, confirmed };
+  if (showsDemo(confirmedPool, slug)) return { showcase: DEMO_POOL_SHOWCASES[slug], confirmed };
+  if (confirmedPool) return { showcase: fromPublicPool(confirmedPool), confirmed };
   if (page?.kind === "pending") {
     return {
       showcase: { mode: "official", slug, name: page.name, address: null, email: null, chief: null, staff: [], schools: [] },
@@ -107,9 +109,13 @@ export type PoolCard = {
 export async function getPoolCards(): Promise<PoolCard[]> {
   const pools = await getPublicPools();
   const cards: PoolCard[] = pools.map((pool) => {
-    const official = fromPublicPool(pool);
-    const isDemo = !hasOfficialContent(official) && Boolean(DEMO_POOL_SHOWCASES[pool.slug]);
-    return { slug: pool.slug, name: pool.name, chief: isDemo ? null : official.chief, mode: isDemo ? "demo" : "official" };
+    const isDemo = showsDemo(pool, pool.slug);
+    return {
+      slug: pool.slug,
+      name: pool.name,
+      chief: isDemo || !pool.chief ? null : fromPerson(pool.chief),
+      mode: isDemo ? "demo" : "official",
+    };
   });
   for (const demo of Object.values(DEMO_POOL_SHOWCASES)) {
     if (!cards.some((c) => c.slug === demo.slug)) {

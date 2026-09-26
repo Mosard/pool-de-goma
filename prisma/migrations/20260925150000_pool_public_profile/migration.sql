@@ -20,7 +20,8 @@ CREATE TYPE "PublicationScope" AS ENUM ('IDENTITY', 'PHOTO');
 -- AlterTable
 ALTER TABLE "Pool" ADD COLUMN "slug" TEXT,
 ADD COLUMN "address" TEXT,
-ADD COLUMN "officialEmail" TEXT;
+ADD COLUMN "officialEmail" TEXT,
+ADD COLUMN "officialPageSince" TIMESTAMP(3);
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Pool_slug_key" ON "Pool"("slug");

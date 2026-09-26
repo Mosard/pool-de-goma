@@ -186,6 +186,19 @@ export function PoolShowcaseView({ showcase, confirmed }: { showcase: PoolShowca
                   </div>
                 </dl>
 
+                {chief && chief.schools.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-300">Écoles suivies</p>
+                    <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                      {chief.schools.map((s) => (
+                        <li key={s} className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white ring-1 ring-white/15">
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <p className="flex items-start gap-2 text-sm text-gray-300">
                   <MapPin size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-blue-300" aria-hidden />
                   <span>

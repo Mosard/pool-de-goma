@@ -8,7 +8,8 @@ import { hasPermissionAnyPool } from "@/lib/permissions";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { LEGACY_POOL_PAGES } from "@/components/homepage/homepage-data";
 import { AddRoleForm, AuthorizationForm, ChiefForm, PoolProfileForm } from "./pool-admin-forms";
-import { removeChiefAction, removePoolRoleAction } from "./actions";
+import { removeChiefAction, removePoolRoleAction, setOfficialPageAction } from "./actions";
+import { DEMO_POOL_SHOWCASES } from "@/lib/pool-demo";
 
 const RECORD_LABELS = {
   CONSENT: { true: "Accord donné par l'agent", false: "Accord retiré par l'agent" },
@@ -30,7 +31,16 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const pool = await prisma.pool.findFirst({
     where: { id, organizationId: user.organizationId },
-    select: { id: true, name: true, code: true, active: true, slug: true, address: true, officialEmail: true },
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      active: true,
+      slug: true,
+      address: true,
+      officialEmail: true,
+      officialPageSince: true,
+    },
   });
   if (!pool) notFound();
 
@@ -131,6 +141,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
     else publicChiefStatus = `${chief.name}, avec un visuel neutre (photo non publiée).`;
   }
   const fmt = (d: Date) => d.toLocaleString("fr-FR", { timeZone: "Africa/Lubumbashi" });
+  const hasDemo = Boolean(pool.slug && DEMO_POOL_SHOWCASES[pool.slug]);
 
   return (
     <div className="space-y-6">
@@ -172,6 +183,51 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
               </li>
             ))}
           </ul>
+        )}
+      </Card>
+
+      <Card className="space-y-3">
+        <h2 className="text-base font-semibold text-gray-900">Page publique : maquette ou mode officiel</h2>
+        {!hasDemo ? (
+          <p className="text-sm text-gray-600">
+            Aucune maquette n&apos;existe pour ce POOL : sa page affiche uniquement les données officielles publiées.
+          </p>
+        ) : pool.officialPageSince ? (
+          <>
+            <p className="text-sm text-gray-600">
+              <Badge color="green">Mode officiel</Badge>{" "}
+              depuis le {fmt(pool.officialPageSince)} : la page n&apos;affiche que les données officielles, aucune donnée
+              fictive.
+            </p>
+            {canPublish && isOfficial && (
+              <ConfirmButton
+                label="Revenir à la maquette"
+                confirmLabel="Revenir à la maquette"
+                variant="danger"
+                className="!min-h-0 px-3 py-1.5 text-xs"
+                formAction={setOfficialPageAction.bind(null, pool.id, false)}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-600">
+              <Badge color="orange">Maquette affichée</Badge>{" "}
+              La page publique montre la maquette (données et portraits fictifs, signalés) tant que le passage en mode
+              officiel n&apos;est pas décidé — même si des écoles ou des agents sont déjà publiés. Après le passage, seules
+              les données officielles autorisées apparaissent.
+            </p>
+            {canPublish && isOfficial ? (
+              <ConfirmButton
+                label="Passer la page en mode officiel"
+                confirmLabel="Confirmer le passage en mode officiel"
+                className="!min-h-0 px-3 py-1.5 text-xs"
+                formAction={setOfficialPageAction.bind(null, pool.id, true)}
+              />
+            ) : (
+              <p className="text-xs text-gray-500">Décision réservée à l&apos;IPP et à l&apos;informaticien.</p>
+            )}
+          </>
         )}
       </Card>
 
