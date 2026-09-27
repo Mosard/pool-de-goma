@@ -92,6 +92,9 @@ model Pool {
   // l'Inspection) : adresse officielle et e-mail institutionnel.
   address        String?
   officialEmail  String?
+  // Téléphone du bureau du POOL : visible dans l'application seulement, jamais
+  // publié (décision de l'Inspection : aucun téléphone sur le site public).
+  officePhone    String?
   // Passage EXPLICITE de la page publique en mode officiel, décidé par
   // l'IPP ou l'informaticien. Tant qu'il est vide, un POOL qui dispose d'une
   // maquette (src/lib/pool-demo) l'affiche entièrement, même si une école ou

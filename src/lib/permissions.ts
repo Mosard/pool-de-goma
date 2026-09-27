@@ -5,7 +5,7 @@ import { readViewMode, type ViewMode } from "@/lib/view-mode";
 
 // Fonctions pures réexportées (les composants client importent directement
 // permission-checks, ce module-ci lisant la base et les cookies).
-export { hasPermission, hasPermissionAnyPool, poolsWithPermission } from "@/lib/permission-checks";
+export { hasPermission, hasPermissionAnyPool, isChiefOf, poolsWithPermission } from "@/lib/permission-checks";
 export type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 
 export class ForbiddenError extends Error {

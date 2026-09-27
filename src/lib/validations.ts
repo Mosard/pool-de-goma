@@ -21,7 +21,14 @@ export const poolProfileSchema = z.object({
     .regex(/^([a-z0-9]+(-[a-z0-9]+)*)?$/, "Minuscules, chiffres et tirets uniquement (ex. rutshuru-1)"),
   address: z.string().trim().max(300, "300 caractères maximum"),
   officialEmail: z.union([z.literal(""), z.string().trim().toLowerCase().email("E-mail invalide").max(120)]),
+  officePhone: z.union([
+    z.literal(""),
+    z.string().trim().regex(/^\+?[0-9 ()-]{6,20}$/, "Numéro invalide (chiffres, espaces, + ; 6 à 20 caractères)"),
+  ]),
 });
+
+// Ce que le chef de POOL complète lui-même sur la fiche de SON POOL.
+export const poolContactSchema = poolProfileSchema.pick({ address: true, officialEmail: true, officePhone: true });
 
 export const functionSchema = z.object({
   label: z.string().min(2, "Nom requis"),

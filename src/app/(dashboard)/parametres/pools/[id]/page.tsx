@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Alert, Avatar, Badge, Card, PageHeader } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
-import { hasPermissionAnyPool } from "@/lib/permissions";
+import { hasPermissionAnyPool, isChiefOf } from "@/lib/permissions";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { LEGACY_POOL_PAGES } from "@/components/homepage/homepage-data";
 import { AddRoleForm, AuthorizationForm, ChiefForm, PoolProfileForm } from "./pool-admin-forms";
@@ -26,8 +26,6 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
   const canPublish =
     hasPermissionAnyPool(user.permissions, PERMISSIONS.PUBLICATION_MANAGE) &&
     user.roles.some((r) => PUBLICATION_AUTHORITY_ROLE_KEYS.includes(r.key));
-  if (!canEditProfile && !canManageStaff && !canPublish) redirect("/dashboard");
-
   const { id } = await params;
   const pool = await prisma.pool.findFirst({
     where: { id, organizationId: user.organizationId },
@@ -39,10 +37,14 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
       slug: true,
       address: true,
       officialEmail: true,
+      officePhone: true,
       officialPageSince: true,
     },
   });
   if (!pool) notFound();
+  // Le chef de CE POOL complète la fiche du bureau et rattache ses inspecteurs.
+  const isChief = isChiefOf(user.roles, pool.id);
+  if (!canEditProfile && !canManageStaff && !canPublish && !isChief) redirect("/dashboard");
 
   const [memberRoles, poolRoles, activeUsers, claimedSlugs] = await Promise.all([
     prisma.userRole.findMany({
@@ -69,7 +71,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
     prisma.roleDefinition.findMany({
       where: { scope: "POOL", key: { not: ROLE_KEYS.CHEF_POOL } },
       orderBy: { label: "asc" },
-      select: { id: true, label: true },
+      select: { id: true, key: true, label: true },
     }),
     prisma.user.findMany({
       where: { organizationId: user.organizationId, status: "ACTIVE", isDemo: false },
@@ -141,6 +143,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
     else publicChiefStatus = `${chief.name}, avec un visuel neutre (photo non publiée).`;
   }
   const fmt = (d: Date) => d.toLocaleString("fr-FR", { timeZone: "Africa/Lubumbashi" });
+  const addableRoles = canManageStaff ? poolRoles : poolRoles.filter((r) => r.key === ROLE_KEYS.INSPECTEUR);
   const hasDemo = Boolean(pool.slug && DEMO_POOL_SHOWCASES[pool.slug]);
 
   return (
@@ -149,8 +152,11 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
         title={`POOL de ${pool.name}`}
         description={`Code ${pool.code} — fiche publique, personnel et publication`}
         actions={
-          <Link href="/parametres" className="text-sm font-medium text-gray-500 hover:text-gray-900">
-            Retour aux paramètres
+          <Link
+            href={canEditProfile ? "/parametres" : "/dashboard"}
+            className="text-sm font-medium text-gray-500 hover:text-gray-900"
+          >
+            {canEditProfile ? "Retour aux paramètres" : "Retour au tableau de bord"}
           </Link>
         }
       />
@@ -231,14 +237,16 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
         )}
       </Card>
 
-      {canEditProfile && isOfficial ? (
+      {(canEditProfile || isChief) && isOfficial ? (
         <PoolProfileForm
           poolId={pool.id}
+          mode={canEditProfile ? "full" : "contact"}
           defaults={{
             name: pool.name,
             slug: pool.slug ?? "",
             address: pool.address ?? "",
             officialEmail: pool.officialEmail ?? "",
+            officePhone: pool.officePhone ?? "",
           }}
           slugSuggestions={slugSuggestions}
         />
@@ -253,6 +261,10 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
             <div>
               <dt className="text-gray-500">E-mail institutionnel</dt>
               <dd className="text-gray-900">{pool.officialEmail ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Téléphone du bureau (non publié)</dt>
+              <dd className="text-gray-900">{pool.officePhone ?? "—"}</dd>
             </div>
           </dl>
         </Card>
@@ -365,9 +377,15 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
             </tbody>
           </table>
         )}
-        {canManageStaff && isOfficial && (
+        {(canManageStaff || isChief) && isOfficial && (
           <div className="border-t border-gray-100 pt-4">
-            <AddRoleForm poolId={pool.id} users={activeUsers} roles={poolRoles} />
+            {!canManageStaff && (
+              <p className="mb-2 text-xs text-gray-500">
+                Rattachez à votre POOL un inspecteur dont le compte a déjà été validé par l&apos;IPP ou
+                l&apos;informaticien.
+              </p>
+            )}
+            <AddRoleForm poolId={pool.id} users={activeUsers} roles={addableRoles} />
           </div>
         )}
       </Card>

@@ -6,7 +6,7 @@ import { Alert, Button, Select } from "@/components/ui";
 import { approveAccountRequestAction, rejectAccountRequestAction, type ReviewState } from "./actions";
 import { ActivationNotice } from "./activation-notice";
 
-type RoleOption = { id: string; label: string; scope: string };
+type RoleOption = { id: string; key: string; label: string; scope: string };
 type PoolOption = { id: string; name: string };
 
 const initialState: ReviewState = {};
@@ -18,12 +18,14 @@ const initialState: ReviewState = {};
 export function RequestReview({
   requestId,
   requestedRoleId,
+  requestedRoleKey,
   requestedPoolId,
   roles,
   pools,
 }: {
   requestId: string;
   requestedRoleId: string | null;
+  requestedRoleKey: string | null;
   requestedPoolId: string | null;
   roles: RoleOption[];
   pools: PoolOption[];
@@ -38,14 +40,23 @@ export function RequestReview({
     initialState
   );
   const [mode, setMode] = useState<"idle" | "approve" | "reject">("idle");
-  const defaultRole = roles.some((r) => r.id === requestedRoleId) ? requestedRoleId! : "";
+  // Demande « chef de pool » : le chef est un inspecteur du POOL nommé à cette
+  // fonction — on présélectionne l'inspecteur et la nomination.
+  const chiefRequested = requestedRoleKey === "chef_pool";
+  const inspectorRole = roles.find((r) => r.key === "inspecteur");
+  const defaultRole = chiefRequested
+    ? (inspectorRole?.id ?? "")
+    : roles.some((r) => r.id === requestedRoleId)
+      ? requestedRoleId!
+      : "";
   const [roleId, setRoleId] = useState(defaultRole);
   const role = roles.find((r) => r.id === roleId);
 
   if (approveState.done === "approved" && approveState.activated) {
     return (
       <Alert variant="success">
-        Compte {approveState.isDemo ? "de démonstration " : ""}validé et actif. La personne se connecte dès maintenant
+        Compte {approveState.isDemo ? "de démonstration " : ""}validé et actif
+        {approveState.chief ? ", nommé chef du POOL" : ""}. La personne se connecte dès maintenant
         avec son identifiant <strong className="font-mono">{approveState.username}</strong> et le mot de passe
         qu&apos;elle a choisi.
         <Button type="button" variant="ghost" className="ml-2 !min-h-0 !px-2 !py-1 text-xs" onClick={() => router.refresh()}>
@@ -110,6 +121,12 @@ export function RequestReview({
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </Select>
+          {role?.key === "inspecteur" && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-700">
+              <input type="checkbox" name="designateChief" defaultChecked={chiefRequested} />
+              Nommer chef de ce POOL
+            </label>
+          )}
           <Button type="submit" className="!min-h-0 !px-3 !py-1.5 text-xs" disabled={approving}>
             {approving ? "Validation…" : "Confirmer"}
           </Button>
@@ -131,6 +148,11 @@ export function RequestReview({
         </form>
       )}
 
+      {mode === "approve" && chiefRequested && (
+        <p className="text-right text-xs text-gray-500">
+          Chef de pool demandé : le compte est créé comme inspecteur du POOL, puis nommé chef (un seul chef par POOL).
+        </p>
+      )}
       {error && <Alert variant="error">{error}</Alert>}
     </div>
   );

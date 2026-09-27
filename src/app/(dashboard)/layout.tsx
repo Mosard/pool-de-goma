@@ -34,6 +34,12 @@ export default async function DashboardLayout({
   if (!currentUser || currentUser.status !== "ACTIVE") redirect("/login?compte=inactif");
 
   const roleLabels = session.user.roles.map((r) => r.label);
+  // Chef de POOL sans accès aux Paramètres : lien direct vers la fiche de son POOL.
+  const chiefPoolId = session.user.roles.find((r) => r.key === "chef_pool")?.poolId ?? null;
+  const myPoolHref =
+    chiefPoolId && !session.user.permissions.some((p) => p.permissionKey === "pools.manage")
+      ? `/parametres/pools/${chiefPoolId}`
+      : null;
 
   // « Voir comme » : réservé au Super Admin (rôle réel, relu en base).
   const [simulableRoles, pools] = session.user.isSuperAdmin
@@ -53,7 +59,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
-      <Sidebar permissions={session.user.permissions} />
+      <Sidebar permissions={session.user.permissions} myPoolHref={myPoolHref} />
       <div className="flex flex-1 flex-col">
         <Topbar
           name={session.user.name ?? ""}
@@ -61,6 +67,7 @@ export default async function DashboardLayout({
           notifications={notifications}
           permissions={session.user.permissions}
           photoUrl={currentUser?.photoUrl}
+          myPoolHref={myPoolHref}
         />
         {session.user.isSuperAdmin && (
           <ViewModeBar

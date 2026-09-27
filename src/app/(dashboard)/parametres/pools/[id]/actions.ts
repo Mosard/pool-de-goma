@@ -5,12 +5,16 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { poolProfileSchema } from "@/lib/validations";
+import { poolProfileSchema, poolContactSchema } from "@/lib/validations";
 import {
   requireOfficialActor,
   requireOfficialActorUnlessDemoTarget,
   requirePermission,
   requirePublicationAuthority,
+  ForbiddenError,
+  hasPermission,
+  isChiefOf,
+  loadUserAccess,
 } from "@/lib/permissions";
 import { ASSIGNMENT_END_REASONS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
@@ -63,28 +67,44 @@ export async function updatePoolProfileAction(
   formData: FormData
 ): Promise<PoolAdminFormState> {
   const actor = await currentActor();
-  await requirePermission(actor.id, PERMISSIONS.POOLS_MANAGE);
-  await requireOfficialActor(actor.id);
-
   const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return { formError: "POOL introuvable." };
 
-  const parsed = poolProfileSchema.safeParse({
-    name: formData.get("name") ?? "",
-    slug: formData.get("slug") ?? "",
+  // IPP / informaticien / Super Admin : fiche complète. Chef de CE POOL :
+  // coordonnées du bureau seulement (adresse, e-mail, téléphone).
+  const access = await loadUserAccess(actor.id);
+  const full = hasPermission(access.permissions, PERMISSIONS.POOLS_MANAGE, {
+    poolId: pool.id,
+    organizationId: pool.organizationId,
+  });
+  if (!full && !isChiefOf(access.roles, pool.id)) throw new ForbiddenError();
+  await requireOfficialActor(actor.id);
+
+  const contact = {
     address: formData.get("address") ?? "",
     officialEmail: formData.get("officialEmail") ?? "",
-  });
-  if (!parsed.success) {
-    return { errors: firstErrors(parsed.error.flatten().fieldErrors) };
-  }
-
-  const data = {
-    name: parsed.data.name,
-    slug: parsed.data.slug || null,
-    address: parsed.data.address || null,
-    officialEmail: parsed.data.officialEmail || null,
+    officePhone: formData.get("officePhone") ?? "",
   };
+  let data: { name?: string; slug?: string | null; address: string | null; officialEmail: string | null; officePhone: string | null };
+  if (full) {
+    const parsed = poolProfileSchema.safeParse({ ...contact, name: formData.get("name") ?? "", slug: formData.get("slug") ?? "" });
+    if (!parsed.success) return { errors: firstErrors(parsed.error.flatten().fieldErrors) };
+    data = {
+      name: parsed.data.name,
+      slug: parsed.data.slug || null,
+      address: parsed.data.address || null,
+      officialEmail: parsed.data.officialEmail || null,
+      officePhone: parsed.data.officePhone || null,
+    };
+  } else {
+    const parsed = poolContactSchema.safeParse(contact);
+    if (!parsed.success) return { errors: firstErrors(parsed.error.flatten().fieldErrors) };
+    data = {
+      address: parsed.data.address || null,
+      officialEmail: parsed.data.officialEmail || null,
+      officePhone: parsed.data.officePhone || null,
+    };
+  }
 
   try {
     await prisma.pool.update({ where: { id: pool.id }, data });
@@ -101,7 +121,7 @@ export async function updatePoolProfileAction(
     action: "pool.profile_update",
     entityType: "Pool",
     entityId: pool.id,
-    oldValue: { name: pool.name, slug: pool.slug, address: pool.address, officialEmail: pool.officialEmail },
+    oldValue: { name: pool.name, slug: pool.slug, address: pool.address, officialEmail: pool.officialEmail, officePhone: pool.officePhone },
     newValue: data,
   });
 
@@ -207,15 +227,22 @@ export async function addPoolRoleAction(
   formData: FormData
 ): Promise<PoolAdminFormState> {
   const actor = await currentActor();
-  await requirePermission(actor.id, PERMISSIONS.USERS_MANAGE);
-  await requireOfficialActor(actor.id);
-
   const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return { formError: "POOL introuvable." };
+
+  // Gestion des comptes : toute fonction de POOL. Chef de CE POOL : rattache
+  // seulement des inspecteurs (comptes déjà validés).
+  const access = await loadUserAccess(actor.id);
+  const canManage = hasPermission(access.permissions, PERMISSIONS.USERS_MANAGE);
+  if (!canManage && !isChiefOf(access.roles, pool.id)) throw new ForbiddenError();
+  await requireOfficialActor(actor.id);
 
   const role = await prisma.roleDefinition.findUnique({ where: { id: String(formData.get("roleId") ?? "") } });
   if (!role || role.scope !== "POOL" || role.key === ROLE_KEYS.CHEF_POOL) {
     return { errors: { roleId: "Choisissez une fonction de POOL (le chef se nomme séparément)." } };
+  }
+  if (!canManage && role.key !== ROLE_KEYS.INSPECTEUR) {
+    return { errors: { roleId: "Le chef de POOL rattache uniquement des inspecteurs à son POOL." } };
   }
   const user = await prisma.user.findFirst({
     where: { id: String(formData.get("userId") ?? ""), organizationId: actor.organizationId, status: "ACTIVE", isDemo: false },

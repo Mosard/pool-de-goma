@@ -14,11 +14,14 @@ const initialState: PoolAdminFormState = {};
 
 export function PoolProfileForm({
   poolId,
+  mode = "full",
   defaults,
   slugSuggestions,
 }: {
   poolId: string;
-  defaults: { name: string; slug: string; address: string; officialEmail: string };
+  /** "contact" : chef de POOL — coordonnées du bureau seulement. */
+  mode?: "full" | "contact";
+  defaults: { name: string; slug: string; address: string; officialEmail: string; officePhone: string };
   slugSuggestions: string[];
 }) {
   const [state, formAction, pending] = useActionState(updatePoolProfileAction.bind(null, poolId), initialState);
@@ -31,6 +34,14 @@ export function PoolProfileForm({
         institutionnel uniquement (ni WhatsApp, ni numéro personnel).
       </p>
       <form action={formAction} className="mt-4 space-y-4">
+        {mode === "contact" ? (
+          <p className="text-sm text-gray-600">
+            <span className="font-medium text-gray-900">{defaults.name}</span>
+            {defaults.slug ? ` — /pools/${defaults.slug}` : " — non publié"}. Le nom et l&apos;adresse publique sont
+            fixés par l&apos;IPP ; complétez les coordonnées du bureau.
+          </p>
+        ) : (
+        <>
         <div>
           <Label htmlFor="name">Nom officiel</Label>
           <Input id="name" name="name" defaultValue={defaults.name} required />
@@ -53,6 +64,8 @@ export function PoolProfileForm({
           </p>
           <FieldError message={state.errors?.slug} />
         </div>
+        </>
+        )}
         <div>
           <Label htmlFor="address">Adresse officielle du bureau</Label>
           <Textarea id="address" name="address" rows={2} defaultValue={defaults.address} />
@@ -62,6 +75,12 @@ export function PoolProfileForm({
           <Label htmlFor="officialEmail">E-mail institutionnel du bureau</Label>
           <Input id="officialEmail" name="officialEmail" type="email" defaultValue={defaults.officialEmail} />
           <FieldError message={state.errors?.officialEmail} />
+        </div>
+        <div>
+          <Label htmlFor="officePhone">Téléphone du bureau</Label>
+          <Input id="officePhone" name="officePhone" type="tel" defaultValue={defaults.officePhone} placeholder="+243 …" />
+          <p className="mt-1 text-xs text-gray-500">Visible dans l&apos;application seulement, jamais publié sur le site.</p>
+          <FieldError message={state.errors?.officePhone} />
         </div>
         {state.formError && <Alert variant="error">{state.formError}</Alert>}
         {state.success && <Alert variant="success">Fiche enregistrée. La page publique est actualisée.</Alert>}

@@ -257,6 +257,8 @@ export type AccountCreationResult = {
   isDemo: boolean;
   /** Vrai si le compte est actif d'emblée (mot de passe choisi dans la demande). */
   activated: boolean;
+  /** Nommé chef du POOL lors de la validation. */
+  chief?: boolean;
   emailed: boolean;
   /** Présent seulement si le lien n'a pas pu être envoyé directement au titulaire. */
   activation?: ActivationLink;
@@ -286,6 +288,8 @@ export async function approveAccountRequest(params: {
   roleId: string;
   poolId: string | null;
   baseUrl: string;
+  /** Demande « chef de pool » : valider comme inspecteur du POOL ET nommer chef. */
+  designateChief?: boolean;
 }): Promise<AccountCreationResult> {
   await requirePermission(params.actorId, PERMISSIONS.ACCOUNTS_MANAGE);
 
@@ -302,6 +306,37 @@ export async function approveAccountRequest(params: {
   await requireOfficialForRealAccount(params.actorId, isDemo);
 
   const { role, pool } = await resolveRoleAndPool(params.roleId, params.poolId, params.organizationId);
+
+  // Chef de POOL (décision de l'Inspection) : un inspecteur du POOL nommé à
+  // cette fonction, un seul chef à la fois. On ne remplace jamais un chef
+  // existant depuis cet écran : cela se fait, en connaissance de cause, depuis
+  // la fiche du POOL.
+  let chiefRoleId: string | null = null;
+  if (params.designateChief) {
+    if (role.key !== ROLE_KEYS.INSPECTEUR || !pool) {
+      throw new AccountError("Pour nommer un chef, validez la demande comme « Inspecteur itinérant » d'un POOL.");
+    }
+    try {
+      await requirePermission(params.actorId, PERMISSIONS.USERS_MANAGE);
+    } catch (e) {
+      if (e instanceof ForbiddenError) throw new AccountError("Nommer un chef de POOL demande le droit de gérer les comptes.");
+      throw e;
+    }
+    const chiefRole = await prisma.roleDefinition.findUnique({ where: { key: ROLE_KEYS.CHEF_POOL } });
+    if (!chiefRole) throw new AccountError("La fonction « Chef de pool » n'existe pas dans le référentiel.");
+    // Seuls les chefs du même type comptent : un chef de démonstration n'est
+    // jamais publié et n'empêche pas de nommer le chef officiel.
+    const current = await prisma.userRole.findFirst({
+      where: { poolId: pool.id, roleId: chiefRole.id, user: { isDemo } },
+      select: { user: { select: { name: true } } },
+    });
+    if (current) {
+      throw new AccountError(
+        `Le POOL ${pool.name} a déjà un chef (${current.user.name}). Validez la demande sans « Nommer chef », puis changez le chef depuis la fiche du POOL si nécessaire.`
+      );
+    }
+    chiefRoleId = chiefRole.id;
+  }
 
   if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
     throw new AccountError("Un compte existe déjà avec cette adresse e-mail : refusez la demande ou traitez le compte existant.");
@@ -338,7 +373,12 @@ export async function approveAccountRequest(params: {
           isDemo,
           organizationId: request.organizationId,
           poolId: pool?.id ?? null,
-          roles: { create: { roleId: role.id, poolId: role.scope === "POOL" ? pool!.id : null } },
+          roles: {
+            create: [
+              { roleId: role.id, poolId: role.scope === "POOL" ? pool!.id : null },
+              ...(chiefRoleId ? [{ roleId: chiefRoleId, poolId: pool!.id }] : []),
+            ],
+          },
         },
       });
     });
@@ -360,11 +400,31 @@ export async function approveAccountRequest(params: {
       poolId: pool?.id ?? null,
       requestedRoleId: request.requestedRoleId,
       activated: Boolean(chosenHash),
+      chief: Boolean(chiefRoleId),
     },
   });
+  if (chiefRoleId) {
+    await logAudit({
+      actorId: params.actorId,
+      organizationId: params.organizationId,
+      action: "pool.chief_designate",
+      entityType: "Pool",
+      entityId: pool!.id,
+      newValue: { chiefUserId: user.id },
+      metadata: { via: "validation de demande de compte" },
+    });
+  }
 
   if (chosenHash) {
-    return { userId: user.id, email: user.email, username: user.username, isDemo: user.isDemo, activated: true, emailed: false };
+    return {
+      userId: user.id,
+      email: user.email,
+      username: user.username,
+      isDemo: user.isDemo,
+      activated: true,
+      emailed: false,
+      chief: Boolean(chiefRoleId),
+    };
   }
   return finishCreation(user, params.baseUrl);
 }

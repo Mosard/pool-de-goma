@@ -8,6 +8,7 @@ import {
   UserPlus,
   ScrollText,
   Settings,
+  Building2,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 
@@ -17,6 +18,11 @@ export type NavItem = {
   icon: React.ElementType;
   permission?: string; // absent = visible à tout utilisateur connecté
 };
+
+/** Lien « Mon POOL » du chef de POOL (fiche du bureau, inspecteurs). */
+export function myPoolItem(href: string): NavItem {
+  return { href, label: "Mon POOL", icon: Building2 };
+}
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },

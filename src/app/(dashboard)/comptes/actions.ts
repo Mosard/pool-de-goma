@@ -13,6 +13,7 @@ export type ReviewState = {
   username?: string | null;
   /** Compte actif d'emblée : la personne se connecte avec son identifiant. */
   activated?: boolean;
+  chief?: boolean;
   emailed?: boolean;
   isDemo?: boolean;
   activationUrl?: string;
@@ -35,6 +36,7 @@ export async function approveAccountRequestAction(
       roleId: String(formData.get("roleId") ?? ""),
       poolId: String(formData.get("poolId") ?? "") || null,
       baseUrl: await getBaseUrl(),
+      designateChief: formData.get("designateChief") === "on",
     });
     // Pas de revalidatePath ici : la ligne doit rester affichée avec le lien
     // d'activation jusqu'à ce que l'administrateur clique « Terminé ».
@@ -43,6 +45,7 @@ export async function approveAccountRequestAction(
       email: result.email,
       username: result.username,
       activated: result.activated,
+      chief: result.chief,
       emailed: result.emailed,
       isDemo: result.isDemo,
       activationUrl: result.activation?.url,

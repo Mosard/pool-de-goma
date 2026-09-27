@@ -17,7 +17,32 @@ export type UrlShape = {
   hasSslmode: boolean;
   hasApiKey: boolean;
   hadQuotesOrSpaces: boolean;
+  /** Forme de la clé API (jamais sa valeur) : longueur, segments, anomalies. */
+  apiKey: { length: number; segments: number; jwtLike: boolean; anomalies: string[] } | null;
 };
+
+function inspectApiKey(url: string): UrlShape["apiKey"] {
+  const m = url.match(/[?&]api_key=([^&]*)/);
+  if (!m) return null;
+  const key = m[1];
+  const anomalies: string[] = [];
+  if (/\s/.test(key)) anomalies.push("espace ou saut de ligne");
+  if (/[•*]/.test(key)) anomalies.push("caractères de masquage (•••/***)");
+  if (/…|\.\.\./.test(key)) anomalies.push("points de suspension (clé coupée ?)");
+  if (/%[0-9A-Fa-f]{2}/.test(key)) anomalies.push("caractères encodés (%xx)");
+  if (/["']/.test(key)) anomalies.push("guillemets");
+  if (key.length < 40) anomalies.push("clé anormalement courte");
+  const parts = key.split(".");
+  let jwtLike = false;
+  if (parts.length === 3) {
+    try {
+      jwtLike = "alg" in JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    } catch {
+      jwtLike = false;
+    }
+  }
+  return { length: key.length, segments: parts.length, jwtLike, anomalies };
+}
 
 function readUrl(): { url: string; shape: UrlShape } {
   const source = process.env.DATABASE_URL_SCRIPT ? "DATABASE_URL_SCRIPT" : "POSTGRES_URL";
@@ -42,6 +67,7 @@ function readUrl(): { url: string; shape: UrlShape } {
       hasSslmode: parsed.searchParams.has("sslmode"),
       hasApiKey: parsed.searchParams.has("api_key"),
       hadQuotesOrSpaces: url !== raw,
+      apiKey: inspectApiKey(url),
     },
   };
 }
@@ -60,7 +86,11 @@ export function scriptClient(): { prisma: PrismaClient; shape: UrlShape } {
 }
 
 export function describe(shape: UrlShape): string {
-  return `${shape.source} : ${shape.scheme}://${shape.host}:${shape.port} (sslmode ${shape.hasSslmode ? "présent" : "absent"}, api_key ${shape.hasApiKey ? "présente" : "absente"}${shape.hadQuotesOrSpaces ? ", guillemets/espaces retirés" : ""})`;
+  const k = shape.apiKey;
+  const keyInfo = k
+    ? `clé API : ${k.length} caractères, ${k.segments} segment(s)${k.jwtLike ? ", format JWT" : ""}, anomalies : ${k.anomalies.join(", ") || "aucune"}`
+    : `api_key absente`;
+  return `${shape.source} : ${shape.scheme}://${shape.host}:${shape.port} (sslmode ${shape.hasSslmode ? "présent" : "absent"}, ${keyInfo}${shape.hadQuotesOrSpaces ? ", guillemets/espaces retirés" : ""})`;
 }
 
 /**

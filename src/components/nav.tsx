@@ -9,11 +9,12 @@ import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-c
 import { NotificationBell, type NotificationItem } from "./notifications-bell";
 import { MobileNav } from "./mobile-nav";
 import { Avatar } from "./ui";
-import { NAV_ITEMS } from "./nav-items";
+import { NAV_ITEMS, myPoolItem } from "./nav-items";
 
-export function Sidebar({ permissions }: { permissions: SessionPermission[] }) {
+export function Sidebar({ permissions, myPoolHref }: { permissions: SessionPermission[]; myPoolHref?: string | null }) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.permission || hasPermissionAnyPool(permissions, item.permission));
+  if (myPoolHref) items.splice(1, 0, myPoolItem(myPoolHref));
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col bg-gray-950 text-gray-300 md:flex">
@@ -51,17 +52,19 @@ export function Topbar({
   notifications,
   permissions,
   photoUrl,
+  myPoolHref,
 }: {
   name: string;
   roleLabels: string[];
   notifications: NotificationItem[];
   permissions: SessionPermission[];
   photoUrl?: string | null;
+  myPoolHref?: string | null;
 }) {
   return (
     <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 sm:px-6">
       <div className="flex items-center gap-3">
-        <MobileNav permissions={permissions} />
+        <MobileNav permissions={permissions} myPoolHref={myPoolHref} />
         <Avatar name={name} src={photoUrl} className="hidden sm:flex" />
         <div>
           <p className="text-sm font-semibold text-gray-900">{name}</p>

@@ -25,6 +25,7 @@ import {
 } from "../../src/lib/accounts";
 import {
   demoRefusal,
+  isChiefOf,
   isSuperAdmin,
   loadUserAccess,
   requireOfficialActorUnlessDemoTarget,
@@ -330,6 +331,44 @@ async function main() {
     await prisma.user.update({ where: { id: u.id }, data: { status: "SUSPENDED" } });
     assert.equal(await verifyCredentials(alice.username, "Nouveau-mdp-Alice"), null);
     await rejects(() => issueAccessLink({ actorId: admin.id, organizationId: org.id, userId: u.id, baseUrl: BASE }), /suspendu/);
+  });
+
+  console.log("\nDemande « chef de pool »");
+  const nyira = await prisma.pool.findFirstOrThrow({ where: { code: "NYIRAGONGO" } });
+
+  await step("validation inspecteur + « Nommer chef » : chef du POOL en une étape", async () => {
+    const r = await request({ name: "Chef Nyira", email: `chef.nyira.${RUN}@exemple.cd`, username: `chef.nyira.${RUN}`, password: "Chef-mdp-123", roleId: chef.id, poolId: nyira.id });
+    const res = await approveAccountRequest({
+      actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: inspecteur.id, poolId: nyira.id, baseUrl: BASE, designateChief: true,
+    });
+    assert.ok(res.chief && res.activated);
+    const roles = (await loadUserAccess(res.userId)).roles;
+    assert.ok(roles.some((x) => x.key === ROLE_KEYS.INSPECTEUR && x.poolId === nyira.id));
+    assert.ok(isChiefOf(roles, nyira.id));
+    assert.ok(!isChiefOf(roles, goma.id));
+  });
+
+  await step("un second chef officiel pour le même POOL est refusé (message explicite)", async () => {
+    const r = await request({ name: "Chef Bis", email: `chef.bis.${RUN}@exemple.cd`, username: `chef.bis.${RUN}`, password: "Chef-mdp-123", roleId: chef.id, poolId: nyira.id });
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: inspecteur.id, poolId: nyira.id, baseUrl: BASE, designateChief: true }),
+      /a déjà un chef/
+    );
+    assert.equal((await prisma.accountRequest.findUniqueOrThrow({ where: { id: r.requestId } })).status, "PENDING");
+  });
+
+  await step("un chef de démonstration n'empêche pas de nommer le chef officiel (Goma)", async () => {
+    const r = await request({ name: "Chef Goma", email: `chef.goma.${RUN}@exemple.cd`, username: `chef.goma.${RUN}`, password: "Chef-mdp-123", roleId: chef.id, poolId: goma.id });
+    const res = await approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: inspecteur.id, poolId: goma.id, baseUrl: BASE, designateChief: true });
+    assert.ok(res.chief);
+  });
+
+  await step("« Nommer chef » exige la fonction d'inspecteur et un POOL", async () => {
+    const r = await request({ name: "Chef Ter", email: `chef.ter.${RUN}@exemple.cd`, username: `chef.ter.${RUN}`, password: "Chef-mdp-123", roleId: chef.id });
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: ipp.id, poolId: null, baseUrl: BASE, designateChief: true }),
+      /« Inspecteur itinérant » d'un POOL/
+    );
   });
 
   console.log("\nRôle Super Admin");

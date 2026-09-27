@@ -5,14 +5,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, User as UserIcon, LogOut } from "lucide-react";
 import { clsx } from "clsx";
-import { NAV_ITEMS } from "./nav-items";
+import { NAV_ITEMS, myPoolItem } from "./nav-items";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
 import { signOutAction } from "@/app/(dashboard)/actions";
 
-export function MobileNav({ permissions }: { permissions: SessionPermission[] }) {
+export function MobileNav({ permissions, myPoolHref }: { permissions: SessionPermission[]; myPoolHref?: string | null }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.permission || hasPermissionAnyPool(permissions, item.permission));
+  if (myPoolHref) items.splice(1, 0, myPoolItem(myPoolHref));
 
   return (
     <div className="md:hidden">

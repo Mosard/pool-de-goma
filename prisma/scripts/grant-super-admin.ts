@@ -22,7 +22,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { scriptClient, describe, scrub } from "./db-connection";
+import { scriptClient, describe, probePostgres, scrub } from "./db-connection";
 import {
   PERMISSIONS,
   ROLE_KEYS,
@@ -32,6 +32,10 @@ import {
 } from "../../src/lib/rbac-data";
 
 const { prisma, shape } = scriptClient();
+
+// Liaison lente (~0,7 s par échange depuis Goma) : le délai par défaut d'une
+// transaction (5 s) ne suffit pas. En cas d'expiration, tout est annulé.
+const TX_OPTIONS = { maxWait: 20_000, timeout: 60_000 };
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -95,6 +99,17 @@ async function main() {
   if (email.endsWith(".test")) refuse("une adresse en .test désigne un compte de démonstration.");
 
   console.log(`Base : ${describe(shape)}`);
+  // Connexion directe (port 5432) : vérifier d'abord que le réseau laisse
+  // passer le protocole Postgres, sinon échouer vite avec la marche à suivre.
+  if (shape.scheme.startsWith("postgres") && !["localhost", "127.0.0.1"].includes(shape.host)) {
+    const probe = await probePostgres(shape.host, Number(shape.port));
+    if (!probe.startsWith("OK")) {
+      refuse(
+        `connexion directe ${shape.host}:${shape.port} impossible depuis ce réseau (${probe}). ` +
+          "Définissez DATABASE_URL_SCRIPT avec l'adresse qui commence par prisma+postgres://accelerate.prisma-data.net/?api_key=… (elle passe par HTTPS)."
+      );
+    }
+  }
   const user = await loadAccount(email);
   const roleKeys = user.roles.map((r) => r.role.key).sort();
   console.log(`Compte ${mask(email)} : statut ${user.status}, ${user.isDemo ? "DÉMO" : "officiel"}, fonctions [${roleKeys.join(", ") || "aucune"}]`);
@@ -191,7 +206,7 @@ async function main() {
           metadata: { via: "script serveur grant-super-admin" },
         },
       });
-    });
+    }, TX_OPTIONS);
     console.log(`Retour arrière effectué. Sauvegarde : ${file}`);
     return;
   }
@@ -226,8 +241,10 @@ async function main() {
       (await tx.roleDefinition.create({
         data: { key: ROLE_KEYS.SUPER_ADMIN, label: SUPER_ADMIN_LABEL, description: SUPER_ADMIN_DESCRIPTION, scope: "PROVINCE", isSystem: true },
       }));
-    for (const p of permissionRows.filter((p) => missingPerms.includes(p.key))) {
-      await tx.rolePermission.create({ data: { roleId: r.id, permissionId: p.id } });
+    // Une seule requête pour toutes les permissions (liaison lente).
+    const toAdd = permissionRows.filter((p) => missingPerms.includes(p.key));
+    if (toAdd.length) {
+      await tx.rolePermission.createMany({ data: toAdd.map((p) => ({ roleId: r.id, permissionId: p.id })) });
     }
     if (extraPerms.length) {
       await tx.rolePermission.deleteMany({ where: { roleId: r.id, permission: { key: { in: extraPerms } } } });
@@ -244,7 +261,7 @@ async function main() {
         metadata: { via: "script serveur grant-super-admin" },
       },
     });
-  });
+  }, TX_OPTIONS);
   console.log(`\nSuper Admin attribué. Sauvegarde de l'état antérieur : ${file}`);
   console.log("Déconnectez-vous puis reconnectez-vous (Google) pour que le menu reflète les nouveaux droits, puis lancez --verify.");
 }

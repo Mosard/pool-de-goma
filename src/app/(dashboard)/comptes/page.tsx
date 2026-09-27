@@ -23,7 +23,7 @@ export default async function ComptesPage() {
     prisma.roleDefinition.findMany({
       where: { key: { notIn: [ROLE_KEYS.CHEF_POOL, ...RESTRICTED_ROLE_KEYS] } },
       orderBy: { label: "asc" },
-      select: { id: true, label: true, scope: true },
+      select: { id: true, key: true, label: true, scope: true },
     }),
     prisma.pool.findMany({
       where: { organizationId: session.user.organizationId, active: true },
@@ -85,6 +85,7 @@ export default async function ComptesPage() {
                     <RequestReview
                       requestId={r.id}
                       requestedRoleId={r.requestedRoleId}
+                      requestedRoleKey={r.requestedRole?.key ?? null}
                       requestedPoolId={r.poolId}
                       roles={roles}
                       pools={pools}

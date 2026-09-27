@@ -36,6 +36,11 @@ export function hasPermission(
   });
 }
 
+/** Détient la fonction de chef de CE POOL (rôles effectifs, mode « voir comme » compris). */
+export function isChiefOf(roles: SessionRole[], poolId: string): boolean {
+  return roles.some((r) => r.key === "chef_pool" && r.poolId === poolId);
+}
+
 /** Portée organisation : vrai si l'utilisateur détient la permission pour au moins un pool, quel qu'il soit (toujours dans sa propre organisation). */
 export function hasPermissionAnyPool(permissions: SessionPermission[], key: PermissionKey | string): boolean {
   return permissions.some((p) => p.permissionKey === key);
