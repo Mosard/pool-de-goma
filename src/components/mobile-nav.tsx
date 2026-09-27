@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X, User as UserIcon, LogOut } from "lucide-react";
 import { clsx } from "clsx";
 import { NAV_ITEMS } from "./nav-items";
-import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permissions";
+import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
 import { signOutAction } from "@/app/(dashboard)/actions";
 
 export function MobileNav({ permissions }: { permissions: SessionPermission[] }) {

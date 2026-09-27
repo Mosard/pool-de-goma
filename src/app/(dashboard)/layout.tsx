@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Sidebar, Topbar } from "@/components/nav";
+import { RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
+import { ViewModeBar } from "./view-mode-bar";
 
 // Extra safeguard: these pages already redirect to /login and are disallowed in robots.txt.
 export const metadata: Metadata = {
@@ -33,6 +35,22 @@ export default async function DashboardLayout({
 
   const roleLabels = session.user.roles.map((r) => r.label);
 
+  // « Voir comme » : réservé au Super Admin (rôle réel, relu en base).
+  const [simulableRoles, pools] = session.user.isSuperAdmin
+    ? await Promise.all([
+        prisma.roleDefinition.findMany({
+          where: { key: { notIn: [...RESTRICTED_ROLE_KEYS] } },
+          orderBy: { label: "asc" },
+          select: { key: true, label: true, scope: true },
+        }),
+        prisma.pool.findMany({
+          where: { organizationId: session.user.organizationId, active: true },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
+      ])
+    : [[], []];
+
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <Sidebar permissions={session.user.permissions} />
@@ -44,6 +62,13 @@ export default async function DashboardLayout({
           permissions={session.user.permissions}
           photoUrl={currentUser?.photoUrl}
         />
+        {session.user.isSuperAdmin && (
+          <ViewModeBar
+            active={session.user.viewMode ? { label: session.user.viewMode.label, poolName: session.user.viewMode.poolName } : null}
+            roles={simulableRoles}
+            pools={pools}
+          />
+        )}
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

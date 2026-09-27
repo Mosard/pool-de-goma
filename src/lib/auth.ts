@@ -1,3 +1,4 @@
+import { cache } from "react";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -49,6 +50,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   );
 }
 
+const accessForRequest = cache((userId: string) => loadUserAccess(userId));
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
   providers,
@@ -83,6 +86,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return token;
     },
-    session: authConfig.callbacks!.session,
+    // Droits relus en base à chaque requête (une fois par requête grâce à
+    // cache) : un changement de rôle, une suspension ou le mode « Voir comme »
+    // du Super Admin s'appliquent immédiatement, menus compris.
+    async session({ session, token }) {
+      if (session.user && token.id) {
+        const access = await accessForRequest(token.id as string);
+        session.user.id = token.id as string;
+        session.user.organizationId = token.organizationId as string;
+        session.user.poolId = access.viewMode ? access.viewMode.poolId : ((token.poolId as string | null) ?? null);
+        session.user.roles = access.roles;
+        session.user.permissions = access.permissions;
+        session.user.isSuperAdmin = access.superAdmin;
+        session.user.viewMode = access.viewMode;
+      }
+      return session;
+    },
   },
 });

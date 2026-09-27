@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inspectionSchema, reportSchema } from "@/lib/validations";
-import { demoRefusal, hasPermission, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
+import { demoRefusal, hasPermission, isSuperAdmin, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
 import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { getWorkflowStatusByKey } from "@/lib/workflow";
@@ -54,7 +54,13 @@ export async function createInspectionAction(
       where: { schoolId: parsed.data.schoolId, inspectorId: user.id, active: true },
     });
     if (!assigned) {
-      return { formError: "Vous n'êtes pas assigné à cette école." };
+      // Le Super Admin inspecte sans affectation (dépannage), mais seulement
+      // dans la portée de ses droits effectifs (un seul POOL en mode itinérant).
+      if (!(await isSuperAdmin(user.id))) return { formError: "Vous n'êtes pas assigné à cette école." };
+      await requirePermission(user.id, PERMISSIONS.INSPECTIONS_CONDUCT, {
+        poolId: school.poolId,
+        organizationId: school.pool.organizationId,
+      });
     }
   }
 

@@ -25,11 +25,12 @@ import {
 } from "../../src/lib/accounts";
 import {
   demoRefusal,
+  isSuperAdmin,
   loadUserAccess,
   requireOfficialActorUnlessDemoTarget,
   requirePublicationAuthority,
 } from "../../src/lib/permissions";
-import { RESTRICTED_ROLE_KEYS, ROLE_KEYS, SUPER_ADMIN_PERMISSIONS } from "../../src/lib/rbac-data";
+import { PERMISSION_CATALOG, RESTRICTED_ROLE_KEYS, ROLE_KEYS, SUPER_ADMIN_PERMISSIONS } from "../../src/lib/rbac-data";
 import { accountRequestSchema } from "../../src/lib/validations";
 
 const url = process.env.POSTGRES_URL ?? "";
@@ -416,13 +417,64 @@ async function main() {
     assert.match(grant(["--email", adminEmail, "--verify"]).out, /Valider les demandes \(accounts\.manage\) : oui/);
   });
 
-  await step("le Super Admin valide les demandes, sans autorité de publication ni données institutionnelles", async () => {
+  await step("Super Admin : toutes les permissions, sur tous les POOL, et l'autorité de publication", async () => {
     const r = await request({ name: "Après", email: `apres.${RUN}@exemple.cd`, username: `apres.${RUN}`, password: "Apres-mdp-1" });
     const res = await approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: ipp.id, poolId: null, baseUrl: BASE });
     assert.ok(res.activated);
-    await rejects(() => requirePublicationAuthority(admin.id), /Seuls l'IPP et l'informaticien/);
-    const perms = (await loadUserAccess(admin.id)).permissions.map((p) => p.permissionKey);
-    for (const k of ["pools.manage", "publication.manage", "reports.validate", "schools.manage"]) assert.ok(!perms.includes(k), k);
+    const access = await loadUserAccess(admin.id);
+    assert.ok(access.superAdmin && access.viewMode === null);
+    const perms = new Set(access.permissions.map((p) => p.permissionKey));
+    for (const p of PERMISSION_CATALOG) assert.ok(perms.has(p.key), p.key);
+    assert.ok(access.permissions.every((p) => p.poolId === null), "portée : tous les POOL de l'organisation");
+    await requirePublicationAuthority(admin.id);
+  });
+
+  await step("« Voir comme » chef de POOL (Goma) : uniquement les droits du chef, sur Goma seulement", async () => {
+    const a = await loadUserAccess(admin.id, { viewMode: { role: ROLE_KEYS.CHEF_POOL, poolId: goma.id } });
+    assert.equal(a.viewMode?.label, chef.label);
+    assert.equal(a.viewMode?.poolName, goma.name);
+    assert.deepEqual(a.roles.map((x) => x.key), [ROLE_KEYS.CHEF_POOL]);
+    assert.ok(a.permissions.length > 0 && a.permissions.every((p) => p.poolId === goma.id));
+    assert.ok(!a.permissions.some((p) => p.permissionKey === "accounts.manage"), "pas de gestion des comptes en mode chef");
+    assert.ok(a.superAdmin, "le rôle réel reste Super Admin (retour possible)");
+  });
+
+  await step("« Voir comme » IPP / informaticien / itinérant : droits exacts de chaque fonction", async () => {
+    const asIpp = await loadUserAccess(admin.id, { viewMode: { role: ROLE_KEYS.IPP, poolId: null } });
+    assert.deepEqual(asIpp.roles.map((x) => x.key), [ROLE_KEYS.IPP]);
+    assert.ok(asIpp.permissions.some((p) => p.permissionKey === "reports.validate"));
+    assert.ok(!asIpp.permissions.some((p) => p.permissionKey === "inspections.conduct"));
+    const asInfo = await loadUserAccess(admin.id, { viewMode: { role: ROLE_KEYS.INFORMATICIEN, poolId: null } });
+    assert.ok(asInfo.permissions.some((p) => p.permissionKey === "accounts.manage"));
+    assert.ok(!asInfo.permissions.some((p) => p.permissionKey === "reports.validate"));
+    const asInsp = await loadUserAccess(admin.id, { viewMode: { role: ROLE_KEYS.INSPECTEUR, poolId: goma.id } });
+    assert.deepEqual(asInsp.permissions.map((p) => [p.permissionKey, p.poolId]), [["inspections.conduct", goma.id]]);
+  });
+
+  await step("« Voir comme » refusé : Super Admin simulé, fonction de POOL sans POOL, POOL ou fonction inconnus", async () => {
+    for (const mode of [
+      { role: ROLE_KEYS.SUPER_ADMIN, poolId: null },
+      { role: ROLE_KEYS.CHEF_POOL, poolId: null },
+      { role: ROLE_KEYS.CHEF_POOL, poolId: "inexistant" },
+      { role: "fonction_inconnue", poolId: null },
+    ]) {
+      const a = await loadUserAccess(admin.id, { viewMode: mode });
+      assert.equal(a.viewMode, null, JSON.stringify(mode));
+      assert.ok(a.permissions.some((p) => p.permissionKey === "accounts.manage"), "retour aux droits réels");
+    }
+  });
+
+  await step("« Voir comme » sans effet pour un compte qui n'est pas Super Admin (démo compris)", async () => {
+    const other = await verifyCredentials(`info2.${RUN}`, "Info2-motdepasse");
+    for (const actor of [demoInfo.id, other!.id]) {
+      const before = await loadUserAccess(actor, { viewMode: null });
+      const after = await loadUserAccess(actor, { viewMode: { role: ROLE_KEYS.IPP, poolId: null } });
+      assert.deepEqual(after.permissions, before.permissions);
+      assert.equal(after.viewMode, null);
+      assert.equal(after.superAdmin, false);
+    }
+    assert.equal(await isSuperAdmin(admin.id), true);
+    assert.equal(await isSuperAdmin(demoInfo.id), false);
   });
 
   await step("retour arrière : informaticien rétabli, Super Admin retiré ; puis réattribution", async () => {

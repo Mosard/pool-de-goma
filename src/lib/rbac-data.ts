@@ -66,17 +66,15 @@ export const ASSIGNMENT_END_REASON_LABELS: Record<string, string> = {
   [ASSIGNMENT_END_REASONS.ROLE_REMOVED]: "Fonction d'inspecteur retirée",
 };
 
-// Administration technique de la plateforme (partenaire technologique). Droits
-// volontairement limités aux comptes et au journal d'audit : aucune décision
-// institutionnelle (publication, validation de rapports, POOL, écoles).
+// Administration technique de la plateforme (partenaire technologique) :
+// accès complet, sur tous les POOL, pour assister et dépanner chaque profil,
+// y compris l'autorisation de publication (décision du 2026-09-27). Il peut
+// aussi « voir comme » une fonction précise (src/lib/view-mode.ts). Toute
+// action est tracée dans le journal d'audit sous le nom du compte.
 export const SUPER_ADMIN_LABEL = "Super Admin (administration technique)";
 export const SUPER_ADMIN_DESCRIPTION =
-  "Administration technique de la plateforme par le partenaire technologique : comptes et journal d'audit. Ne remplace aucune fonction de l'Inspection.";
-export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = [
-  PERMISSIONS.ACCOUNTS_MANAGE,
-  PERMISSIONS.USERS_MANAGE,
-  PERMISSIONS.AUDIT_VIEW,
-];
+  "Accès complet à la plateforme pour l'assistance technique et le dépannage. N'occupe aucune fonction de l'Inspection ; toutes ses actions sont tracées.";
+export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);
 
 // Fonctions qui ne s'attribuent JAMAIS depuis l'application (formulaire public,
 // validation de demande, création de compte, fiche POOL) : uniquement par le
@@ -85,7 +83,13 @@ export const RESTRICTED_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN];
 
 // Décision de l'Inspection : seuls l'IPP et l'informaticien autorisent la
 // publication d'un agent (le Chef de POOL, notamment, ne le peut pas).
-export const PUBLICATION_AUTHORITY_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN];
+// Le Super Admin aussi (décision du 2026-09-27), sauf lorsqu'il simule une
+// autre fonction : il n'a alors que les droits de celle-ci.
+export const PUBLICATION_AUTHORITY_ROLE_KEYS: readonly string[] = [
+  ROLE_KEYS.IPP,
+  ROLE_KEYS.INFORMATICIEN,
+  ROLE_KEYS.SUPER_ADMIN,
+];
 
 export const WORKFLOW_STATUS_KEYS = {
   BROUILLON: "BROUILLON",

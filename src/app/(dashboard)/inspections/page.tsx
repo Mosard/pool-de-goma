@@ -18,10 +18,12 @@ export default async function InspectionsPage() {
   const session = await auth();
   const user = session!.user;
   const isInspector = hasPermissionAnyPool(user.permissions, PERMISSIONS.INSPECTIONS_CONDUCT);
+  // Super Admin hors simulation : vue d'ensemble ET possibilité d'inspecter.
+  const superAdminFull = Boolean(user.isSuperAdmin && !user.viewMode);
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
 
   const inspections = await prisma.inspection.findMany({
-    where: isInspector
+    where: isInspector && !superAdminFull
       ? { inspectorId: user.id }
       : isProvinceScoped
         ? { school: { pool: { organizationId: user.organizationId } } }
@@ -31,7 +33,18 @@ export default async function InspectionsPage() {
   });
 
   let assignedSchools: { id: string; name: string }[] = [];
-  if (isInspector) {
+  if (isInspector && user.isSuperAdmin) {
+    // Pas d'affectation pour le Super Admin : écoles de sa portée effective.
+    assignedSchools = await prisma.school.findMany({
+      where: {
+        active: true,
+        pool: { organizationId: user.organizationId },
+        ...(user.viewMode?.poolId ? { poolId: user.viewMode.poolId } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+  } else if (isInspector) {
     const assignments = await prisma.assignment.findMany({
       where: { inspectorId: user.id, active: true },
       include: { school: true },

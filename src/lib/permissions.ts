@@ -1,8 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
+import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, RESTRICTED_ROLE_KEYS, ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
+import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
+import { readViewMode, type ViewMode } from "@/lib/view-mode";
 
-export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string };
-export type SessionRole = { key: string; label: string; poolId: string | null };
+// Fonctions pures réexportées (les composants client importent directement
+// permission-checks, ce module-ci lisant la base et les cookies).
+export { hasPermission, hasPermissionAnyPool, poolsWithPermission } from "@/lib/permission-checks";
+export type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 
 export class ForbiddenError extends Error {
   constructor(message = "Action non autorisée pour ce rôle.") {
@@ -11,79 +15,85 @@ export class ForbiddenError extends Error {
   }
 }
 
-/**
- * Charge les rôles + permissions d'un utilisateur directement depuis la base.
- * Un compte qui n'est pas ACTIVE (suspendu, désactivé, en attente) n'a aucune
- * permission, même si son jeton de session (JWT) est encore valide.
- */
-export async function loadUserAccess(userId: string): Promise<{
+export type ActiveViewMode = { role: string; label: string; poolId: string | null; poolName: string | null };
+
+export type UserAccess = {
   roles: SessionRole[];
   permissions: SessionPermission[];
-}> {
+  /** Détient RÉELLEMENT le rôle Super Admin (indépendamment du mode simulé). */
+  superAdmin: boolean;
+  /** Fonction simulée par le Super Admin (« Voir comme »), sinon null. */
+  viewMode: ActiveViewMode | null;
+};
+
+async function loadRealAccess(userId: string) {
   const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, status: true } });
-  if (!dbUser || dbUser.status !== "ACTIVE") return { roles: [], permissions: [] };
+  if (!dbUser || dbUser.status !== "ACTIVE") return null;
 
   const userRoles = await prisma.userRole.findMany({
     where: { userId },
     include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
   });
 
-  const roles: SessionRole[] = userRoles.map((ur) => ({
-    key: ur.role.key,
-    label: ur.role.label,
-    poolId: ur.poolId,
-  }));
-
+  const roles: SessionRole[] = userRoles.map((ur) => ({ key: ur.role.key, label: ur.role.label, poolId: ur.poolId }));
   const permissions: SessionPermission[] = [];
   for (const ur of userRoles) {
     for (const rp of ur.role.rolePermissions) {
       permissions.push({ permissionKey: rp.permission.key, poolId: ur.poolId, organizationId: dbUser.organizationId });
     }
   }
-
-  return { roles, permissions };
+  return { organizationId: dbUser.organizationId, roles, permissions };
 }
 
 /**
- * `poolId: null` sur une permission signifie une portée organisation (accès
- * à tous les pools de l'organisation de l'acteur — jamais à toute la base).
- * Sinon la permission n'est valable que pour le pool concerné — il faut
- * alors fournir `opts.poolId` correspondant.
- *
- * Quand `opts.poolId` cible une ressource précise, une permission à portée
- * organisation ne s'applique que si cette ressource appartient à la même
- * organisation que l'acteur (`opts.organizationId`, à fournir par
- * l'appelant — typiquement `pool.organizationId` de la ressource visée).
- * Sans `opts.poolId` (contrôle de type "ai-je cette permission quelque
- * part", sans ressource ciblée), la vérification d'organisation est
- * inutile : les permissions chargées sont déjà celles de l'acteur, donc
- * déjà scoping à sa propre organisation.
+ * Droits simulés : ceux de la fonction choisie, pour le POOL choisi s'il
+ * s'agit d'une fonction de POOL. null si le mode est invalide (fonction
+ * inconnue ou réservée, POOL absent, inactif ou d'une autre organisation).
  */
-export function hasPermission(
-  permissions: SessionPermission[],
-  key: PermissionKey | string,
-  opts?: { poolId?: string | null; organizationId?: string | null }
-): boolean {
-  return permissions.some((p) => {
-    if (p.permissionKey !== key) return false;
-    if (p.poolId === null) {
-      if (opts?.poolId == null) return true;
-      return opts.organizationId != null && opts.organizationId === p.organizationId;
-    }
-    return opts?.poolId != null && p.poolId === opts.poolId;
+async function simulateAccess(mode: ViewMode, organizationId: string): Promise<Omit<UserAccess, "superAdmin"> | null> {
+  if (RESTRICTED_ROLE_KEYS.includes(mode.role)) return null;
+  const role = await prisma.roleDefinition.findUnique({
+    where: { key: mode.role },
+    include: { rolePermissions: { include: { permission: true } } },
   });
+  if (!role) return null;
+  let pool: { id: string; name: string } | null = null;
+  if (role.scope === "POOL") {
+    if (!mode.poolId) return null;
+    pool = await prisma.pool.findFirst({
+      where: { id: mode.poolId, organizationId, active: true },
+      select: { id: true, name: true },
+    });
+    if (!pool) return null;
+  }
+  const poolId = pool?.id ?? null;
+  return {
+    roles: [{ key: role.key, label: role.label, poolId }],
+    permissions: role.rolePermissions.map((rp) => ({ permissionKey: rp.permission.key, poolId, organizationId })),
+    viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null },
+  };
 }
 
-/** Portée organisation : vrai si l'utilisateur détient la permission pour au moins un pool, quel qu'il soit (toujours dans sa propre organisation). */
-export function hasPermissionAnyPool(permissions: SessionPermission[], key: PermissionKey | string): boolean {
-  return permissions.some((p) => p.permissionKey === key);
-}
+/**
+ * Charge les rôles + permissions EFFECTIFS d'un utilisateur depuis la base.
+ * Un compte qui n'est pas ACTIVE (suspendu, désactivé, en attente) n'a aucune
+ * permission, même si son jeton de session (JWT) est encore valide.
+ *
+ * Super Admin en mode « Voir comme » : droits de la fonction simulée, et
+ * uniquement ceux-là — contrôles serveur compris. Le mode est lu dans le
+ * cookie de la requête, sauf si `opts.viewMode` est fourni (null = aucun).
+ */
+export async function loadUserAccess(userId: string, opts?: { viewMode?: ViewMode | null }): Promise<UserAccess> {
+  const real = await loadRealAccess(userId);
+  if (!real) return { roles: [], permissions: [], superAdmin: false, viewMode: null };
 
-/** Liste des pools pour lesquels l'utilisateur détient la permission (vide si aucun, "ALL" si portée organisation — dans ce cas résoudre via `prisma.pool.findMany({ where: { organizationId } })` avec l'organisation de l'acteur). */
-export function poolsWithPermission(permissions: SessionPermission[], key: PermissionKey | string): string[] | "ALL" {
-  const matches = permissions.filter((p) => p.permissionKey === key);
-  if (matches.some((p) => p.poolId === null)) return "ALL";
-  return matches.map((p) => p.poolId as string);
+  const superAdmin = real.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
+  if (!superAdmin) return { roles: real.roles, permissions: real.permissions, superAdmin: false, viewMode: null };
+
+  const mode = opts && "viewMode" in opts ? opts.viewMode : await readViewMode();
+  const simulated = mode ? await simulateAccess(mode, real.organizationId) : null;
+  if (!simulated) return { roles: real.roles, permissions: real.permissions, superAdmin: true, viewMode: null };
+  return { ...simulated, superAdmin: true };
 }
 
 /** Revérifie la permission côté serveur en interrogeant la base (ne jamais se fier uniquement au JWT). */
@@ -150,8 +160,13 @@ export async function requirePublicationAuthority(userId: string): Promise<void>
     !hasPermission(permissions, PERMISSIONS.PUBLICATION_MANAGE) ||
     !roles.some((r) => PUBLICATION_AUTHORITY_ROLE_KEYS.includes(r.key))
   ) {
-    throw new ForbiddenError("Seuls l'IPP et l'informaticien peuvent autoriser une publication.");
+    throw new ForbiddenError("Seuls l'IPP, l'informaticien et le Super Admin peuvent autoriser une publication.");
   }
+}
+
+/** Détient RÉELLEMENT le rôle Super Admin (le mode « Voir comme » n'y change rien). */
+export async function isSuperAdmin(userId: string): Promise<boolean> {
+  return (await loadUserAccess(userId, { viewMode: null })).superAdmin;
 }
 
 export async function getRoleLabels(): Promise<Record<string, string>> {

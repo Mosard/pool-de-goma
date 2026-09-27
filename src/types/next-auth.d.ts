@@ -9,6 +9,10 @@ declare module "next-auth" {
       poolId: string | null;
       roles: SessionRole[];
       permissions: SessionPermission[];
+      /** Rôle Super Admin réellement détenu (indépendant du mode simulé). */
+      isSuperAdmin?: boolean;
+      /** Fonction simulée (« Voir comme »), sinon null. */
+      viewMode?: { role: string; label: string; poolId: string | null; poolName: string | null } | null;
     } & DefaultSession["user"];
   }
 

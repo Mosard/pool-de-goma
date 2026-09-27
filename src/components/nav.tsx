@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
 import { Home, LogOut, User as UserIcon } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
-import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permissions";
+import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
 import { NotificationBell, type NotificationItem } from "./notifications-bell";
 import { MobileNav } from "./mobile-nav";
 import { Avatar } from "./ui";

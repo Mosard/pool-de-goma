@@ -124,7 +124,9 @@ async function main() {
     console.log(`  Valider les demandes (accounts.manage) : ${perms.includes(PERMISSIONS.ACCOUNTS_MANAGE) ? "oui" : "NON"}`);
     console.log(`  Gérer les comptes (users.manage)       : ${perms.includes(PERMISSIONS.USERS_MANAGE) ? "oui" : "NON"}`);
     console.log(`  Journal d'audit (audit.view)           : ${perms.includes(PERMISSIONS.AUDIT_VIEW) ? "oui" : "NON"}`);
-    console.log(`  Publication (publication.manage)       : ${perms.includes(PERMISSIONS.PUBLICATION_MANAGE) ? "oui (via un autre rôle)" : "non"}`);
+    console.log(`  Publication (publication.manage)       : ${perms.includes(PERMISSIONS.PUBLICATION_MANAGE) ? "oui" : "NON"}`);
+    console.log(`  Inspections (inspections.conduct)      : ${perms.includes(PERMISSIONS.INSPECTIONS_CONDUCT) ? "oui" : "NON"}`);
+    console.log(`  Toutes les permissions du catalogue    : ${wanted.every((k) => perms.includes(k)) ? "oui" : "NON"}`);
     return;
   }
 
