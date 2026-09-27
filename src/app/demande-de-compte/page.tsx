@@ -28,7 +28,8 @@ export default async function DemandeDeComptePage() {
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-gray-900">Demande d&apos;accès</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Votre demande sera examinée par l&apos;informaticien de l&apos;Inspection avant activation.
+            Choisissez votre identifiant et votre mot de passe. Vous pourrez vous connecter dès que
+            l&apos;informaticien de l&apos;Inspection aura validé votre demande.
           </p>
         </div>
         <AccountRequestForm roles={roles} pools={pools} />

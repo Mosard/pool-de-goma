@@ -11,6 +11,7 @@ const PUBLIC_PREFIXES = [
   "/demande-de-compte",
   "/mot-de-passe-oublie",
   "/reinitialiser-mot-de-passe",
+  "/activer-compte",
   "/pools",
   "/inuka-tech",
 ];

@@ -169,6 +169,10 @@ model User {
   id                  String       @id @default(cuid())
   name                String
   email               String       @unique
+  // Identifiant de connexion choisi par la personne (minuscules). Distinct du
+  // nom, que plusieurs personnes peuvent partager. Vide pour les comptes
+  // antérieurs, qui se connectent avec leur e-mail.
+  username            String?      @unique
   passwordHash        String
   status              UserStatus   @default(PENDING)
   sex                 Sex?
@@ -226,6 +230,11 @@ model AccountRequest {
   id              String               @id @default(cuid())
   name            String
   email           String
+  // Identifiant et empreinte bcrypt du mot de passe choisis par le demandeur.
+  // L'empreinte passe au compte à la validation, puis est effacée de la
+  // demande (effacée aussi en cas de refus). Jamais affichée.
+  username        String?
+  passwordHash    String?
   phone           String?
   message         String?
   requestedRoleId String?
@@ -243,6 +252,7 @@ model AccountRequest {
 
   @@index([organizationId])
   @@index([status])
+  @@index([username])
 }
 
 model PasswordResetToken {

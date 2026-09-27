@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { toggleUserStatusAction } from "./actions";
+import { ReissueActivation } from "./reissue-activation";
 
 export default async function InspecteursPage({
   searchParams,
@@ -95,16 +96,23 @@ export default async function InspecteursPage({
           <tbody className="divide-y divide-gray-100">
             {users.map((u) => (
               <tr key={u.id} className="hover:bg-blue-50/40">
-                <td className="px-6 py-3 font-medium text-gray-900">{u.name}</td>
+                <td className="px-6 py-3 font-medium text-gray-900">
+                  {u.name}
+                  {u.username && <span className="block font-mono text-xs font-normal text-gray-500">{u.username}</span>}
+                </td>
                 <td className="px-6 py-3 text-gray-600">{u.email}</td>
                 <td className="px-6 py-3 text-gray-600">{u.roles.map((r) => r.role.label).join(", ") || "—"}</td>
                 <td className="px-6 py-3 text-gray-600">{u.pool?.name ?? "—"}</td>
                 <td className="px-6 py-3">
                   <Badge color={u.status === "ACTIVE" ? "green" : u.status === "PENDING" ? "orange" : "gray"}>
-                    {u.status}
+                    {u.status === "PENDING" ? "En attente d'activation" : u.status}
                   </Badge>
                 </td>
-                <td className="px-6 py-3 text-right">
+                <td className="px-6 py-3 text-right align-top">
+                  {u.status === "PENDING" ? (
+                    <ReissueActivation userId={u.id} status={u.status} />
+                  ) : (
+                  <div className="flex flex-col items-end gap-2">
                   <ConfirmButton
                     label={u.status === "ACTIVE" ? "Suspendre" : "Activer"}
                     confirmLabel={u.status === "ACTIVE" ? "Suspendre" : "Activer"}
@@ -112,6 +120,9 @@ export default async function InspecteursPage({
                     className="!min-h-0 px-3 py-1.5 text-xs"
                     formAction={toggleUserStatusAction.bind(null, u.id)}
                   />
+                  {u.status === "ACTIVE" && <ReissueActivation userId={u.id} status={u.status} />}
+                  </div>
+                  )}
                 </td>
               </tr>
             ))}

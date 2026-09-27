@@ -107,7 +107,21 @@ export async function requirePermission(
 export async function requireOfficialActor(userId: string): Promise<void> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { isDemo: true } });
   if (!user || user.isDemo) {
-    throw new ForbiddenError("Action réservée aux comptes officiels (compte de démonstration).");
+    throw new ForbiddenError(
+      "Action refusée : vous êtes connecté avec un compte de démonstration, qui ne peut agir que sur des données de démonstration. Cette opération touche des données officielles et doit être faite depuis un compte officiel."
+    );
+  }
+}
+
+/** Message de refus si l'acteur est un compte de démonstration, sinon null (pour les formulaires à état). */
+export async function demoRefusal(userId: string, targetIsDemo = false): Promise<string | null> {
+  if (targetIsDemo) return null;
+  try {
+    await requireOfficialActor(userId);
+    return null;
+  } catch (e) {
+    if (e instanceof ForbiddenError) return e.message;
+    throw e;
   }
 }
 

@@ -1,9 +1,8 @@
 "use server";
 
-import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
 import { resetPasswordSchema } from "@/lib/validations";
+import { setPasswordWithToken, toUserMessage } from "@/lib/accounts";
 
 export type ResetPasswordState = {
   errors?: Record<string, string>;
@@ -11,6 +10,8 @@ export type ResetPasswordState = {
   success?: boolean;
 };
 
+// Sert aussi à l'activation d'un compte (/activer-compte) : même jeton à
+// usage unique, le compte en attente devient actif.
 export async function resetPasswordAction(
   _prevState: ResetPasswordState,
   formData: FormData
@@ -18,24 +19,16 @@ export async function resetPasswordAction(
   const parsed = resetPasswordSchema.safeParse({
     token: formData.get("token"),
     password: formData.get("password"),
+    confirmation: formData.get("confirmation") ?? formData.get("password"),
   });
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  const tokenHash = crypto.createHash("sha256").update(parsed.data.token).digest("hex");
-  const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
-
-  if (!record || record.usedAt || record.expiresAt < new Date()) {
-    return { formError: "Ce lien de réinitialisation est invalide ou expiré." };
+  try {
+    await setPasswordWithToken(parsed.data.token, await bcrypt.hash(parsed.data.password, 10));
+    return { success: true };
+  } catch (e) {
+    return { formError: toUserMessage(e) };
   }
-
-  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
-    prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
-  ]);
-
-  return { success: true };
 }

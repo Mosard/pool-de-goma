@@ -2,29 +2,24 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import type { Provider } from "next-auth/providers";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validations";
 import { authConfig, type SessionRole, type SessionPermission } from "@/lib/auth.config";
 import { loadUserAccess } from "@/lib/permissions";
+import { verifyCredentials } from "@/lib/accounts";
 
 const providers: Provider[] = [
   Credentials({
     credentials: {
-      email: { label: "Email", type: "email" },
+      identifier: { label: "Identifiant ou e-mail", type: "text" },
       password: { label: "Mot de passe", type: "password" },
     },
     authorize: async (credentials) => {
       const parsed = loginSchema.safeParse(credentials);
       if (!parsed.success) return null;
 
-      const user = await prisma.user.findUnique({
-        where: { email: parsed.data.email.toLowerCase() },
-      });
-      if (!user || user.status !== "ACTIVE") return null;
-
-      const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
-      if (!valid) return null;
+      const user = await verifyCredentials(parsed.data.identifier, parsed.data.password);
+      if (!user) return null;
 
       const { roles, permissions } = await loadUserAccess(user.id);
 

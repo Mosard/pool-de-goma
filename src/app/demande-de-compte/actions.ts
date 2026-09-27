@@ -1,13 +1,15 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import bcrypt from "bcryptjs";
 import { getDefaultOrganization } from "@/lib/organization";
 import { accountRequestSchema } from "@/lib/validations";
+import { submitAccountRequest, toUserMessage } from "@/lib/accounts";
 
 export type AccountRequestState = {
   errors?: Record<string, string>;
   formError?: string;
   success?: boolean;
+  username?: string;
 };
 
 export async function submitAccountRequestAction(
@@ -17,6 +19,9 @@ export async function submitAccountRequestAction(
   const parsed = accountRequestSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
+    username: formData.get("username"),
+    password: formData.get("password"),
+    confirmation: formData.get("confirmation"),
     phone: formData.get("phone"),
     requestedRoleId: formData.get("requestedRoleId"),
     poolId: formData.get("poolId"),
@@ -24,27 +29,29 @@ export async function submitAccountRequestAction(
   });
 
   if (!parsed.success) {
-    return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
-  }
-
-  const existingUser = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
-  if (existingUser) {
-    return { formError: "Un compte existe déjà avec cet email." };
+    const fieldErrors = parsed.error.flatten().fieldErrors;
+    return { errors: Object.fromEntries(Object.entries(fieldErrors).map(([k, v]) => [k, v?.[0] ?? ""])) };
   }
 
   const organization = await getDefaultOrganization();
 
-  await prisma.accountRequest.create({
-    data: {
+  try {
+    // Seule l'empreinte du mot de passe est conservée ; personne ne le voit.
+    await submitAccountRequest({
+      organizationId: organization.id,
       name: parsed.data.name,
-      email: parsed.data.email.toLowerCase(),
+      email: parsed.data.email,
+      username: parsed.data.username,
+      passwordHash: await bcrypt.hash(parsed.data.password, 10),
       phone: parsed.data.phone || null,
       requestedRoleId: parsed.data.requestedRoleId || null,
-      organizationId: organization.id,
       poolId: parsed.data.poolId || null,
       message: parsed.data.message || null,
-    },
-  });
+    });
+  } catch (e) {
+    const message = toUserMessage(e);
+    return message.startsWith("L'identifiant") ? { errors: { username: message } } : { formError: message };
+  }
 
-  return { success: true };
+  return { success: true, username: parsed.data.username };
 }

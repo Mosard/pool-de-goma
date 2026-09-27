@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { commentSchema, transitionSchema } from "@/lib/validations";
 import { PERMISSIONS } from "@/lib/rbac-data";
-import { hasPermission } from "@/lib/permissions";
+import { demoRefusal, hasPermission } from "@/lib/permissions";
 import { applyTransition } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 
@@ -36,6 +36,8 @@ export async function addCommentAction(
     hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId, organizationId }) ||
     hasPermission(session.user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId, organizationId });
   if (!canComment) return { formError: "Action non autorisée." };
+  const refusal = await demoRefusal(session.user.id, report.inspection.school.isDemo);
+  if (refusal) return { formError: refusal };
 
   const parsed = commentSchema.safeParse({ content: formData.get("content") });
   if (!parsed.success) {

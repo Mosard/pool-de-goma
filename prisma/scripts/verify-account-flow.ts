@@ -1,0 +1,355 @@
+// Test de bout en bout du parcours des comptes (démo et officiel), à lancer
+// UNIQUEMENT sur une base locale jetable seedée (npm run db:seed) et sans
+// administrateur officiel : il crée des comptes et des demandes de test.
+// Refuse toute base non locale.
+//
+// Usage : POSTGRES_URL=<url locale> npx tsx prisma/scripts/verify-account-flow.ts
+
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import bcrypt from "bcryptjs";
+import { prisma } from "../../src/lib/prisma";
+import {
+  DEMO_ACCOUNT_REFUSAL,
+  approveAccountRequest,
+  createAccount,
+  hasPendingRequestFor,
+  issueAccessLink,
+  rejectAccountRequest,
+  setPasswordWithToken,
+  submitAccountRequest,
+  verifyCredentials,
+} from "../../src/lib/accounts";
+import { demoRefusal, loadUserAccess, requireOfficialActorUnlessDemoTarget } from "../../src/lib/permissions";
+import { ROLE_KEYS } from "../../src/lib/rbac-data";
+import { accountRequestSchema } from "../../src/lib/validations";
+
+const url = process.env.POSTGRES_URL ?? "";
+if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
+  console.error("Refus : ce test écrit des données et ne s'exécute que sur une base locale.");
+  process.exit(2);
+}
+
+const BASE = "http://localhost:3000";
+const RUN = Date.now().toString(36);
+const LINK_RE = /https?:\/\/\S+\/activer-compte\?token=[0-9a-f]+/;
+let passed = 0;
+
+async function step(name: string, fn: () => Promise<void>) {
+  await fn();
+  passed++;
+  console.log(`  ok  ${name}`);
+}
+
+async function rejects(fn: () => Promise<unknown>, message: string | RegExp) {
+  await assert.rejects(fn, (e: unknown) => {
+    assert.ok(e instanceof Error);
+    if (typeof message === "string") assert.equal(e.message, message);
+    else assert.match(e.message, message);
+    return true;
+  });
+}
+
+const tokenOf = (link: string) => new URL(link).searchParams.get("token")!;
+
+function bootstrap(args: string[]): { code: number; out: string } {
+  try {
+    const out = execFileSync("npx", ["tsx", "prisma/scripts/bootstrap-first-admin.ts", ...args], {
+      encoding: "utf8",
+      env: process.env,
+      shell: process.platform === "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { code: 0, out };
+  } catch (e) {
+    const err = e as { status: number; stdout: string; stderr: string };
+    return { code: err.status, out: `${err.stdout}${err.stderr}` };
+  }
+}
+
+async function main() {
+  const org = await prisma.organization.findFirstOrThrow({ orderBy: { createdAt: "asc" } });
+  const role = async (key: string) => prisma.roleDefinition.findUniqueOrThrow({ where: { key } });
+  const [ipp, informaticien, inspecteur, chef] = await Promise.all([
+    role(ROLE_KEYS.IPP),
+    role(ROLE_KEYS.INFORMATICIEN),
+    role(ROLE_KEYS.INSPECTEUR),
+    role(ROLE_KEYS.CHEF_POOL),
+  ]);
+  const goma = await prisma.pool.findFirstOrThrow({ where: { code: "GOMA" } });
+  const demoInfo = await prisma.user.findUniqueOrThrow({ where: { email: "informaticien@ipp-nordkivu1.test" } });
+  assert.ok(demoInfo.isDemo);
+
+  // Demande publique telle que la soumet le formulaire (mot de passe haché).
+  const request = async (p: { name: string; email: string; username: string; password: string; roleId?: string; poolId?: string }) =>
+    submitAccountRequest({
+      organizationId: org.id,
+      name: p.name,
+      email: p.email,
+      username: p.username,
+      passwordHash: await bcrypt.hash(p.password, 10),
+      phone: null,
+      requestedRoleId: p.roleId ?? null,
+      poolId: p.poolId ?? null,
+      message: null,
+    });
+
+  console.log("\nDemande publique");
+
+  await step("validation du formulaire : identifiant, confirmation, mot de passe ≠ identifiant", async () => {
+    const base = { name: "Jean Kambale", email: "j@exemple.cd", password: "motdepasse-1", confirmation: "motdepasse-1" };
+    assert.ok(accountRequestSchema.safeParse({ ...base, username: "Jean.Kambale" }).success, "majuscules normalisées");
+    assert.equal(accountRequestSchema.safeParse({ ...base, username: "jean kambale" }).success, false, "espace refusé");
+    assert.equal(accountRequestSchema.safeParse({ ...base, username: "jk@x" }).success, false, "« @ » refusé");
+    assert.equal(accountRequestSchema.safeParse({ ...base, username: "jean", confirmation: "autre-chose" }).success, false);
+    assert.equal(accountRequestSchema.safeParse({ ...base, username: "jean", password: "court", confirmation: "court" }).success, false);
+    assert.equal(
+      accountRequestSchema.safeParse({ ...base, username: "jean.kambale", password: "jean.kambale", confirmation: "jean.kambale" }).success,
+      false
+    );
+  });
+
+  const alice = { name: "Alice Muhindo", email: `alice.${RUN}@exemple.cd`, username: `alice.${RUN}`, password: `Alice-mdp-${RUN}` };
+
+  await step("demande réelle enregistrée : empreinte seulement, aucun compte créé", async () => {
+    const { requestId } = await request({ ...alice, roleId: inspecteur.id, poolId: goma.id });
+    const r = await prisma.accountRequest.findUniqueOrThrow({ where: { id: requestId } });
+    assert.equal(r.username, alice.username);
+    assert.notEqual(r.passwordHash, alice.password);
+    assert.ok(await bcrypt.compare(alice.password, r.passwordHash!));
+    assert.equal(await prisma.user.count({ where: { email: alice.email } }), 0);
+  });
+
+  await step("demande en attente : connexion impossible, message « en attente » pour son seul auteur", async () => {
+    assert.equal(await verifyCredentials(alice.username, alice.password), null);
+    assert.equal(await hasPendingRequestFor(alice.username, alice.password), true);
+    assert.equal(await hasPendingRequestFor(alice.username, "mauvais-mdp"), false, "rien n'est révélé sans le bon mot de passe");
+  });
+
+  await step("identifiant déjà pris (demande en attente) → refus avec suggestion", async () => {
+    await rejects(
+      () => request({ name: "Alice Muhindo", email: `homonyme.${RUN}@exemple.cd`, username: alice.username, password: "Autre-mdp-123" }),
+      /déjà pris\. Choisissez-en un autre \(par exemple « alice\./
+    );
+  });
+
+  await step("même nom complet, identifiant différent → accepté (homonymes)", async () => {
+    await request({ name: "Alice Muhindo", email: `alice2.${RUN}@exemple.cd`, username: `alice.m.${RUN}`, password: "Autre-mdp-123" });
+  });
+
+  await step("identifiant réservé et e-mail en double refusés", async () => {
+    await rejects(() => request({ name: "X", email: `x.${RUN}@exemple.cd`, username: "admin", password: "Motdepasse-9" }), /réservé/);
+    await rejects(
+      () => request({ name: "X", email: alice.email, username: `autre.${RUN}`, password: "Motdepasse-9" }),
+      /déjà en attente pour cet e-mail/
+    );
+  });
+
+  console.log("\nIsolation des comptes démo");
+  const aliceReq = await prisma.accountRequest.findFirstOrThrow({ where: { email: alice.email } });
+
+  await step("un informaticien démo NE PEUT PAS valider ni refuser une demande réelle (rien d'écrit)", async () => {
+    await rejects(
+      () => approveAccountRequest({
+        actorId: demoInfo.id, organizationId: org.id, requestId: aliceReq.id, roleId: inspecteur.id, poolId: goma.id, baseUrl: BASE,
+      }),
+      DEMO_ACCOUNT_REFUSAL
+    );
+    await rejects(() => rejectAccountRequest({ actorId: demoInfo.id, organizationId: org.id, requestId: aliceReq.id }), DEMO_ACCOUNT_REFUSAL);
+    const r = await prisma.accountRequest.findUniqueOrThrow({ where: { id: aliceReq.id } });
+    assert.equal(r.status, "PENDING");
+    assert.equal(await prisma.user.count({ where: { email: alice.email } }), 0);
+  });
+
+  await step("un informaticien démo valide une demande démo (.test) → compte démo actif, connexion directe", async () => {
+    const demo = { name: "Démo Test", email: `demo.${RUN}@example.test`, username: `demo.${RUN}`, password: `Demo-mdp-${RUN}` };
+    const { requestId } = await request({ ...demo, roleId: inspecteur.id, poolId: goma.id });
+    const res = await approveAccountRequest({
+      actorId: demoInfo.id, organizationId: org.id, requestId, roleId: inspecteur.id, poolId: goma.id, baseUrl: BASE,
+    });
+    assert.ok(res.isDemo && res.activated && !res.activation);
+    const logged = await verifyCredentials(demo.username, demo.password);
+    assert.ok(logged?.isDemo);
+  });
+
+  await step("un informaticien démo NE PEUT PAS créer un compte réel, ni émettre de lien pour un compte réel", async () => {
+    await rejects(
+      () => createAccount({
+        actorId: demoInfo.id, organizationId: org.id, name: "X", email: `vrai.${RUN}@exemple.cd`, phone: null, sex: null,
+        roleId: informaticien.id, poolId: null, baseUrl: BASE,
+      }),
+      DEMO_ACCOUNT_REFUSAL
+    );
+    const real = await prisma.user.create({
+      data: { name: "R", email: `r.${RUN}@exemple.cd`, passwordHash: "x", status: "ACTIVE", organizationId: org.id },
+    });
+    await rejects(() => issueAccessLink({ actorId: demoInfo.id, organizationId: org.id, userId: real.id, baseUrl: BASE }), DEMO_ACCOUNT_REFUSAL);
+  });
+
+  await step("garde serveur commune : données officielles refusées au compte démo", async () => {
+    assert.match((await demoRefusal(demoInfo.id))!, /compte de démonstration/);
+    assert.equal(await demoRefusal(demoInfo.id, true), null);
+    await rejects(() => requireOfficialActorUnlessDemoTarget(demoInfo.id, false), /compte de démonstration/);
+  });
+
+  console.log("\nAmorçage du premier administrateur officiel (procédure séparée)");
+  const adminEmail = `admin.${RUN}@exemple.cd`;
+  const adminUsername = `admin.off.${RUN}`;
+
+  await step("refus : adresse .test, fonction sans droit, identifiant invalide ; simulation sans écriture", async () => {
+    assert.equal(bootstrap(["--email", `x.${RUN}@a.test`, "--name", "X"]).code, 2);
+    assert.equal(bootstrap(["--email", adminEmail, "--name", "X", "--role", "inspecteur"]).code, 2);
+    assert.equal(bootstrap(["--email", adminEmail, "--name", "X", "--username", "a b"]).code, 2);
+    const r = bootstrap(["--email", adminEmail, "--name", "Admin Officiel", "--username", adminUsername]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Simulation/);
+    assert.equal(await prisma.user.count({ where: { email: adminEmail } }), 0);
+  });
+
+  let admin!: NonNullable<Awaited<ReturnType<typeof verifyCredentials>>>;
+  await step("--apply : compte officiel en attente → activation par son titulaire → connexion par identifiant", async () => {
+    const r = bootstrap(["--email", adminEmail, "--name", "Admin Officiel", "--username", adminUsername, "--apply"]);
+    assert.equal(r.code, 0, r.out);
+    const link = r.out.match(LINK_RE)![0];
+    assert.equal(await verifyCredentials(adminUsername, "nimporte"), null);
+    await setPasswordWithToken(tokenOf(link), await bcrypt.hash(`Admin-${RUN}`, 10));
+    admin = (await verifyCredentials(adminUsername, `Admin-${RUN}`))!;
+    assert.ok(admin && !admin.isDemo);
+    assert.ok((await loadUserAccess(admin.id)).permissions.some((p) => p.permissionKey === "accounts.manage"));
+  });
+
+  await step("usage unique : le script refuse dès qu'un administrateur officiel est actif", async () => {
+    assert.equal(bootstrap(["--email", `autre.${RUN}@exemple.cd`, "--name", "Autre", "--apply"]).code, 2);
+  });
+
+  console.log("\nValidation, refus et connexion (administrateur officiel)");
+
+  await step("validation : compte ACTIF d'emblée, aucun lien, empreinte retirée de la demande", async () => {
+    const res = await approveAccountRequest({
+      actorId: admin.id, organizationId: org.id, requestId: aliceReq.id, roleId: inspecteur.id, poolId: goma.id, baseUrl: BASE,
+    });
+    assert.ok(res.activated && !res.isDemo && !res.activation);
+    assert.equal(res.username, alice.username);
+    const r = await prisma.accountRequest.findUniqueOrThrow({ where: { id: aliceReq.id } });
+    assert.equal(r.status, "APPROVED");
+    assert.equal(r.passwordHash, null);
+  });
+
+  await step("connexion directe avec identifiant + mot de passe choisi ; droits et POOL attribués", async () => {
+    const u = await verifyCredentials(alice.username, alice.password);
+    assert.ok(u && u.status === "ACTIVE");
+    assert.equal((await verifyCredentials(alice.username.toUpperCase(), alice.password))?.id, u.id, "insensible à la casse");
+    assert.equal(await verifyCredentials(alice.username, "mauvais"), null);
+    const access = await loadUserAccess(u.id);
+    assert.ok(access.roles.some((r) => r.key === ROLE_KEYS.INSPECTEUR && r.poolId === goma.id));
+  });
+
+  await step("identifiant d'un compte existant → nouvelle demande refusée", async () => {
+    await rejects(
+      () => request({ name: "Autre", email: `autre2.${RUN}@exemple.cd`, username: alice.username, password: "Motdepasse-9" }),
+      /déjà pris/
+    );
+  });
+
+  await step("identifiant pris entre-temps par un compte → validation refusée avec message clair", async () => {
+    const bob = { name: "Bob", email: `bob.${RUN}@exemple.cd`, username: `bob.${RUN}`, password: "Bob-motdepasse-1" };
+    const { requestId } = await request(bob);
+    await prisma.user.create({
+      data: { name: "Autre Bob", email: `autrebob.${RUN}@exemple.cd`, username: bob.username, passwordHash: "x", status: "PENDING", organizationId: org.id },
+    });
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId, roleId: ipp.id, poolId: null, baseUrl: BASE }),
+      /désormais porté par un autre compte/
+    );
+  });
+
+  await step("refus : demande REJECTED, empreinte effacée, connexion toujours impossible", async () => {
+    const carol = { name: "Carol", email: `carol.${RUN}@exemple.cd`, username: `carol.${RUN}`, password: "Carol-motdepasse-1" };
+    const { requestId } = await request(carol);
+    await rejectAccountRequest({ actorId: admin.id, organizationId: org.id, requestId });
+    const r = await prisma.accountRequest.findUniqueOrThrow({ where: { id: requestId } });
+    assert.equal(r.status, "REJECTED");
+    assert.equal(r.passwordHash, null);
+    assert.equal(await verifyCredentials(carol.username, carol.password), null);
+    assert.equal(await hasPendingRequestFor(carol.username, carol.password), false);
+    // L'identifiant d'une demande refusée redevient disponible.
+    await request({ ...carol, email: `carol2.${RUN}@exemple.cd` });
+  });
+
+  await step("demande traitée deux fois → refusée ; chef de POOL jamais accordé ; POOL exigé", async () => {
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: aliceReq.id, roleId: ipp.id, poolId: null, baseUrl: BASE }),
+      "Cette demande a déjà été traitée."
+    );
+    const d = await request({ name: "D", email: `d.${RUN}@exemple.cd`, username: `d.${RUN}`, password: "Dddddddd-1" });
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: d.requestId, roleId: chef.id, poolId: goma.id, baseUrl: BASE }),
+      /nommez-le chef/
+    );
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: d.requestId, roleId: inspecteur.id, poolId: null, baseUrl: BASE }),
+      /exige un rattachement à un POOL/
+    );
+  });
+
+  await step("plusieurs informaticiens officiels : l'administrateur valide un second informaticien", async () => {
+    const info2 = { name: "Info Deux", email: `info2.${RUN}@exemple.cd`, username: `info2.${RUN}`, password: "Info2-motdepasse" };
+    const { requestId } = await request({ ...info2, roleId: informaticien.id });
+    await approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId, roleId: informaticien.id, poolId: null, baseUrl: BASE });
+    const u = (await verifyCredentials(info2.username, info2.password))!;
+    assert.ok((await loadUserAccess(u.id)).roles.some((r) => r.key === ROLE_KEYS.INFORMATICIEN));
+    const holders = await prisma.userRole.count({
+      where: { roleId: informaticien.id, user: { isDemo: false, status: "ACTIVE", email: { contains: RUN } } },
+    });
+    assert.equal(holders, 2);
+  });
+
+  console.log("\nMot de passe oublié (réinitialisation assistée) et demandes antérieures");
+
+  await step("lien de réinitialisation remis par l'administrateur : nouveau mot de passe choisi par le titulaire", async () => {
+    const u = (await verifyCredentials(alice.username, alice.password))!;
+    const res = await issueAccessLink({ actorId: admin.id, organizationId: org.id, userId: u.id, baseUrl: BASE });
+    assert.equal(res.kind, "reset");
+    assert.ok(res.link!.url.startsWith(`${BASE}/reinitialiser-mot-de-passe?token=`));
+    const hours = (res.link!.expiresAt.getTime() - Date.now()) / 3600e3;
+    assert.ok(hours > 23 && hours <= 24);
+    await setPasswordWithToken(tokenOf(res.link!.url), await bcrypt.hash("Nouveau-mdp-Alice", 10));
+    assert.equal(await verifyCredentials(alice.username, alice.password), null, "ancien mot de passe invalide");
+    assert.ok(await verifyCredentials(alice.username, "Nouveau-mdp-Alice"));
+    await rejects(() => setPasswordWithToken(tokenOf(res.link!.url), "x"), /invalide, déjà utilisé ou expiré/);
+  });
+
+  await step("demande antérieure sans mot de passe → compte en attente + lien d'activation (compatibilité)", async () => {
+    const legacy = await prisma.accountRequest.create({
+      data: { name: "Ancienne", email: `ancienne.${RUN}@exemple.cd`, organizationId: org.id, requestedRoleId: ipp.id },
+    });
+    const res = await approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: legacy.id, roleId: ipp.id, poolId: null, baseUrl: BASE });
+    assert.equal(res.activated, false);
+    assert.ok(res.activation);
+    await setPasswordWithToken(tokenOf(res.activation!.url), await bcrypt.hash("Ancienne-mdp-1", 10));
+    assert.ok(await verifyCredentials(legacy.email, "Ancienne-mdp-1"), "connexion par e-mail");
+  });
+
+  await step("compte suspendu : ni connexion ni lien de réinitialisation", async () => {
+    const u = (await verifyCredentials(alice.username, "Nouveau-mdp-Alice"))!;
+    await prisma.user.update({ where: { id: u.id }, data: { status: "SUSPENDED" } });
+    assert.equal(await verifyCredentials(alice.username, "Nouveau-mdp-Alice"), null);
+    await rejects(() => issueAccessLink({ actorId: admin.id, organizationId: org.id, userId: u.id, baseUrl: BASE }), /suspendu/);
+  });
+
+  await step("aucun jeton, mot de passe ni empreinte dans le journal d'audit", async () => {
+    const logs = await prisma.auditLog.findMany({ where: { createdAt: { gt: new Date(Date.now() - 15 * 60 * 1000) } } });
+    const dump = JSON.stringify(logs);
+    assert.doesNotMatch(dump, /token=|[0-9a-f]{64}|\$2[aby]\$/);
+    assert.doesNotMatch(dump, /Alice-mdp|Admin-|Demo-mdp|motdepasse|Nouveau-mdp/i);
+  });
+
+  console.log(`\n${passed} vérifications réussies.`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

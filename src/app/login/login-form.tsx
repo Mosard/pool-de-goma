@@ -18,9 +18,17 @@ export function LoginForm() {
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <div>
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" placeholder="vous@ipp-nordkivu1.test" required />
-          <FieldError message={state.errors?.email} />
+          <Label htmlFor="identifier">Identifiant ou e-mail</Label>
+          <Input
+            id="identifier"
+            name="identifier"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="votre identifiant"
+            required
+          />
+          <FieldError message={state.errors?.identifier} />
         </div>
         <div>
           <Label htmlFor="password">Mot de passe</Label>

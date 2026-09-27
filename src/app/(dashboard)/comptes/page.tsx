@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, PageHeader, Badge, EmptyState } from "@/components/ui";
-import { ConfirmButton } from "@/components/confirm-button";
-import { PERMISSIONS } from "@/lib/rbac-data";
-import { hasPermissionAnyPool } from "@/lib/permissions";
-import { approveAccountRequestAction, rejectAccountRequestAction } from "./actions";
+import { Alert, Card, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool, isDemoActor } from "@/lib/permissions";
+import { isDemoEmail } from "@/lib/accounts";
+import { RequestReview } from "./request-review";
 
 export default async function ComptesPage() {
   const session = await auth();
@@ -13,11 +13,25 @@ export default async function ComptesPage() {
     redirect("/dashboard");
   }
 
-  const requests = await prisma.accountRequest.findMany({
-    where: { organizationId: session.user.organizationId },
-    orderBy: { createdAt: "desc" },
-    include: { requestedRole: true, pool: true },
-  });
+  const [requests, roles, pools, actorIsDemo] = await Promise.all([
+    prisma.accountRequest.findMany({
+      where: { organizationId: session.user.organizationId },
+      orderBy: { createdAt: "desc" },
+      include: { requestedRole: true, pool: true },
+    }),
+    // Le chef de POOL se nomme depuis la fiche du POOL, jamais à la validation.
+    prisma.roleDefinition.findMany({
+      where: { key: { not: ROLE_KEYS.CHEF_POOL } },
+      orderBy: { label: "asc" },
+      select: { id: true, label: true, scope: true },
+    }),
+    prisma.pool.findMany({
+      where: { organizationId: session.user.organizationId, active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    isDemoActor(session.user.id),
+  ]);
 
   const pending = requests.filter((r) => r.status === "PENDING");
   const history = requests.filter((r) => r.status !== "PENDING");
@@ -25,6 +39,13 @@ export default async function ComptesPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Demandes de compte" description={`${pending.length} demande(s) en attente`} />
+
+      {actorIsDemo && (
+        <Alert variant="info">
+          Vous êtes connecté avec un compte de démonstration : vous pouvez traiter les demandes de démonstration
+          (adresse en .test), pas les demandes réelles, qui doivent être validées depuis un compte officiel.
+        </Alert>
+      )}
 
       <Card className="overflow-x-auto p-0">
         {pending.length === 0 ? (
@@ -36,9 +57,10 @@ export default async function ComptesPage() {
             <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
               <tr>
                 <th className="px-6 py-3">Nom</th>
+                <th className="px-6 py-3">Identifiant</th>
                 <th className="px-6 py-3">Email</th>
                 <th className="px-6 py-3">Rôle demandé</th>
-                <th className="px-6 py-3">Pool</th>
+                <th className="px-6 py-3">Pool demandé</th>
                 <th className="px-6 py-3" />
               </tr>
             </thead>
@@ -46,25 +68,27 @@ export default async function ComptesPage() {
               {pending.map((r) => (
                 <tr key={r.id} className="hover:bg-blue-50/40">
                   <td className="px-6 py-3 font-medium text-gray-900">{r.name}</td>
-                  <td className="px-6 py-3 text-gray-600">{r.email}</td>
+                  <td className="px-6 py-3 font-mono text-xs text-gray-700">
+                    {r.username ?? <span className="font-sans text-gray-400">— (activation par lien)</span>}
+                  </td>
+                  <td className="px-6 py-3 text-gray-600">
+                    {r.email}
+                    {isDemoEmail(r.email) && (
+                      <span className="ml-2">
+                        <Badge color="gray">Démo</Badge>
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-3 text-gray-600">{r.requestedRole?.label ?? "—"}</td>
                   <td className="px-6 py-3 text-gray-600">{r.pool?.name ?? "—"}</td>
-                  <td className="px-6 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <ConfirmButton
-                        label="Valider"
-                        confirmLabel="Valider"
-                        className="!min-h-0 px-3 py-1.5 text-xs"
-                        formAction={approveAccountRequestAction.bind(null, r.id)}
-                      />
-                      <ConfirmButton
-                        label="Refuser"
-                        confirmLabel="Refuser"
-                        variant="danger"
-                        className="!min-h-0 px-3 py-1.5 text-xs"
-                        formAction={rejectAccountRequestAction.bind(null, r.id)}
-                      />
-                    </div>
+                  <td className="px-6 py-3 text-right align-top">
+                    <RequestReview
+                      requestId={r.id}
+                      requestedRoleId={r.requestedRoleId}
+                      requestedPoolId={r.poolId}
+                      roles={roles}
+                      pools={pools}
+                    />
                   </td>
                 </tr>
               ))}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Card, Input, Label, Select, Textarea, FieldError } from "@/components/ui";
+import Link from "next/link";
+import { Alert, Button, Card, Input, Label, Select, Textarea, FieldError } from "@/components/ui";
 import { submitAccountRequestAction, type AccountRequestState } from "./actions";
 
 const initialState: AccountRequestState = {};
@@ -17,11 +18,16 @@ export function AccountRequestForm({
 
   if (state.success) {
     return (
-      <Card>
+      <Card className="space-y-3">
+        <Alert variant="success">Votre demande a bien été envoyée.</Alert>
         <p className="text-sm text-gray-700">
-          Votre demande a bien été envoyée. Vous serez contacté après validation par l&apos;informaticien de
-          l&apos;Inspection.
+          Elle doit maintenant être validée par l&apos;informaticien de l&apos;Inspection. Vous ne pouvez pas encore
+          vous connecter. Une fois la demande validée, connectez-vous avec votre identifiant{" "}
+          <strong className="font-mono">{state.username}</strong> et le mot de passe que vous venez de choisir.
         </p>
+        <Link href="/login" className="block text-sm font-medium text-blue-600 hover:underline">
+          Aller à la page de connexion
+        </Link>
       </Card>
     );
   }
@@ -31,17 +37,45 @@ export function AccountRequestForm({
       <form action={formAction} className="space-y-4">
         <div>
           <Label htmlFor="name">Nom complet</Label>
-          <Input id="name" name="name" required />
+          <Input id="name" name="name" autoComplete="name" required />
           <FieldError message={state.errors?.name} />
         </div>
         <div>
+          <Label htmlFor="username">Identifiant de connexion</Label>
+          <Input
+            id="username"
+            name="username"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="ex. jean.kambale"
+            required
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Unique et distinct de votre nom : 3 à 32 caractères (lettres sans accent, chiffres, point, tiret), en
+            commençant par une lettre.
+          </p>
+          <FieldError message={state.errors?.username} />
+        </div>
+        <div>
+          <Label htmlFor="password">Mot de passe</Label>
+          <Input id="password" name="password" type="password" autoComplete="new-password" minLength={8} required />
+          <p className="mt-1 text-xs text-gray-500">8 caractères minimum. Vous seul le connaissez.</p>
+          <FieldError message={state.errors?.password} />
+        </div>
+        <div>
+          <Label htmlFor="confirmation">Confirmez le mot de passe</Label>
+          <Input id="confirmation" name="confirmation" type="password" autoComplete="new-password" minLength={8} required />
+          <FieldError message={state.errors?.confirmation} />
+        </div>
+        <div>
           <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" required />
+          <Input id="email" name="email" type="email" autoComplete="email" required />
           <FieldError message={state.errors?.email} />
         </div>
         <div>
           <Label htmlFor="phone">Téléphone</Label>
-          <Input id="phone" name="phone" />
+          <Input id="phone" name="phone" autoComplete="tel" />
         </div>
         <div>
           <Label htmlFor="requestedRoleId">Fonction</Label>

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assignmentSchema } from "@/lib/validations";
-import { requirePermission } from "@/lib/permissions";
+import { demoRefusal, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
 import { ASSIGNMENT_END_REASONS, PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
@@ -53,11 +53,15 @@ export async function createAssignmentAction(
       status: "ACTIVE",
       roles: { some: { poolId: school.poolId, role: { key: ROLE_KEYS.INSPECTEUR } } },
     },
-    select: { id: true },
+    select: { id: true, isDemo: true },
   });
   if (!inspector) {
     return { errors: { inspectorId: "Cet inspecteur n'est pas un inspecteur actif du POOL de cette école." } };
   }
+  // Les affectations d'une école réelle sont publiées sur le site : un compte
+  // de démonstration n'affecte que des comptes de démo à des écoles de démo.
+  const refusal = await demoRefusal(session.user.id, school.isDemo && inspector.isDemo);
+  if (refusal) return { formError: refusal };
 
   const existing = await prisma.assignment.findFirst({
     where: { schoolId: parsed.data.schoolId, inspectorId: parsed.data.inspectorId, active: true },
@@ -103,6 +107,7 @@ export async function revokeAssignmentAction(assignmentId: string) {
     poolId: assignment.school.poolId,
     organizationId: assignment.school.pool.organizationId,
   });
+  await requireOfficialActorUnlessDemoTarget(session.user.id, assignment.school.isDemo);
 
   await prisma.assignment.update({
     where: { id: assignmentId },

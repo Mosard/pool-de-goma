@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inspectionSchema, reportSchema } from "@/lib/validations";
-import { hasPermission, requirePermission } from "@/lib/permissions";
+import { demoRefusal, hasPermission, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
 import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { getWorkflowStatusByKey } from "@/lib/workflow";
@@ -41,6 +41,8 @@ export async function createInspectionAction(
 
   const school = await prisma.school.findUnique({ where: { id: parsed.data.schoolId }, include: { pool: true } });
   if (!school) return { formError: "École introuvable." };
+  const refusal = await demoRefusal(user.id, school.isDemo);
+  if (refusal) return { formError: refusal };
 
   if (!isSelf) {
     await requirePermission(user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
@@ -77,6 +79,7 @@ export async function saveFicheAction(inspectionId: string, formTemplateId: stri
     include: { school: { include: { pool: true } } },
   });
   if (!inspection) return;
+  await requireOfficialActorUnlessDemoTarget(session.user.id, inspection.school.isDemo);
 
   if (inspection.inspectorId !== session.user.id) {
     await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
@@ -122,6 +125,8 @@ export async function submitReportAction(
   if (!inspection || inspection.inspectorId !== session.user.id) {
     return { formError: "Action non autorisée." };
   }
+  const refusal = await demoRefusal(session.user.id, inspection.school.isDemo);
+  if (refusal) return { formError: refusal };
 
   const parsed = reportSchema.safeParse({
     summary: formData.get("summary"),

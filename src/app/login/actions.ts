@@ -3,9 +3,10 @@
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
+import { hasPendingRequestFor } from "@/lib/accounts";
 
 export type LoginState = {
-  errors?: { email?: string; password?: string };
+  errors?: { identifier?: string; password?: string };
   formError?: string;
 };
 
@@ -14,7 +15,7 @@ export async function loginAction(
   formData: FormData
 ): Promise<LoginState> {
   const parsed = loginSchema.safeParse({
-    email: formData.get("email"),
+    identifier: formData.get("identifier"),
     password: formData.get("password"),
   });
 
@@ -22,7 +23,7 @@ export async function loginAction(
     const fieldErrors = parsed.error.flatten().fieldErrors;
     return {
       errors: {
-        email: fieldErrors.email?.[0],
+        identifier: fieldErrors.identifier?.[0],
         password: fieldErrors.password?.[0],
       },
     };
@@ -32,14 +33,22 @@ export async function loginAction(
 
   try {
     await signIn("credentials", {
-      email: parsed.data.email,
+      identifier: parsed.data.identifier,
       password: parsed.data.password,
       redirectTo: callbackUrl,
     });
     return {};
   } catch (error) {
     if (error instanceof AuthError) {
-      return { formError: "Email ou mot de passe incorrect." };
+      // Seul l'auteur d'une demande en attente (qui connaît son mot de passe)
+      // apprend qu'elle n'est pas encore validée ; sinon message neutre.
+      if (await hasPendingRequestFor(parsed.data.identifier, parsed.data.password)) {
+        return {
+          formError:
+            "Votre demande de compte est en attente de validation par l'informaticien de l'Inspection. Vous pourrez vous connecter dès qu'elle sera validée.",
+        };
+      }
+      return { formError: "Identifiant ou mot de passe incorrect, ou compte non validé." };
     }
     throw error;
   }

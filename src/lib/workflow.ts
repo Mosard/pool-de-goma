@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
-import { hasPermission, ForbiddenError, type SessionPermission } from "@/lib/permissions";
+import { hasPermission, ForbiddenError, requireOfficialActorUnlessDemoTarget, type SessionPermission } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { notify, notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
 
@@ -70,6 +70,8 @@ export async function applyTransition(params: {
   ) {
     throw new ForbiddenError();
   }
+  // Un rapport sur une école réelle ne se fait avancer que par un compte officiel.
+  await requireOfficialActorUnlessDemoTarget(params.actorId, report.inspection.school.isDemo);
 
   await prisma.report.update({
     where: { id: params.reportId },

@@ -9,11 +9,27 @@ const initialState: ForgotPasswordState = {};
 export function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState(requestPasswordResetAction, initialState);
 
+  if (state.success && state.assisted) {
+    return (
+      <Card className="space-y-3">
+        <Alert variant="info">
+          L&apos;envoi automatique de lien par e-mail n&apos;est pas encore disponible.
+        </Alert>
+        <p className="text-sm text-gray-700">
+          Adressez-vous à l&apos;informaticien de l&apos;Inspection. Après avoir vérifié votre identité, il vous
+          remettra un lien de réinitialisation à usage unique, valable 24 heures. Vous y choisirez vous-même votre
+          nouveau mot de passe : personne d&apos;autre ne le connaîtra.
+        </p>
+      </Card>
+    );
+  }
+
   if (state.success) {
     return (
       <Card>
         <Alert variant="success">
-          Si un compte actif correspond à cet email, un lien de réinitialisation vient d&apos;être envoyé.
+          Si un compte actif correspond à cet identifiant, un lien de réinitialisation vient d&apos;être envoyé à
+          son adresse e-mail.
         </Alert>
       </Card>
     );
@@ -23,12 +39,12 @@ export function ForgotPasswordForm() {
     <Card>
       <form action={formAction} className="space-y-4">
         <div>
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" required />
-          <FieldError message={state.errors?.email} />
+          <Label htmlFor="identifier">Identifiant ou e-mail</Label>
+          <Input id="identifier" name="identifier" autoComplete="username" autoCapitalize="none" required />
+          <FieldError message={state.errors?.identifier} />
         </div>
         <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Envoi..." : "Envoyer le lien de réinitialisation"}
+          {pending ? "Envoi..." : "Continuer"}
         </Button>
       </form>
     </Card>

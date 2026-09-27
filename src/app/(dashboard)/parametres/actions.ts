@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { poolSchema, functionSchema } from "@/lib/validations";
-import { requireOfficialActor, requirePermission } from "@/lib/permissions";
+import { demoRefusal, requireOfficialActor, requirePermission } from "@/lib/permissions";
 import { PERMISSIONS, PERMISSION_CATALOG } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
@@ -37,6 +37,9 @@ export async function createPoolAction(
   const session = await auth();
   if (!session?.user) redirect("/login");
   await requirePermission(session.user.id, PERMISSIONS.POOLS_MANAGE);
+  // Les POOL sont une structure officielle (aucun POOL de démonstration).
+  const refusal = await demoRefusal(session.user.id);
+  if (refusal) return { formError: refusal };
 
   const parsed = poolSchema.safeParse({
     name: formData.get("name"),
@@ -108,6 +111,9 @@ export async function createFunctionAction(
   const session = await auth();
   if (!session?.user) redirect("/login");
   await requirePermission(session.user.id, PERMISSIONS.POOLS_MANAGE);
+  // Les fonctions (rôles) sont communes à toute la plateforme.
+  const refusal = await demoRefusal(session.user.id);
+  if (refusal) return { formError: refusal };
 
   const parsed = functionSchema.safeParse({
     label: formData.get("label"),

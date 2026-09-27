@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { USERNAME_PATTERN, USERNAME_RULE } from "@/lib/activation-token";
+
+const usernameField = z.string().trim().toLowerCase().regex(USERNAME_PATTERN, USERNAME_RULE);
+const newPasswordField = z.string().min(8, "8 caractères minimum").max(128, "128 caractères maximum");
 
 export const poolSchema = z.object({
   name: z.string().min(2, "Nom requis"),
@@ -40,21 +44,30 @@ export const schoolSchema = z.object({
 export const userSchema = z.object({
   name: z.string().min(2, "Nom requis"),
   email: z.string().email("Email invalide"),
-  password: z.string().min(8, "8 caractères minimum"),
+  username: z.union([z.literal(""), usernameField]).optional(),
   roleId: z.string().min(1, "Rôle requis"),
   poolId: z.string().optional().or(z.literal("")),
   sex: z.enum(["M", "F"]).optional().or(z.literal("")),
   phone: z.string().optional().or(z.literal("")),
 });
 
-export const accountRequestSchema = z.object({
-  name: z.string().min(2, "Nom requis"),
-  email: z.string().email("Email invalide"),
-  phone: z.string().optional().or(z.literal("")),
-  requestedRoleId: z.string().optional().or(z.literal("")),
-  poolId: z.string().optional().or(z.literal("")),
-  message: z.string().optional().or(z.literal("")),
-});
+export const accountRequestSchema = z
+  .object({
+    name: z.string().trim().min(2, "Nom complet requis").max(120),
+    email: z.string().trim().email("Email invalide"),
+    username: usernameField,
+    password: newPasswordField,
+    confirmation: z.string(),
+    phone: z.string().optional().or(z.literal("")),
+    requestedRoleId: z.string().optional().or(z.literal("")),
+    poolId: z.string().optional().or(z.literal("")),
+    message: z.string().max(1000).optional().or(z.literal("")),
+  })
+  .refine((d) => d.password === d.confirmation, { message: "Les deux mots de passe diffèrent", path: ["confirmation"] })
+  .refine((d) => d.password.toLowerCase() !== d.username, {
+    message: "Le mot de passe ne doit pas être votre identifiant",
+    path: ["password"],
+  });
 
 export const assignmentSchema = z.object({
   schoolId: z.string().min(1, "École requise"),
@@ -95,16 +108,20 @@ export const transitionSchema = z.object({
   comment: z.string().optional().or(z.literal("")),
 });
 
+// Identifiant de connexion OU adresse e-mail (comptes antérieurs).
 export const loginSchema = z.object({
-  email: z.string().email("Email invalide"),
+  identifier: z.string().trim().toLowerCase().min(1, "Identifiant requis").max(254),
   password: z.string().min(1, "Mot de passe requis"),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email("Email invalide"),
+  identifier: z.string().trim().toLowerCase().min(1, "Identifiant ou e-mail requis").max(254),
 });
 
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Jeton manquant"),
-  password: z.string().min(8, "8 caractères minimum"),
-});
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Jeton manquant"),
+    password: newPasswordField,
+    confirmation: z.string(),
+  })
+  .refine((d) => d.password === d.confirmation, { message: "Les deux mots de passe diffèrent", path: ["confirmation"] });
