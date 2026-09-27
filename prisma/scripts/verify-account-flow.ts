@@ -7,6 +7,9 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../src/lib/prisma";
 import {
@@ -20,8 +23,13 @@ import {
   submitAccountRequest,
   verifyCredentials,
 } from "../../src/lib/accounts";
-import { demoRefusal, loadUserAccess, requireOfficialActorUnlessDemoTarget } from "../../src/lib/permissions";
-import { ROLE_KEYS } from "../../src/lib/rbac-data";
+import {
+  demoRefusal,
+  loadUserAccess,
+  requireOfficialActorUnlessDemoTarget,
+  requirePublicationAuthority,
+} from "../../src/lib/permissions";
+import { RESTRICTED_ROLE_KEYS, ROLE_KEYS, SUPER_ADMIN_PERMISSIONS } from "../../src/lib/rbac-data";
 import { accountRequestSchema } from "../../src/lib/validations";
 
 const url = process.env.POSTGRES_URL ?? "";
@@ -32,7 +40,7 @@ if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
 
 const BASE = "http://localhost:3000";
 const RUN = Date.now().toString(36);
-const LINK_RE = /https?:\/\/\S+\/activer-compte\?token=[0-9a-f]+/;
+const BACKUP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ippnk1-test-sauvegardes-"));
 let passed = 0;
 
 async function step(name: string, fn: () => Promise<void>) {
@@ -52,11 +60,11 @@ async function rejects(fn: () => Promise<unknown>, message: string | RegExp) {
 
 const tokenOf = (link: string) => new URL(link).searchParams.get("token")!;
 
-function bootstrap(args: string[]): { code: number; out: string } {
+function grant(args: string[]): { code: number; out: string } {
   try {
-    const out = execFileSync("npx", ["tsx", "prisma/scripts/bootstrap-first-admin.ts", ...args], {
+    const out = execFileSync("npx", ["tsx", "prisma/scripts/grant-super-admin.ts", ...args], {
       encoding: "utf8",
-      env: process.env,
+      env: { ...process.env, SAUVEGARDE_DIR: BACKUP_DIR },
       shell: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -192,34 +200,20 @@ async function main() {
     await rejects(() => requireOfficialActorUnlessDemoTarget(demoInfo.id, false), /compte de démonstration/);
   });
 
-  console.log("\nAmorçage du premier administrateur officiel (procédure séparée)");
+  console.log("\nCompte officiel existant (informaticien actif, connexion Google)");
   const adminEmail = `admin.${RUN}@exemple.cd`;
-  const adminUsername = `admin.off.${RUN}`;
-
-  await step("refus : adresse .test, fonction sans droit, identifiant invalide ; simulation sans écriture", async () => {
-    assert.equal(bootstrap(["--email", `x.${RUN}@a.test`, "--name", "X"]).code, 2);
-    assert.equal(bootstrap(["--email", adminEmail, "--name", "X", "--role", "inspecteur"]).code, 2);
-    assert.equal(bootstrap(["--email", adminEmail, "--name", "X", "--username", "a b"]).code, 2);
-    const r = bootstrap(["--email", adminEmail, "--name", "Admin Officiel", "--username", adminUsername]);
-    assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /Simulation/);
-    assert.equal(await prisma.user.count({ where: { email: adminEmail } }), 0);
+  const admin = await prisma.user.create({
+    data: {
+      name: "Admin Officiel",
+      email: adminEmail,
+      passwordHash: await bcrypt.hash(`Admin-${RUN}`, 10),
+      status: "ACTIVE",
+      organizationId: org.id,
+      roles: { create: { roleId: informaticien.id, poolId: null } },
+    },
   });
-
-  let admin!: NonNullable<Awaited<ReturnType<typeof verifyCredentials>>>;
-  await step("--apply : compte officiel en attente → activation par son titulaire → connexion par identifiant", async () => {
-    const r = bootstrap(["--email", adminEmail, "--name", "Admin Officiel", "--username", adminUsername, "--apply"]);
-    assert.equal(r.code, 0, r.out);
-    const link = r.out.match(LINK_RE)![0];
-    assert.equal(await verifyCredentials(adminUsername, "nimporte"), null);
-    await setPasswordWithToken(tokenOf(link), await bcrypt.hash(`Admin-${RUN}`, 10));
-    admin = (await verifyCredentials(adminUsername, `Admin-${RUN}`))!;
-    assert.ok(admin && !admin.isDemo);
+  await step("le compte officiel détient accounts.manage", async () => {
     assert.ok((await loadUserAccess(admin.id)).permissions.some((p) => p.permissionKey === "accounts.manage"));
-  });
-
-  await step("usage unique : le script refuse dès qu'un administrateur officiel est actif", async () => {
-    assert.equal(bootstrap(["--email", `autre.${RUN}@exemple.cd`, "--name", "Autre", "--apply"]).code, 2);
   });
 
   console.log("\nValidation, refus et connexion (administrateur officiel)");
@@ -337,11 +331,115 @@ async function main() {
     await rejects(() => issueAccessLink({ actorId: admin.id, organizationId: org.id, userId: u.id, baseUrl: BASE }), /suspendu/);
   });
 
+  console.log("\nRôle Super Admin");
+  const superAdmin = await prisma.roleDefinition.findUniqueOrThrow({ where: { key: ROLE_KEYS.SUPER_ADMIN } });
+
+  await step("Super Admin : clé réservée, ni demandable, ni attribuable depuis l'application", async () => {
+    assert.ok(RESTRICTED_ROLE_KEYS.includes(ROLE_KEYS.SUPER_ADMIN));
+    await rejects(
+      () => request({ name: "Pirate", email: `pirate.${RUN}@exemple.cd`, username: `pirate.${RUN}`, password: "Pirate-mdp-1", roleId: superAdmin.id }),
+      "Fonction inconnue."
+    );
+    const r = await request({ name: "Normal", email: `normal.${RUN}@exemple.cd`, username: `normal.${RUN}`, password: "Normal-mdp-1" });
+    await rejects(
+      () => approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: superAdmin.id, poolId: null, baseUrl: BASE }),
+      /ne s'attribue pas depuis l'application/
+    );
+    await rejects(
+      () => createAccount({
+        actorId: admin.id, organizationId: org.id, name: "X", email: `sa.${RUN}@exemple.cd`, phone: null, sex: null,
+        roleId: superAdmin.id, poolId: null, baseUrl: BASE,
+      }),
+      /ne s'attribue pas depuis l'application/
+    );
+    await rejects(
+      () => createAccount({
+        actorId: demoInfo.id, organizationId: org.id, name: "X", email: `sa2.${RUN}@example.test`, phone: null, sex: null,
+        roleId: superAdmin.id, poolId: null, baseUrl: BASE,
+      }),
+      /ne s'attribue pas depuis l'application/
+    );
+    assert.equal(await prisma.userRole.count({ where: { roleId: superAdmin.id } }), 0);
+  });
+
+  await step("script : refuse un compte démo, un compte inconnu, une adresse .test", async () => {
+    assert.equal(grant(["--email", "informaticien@ipp-nordkivu1.test"]).code, 2);
+    assert.equal(grant(["--email", `inconnu.${RUN}@exemple.cd`]).code, 2);
+    const demoReal = await prisma.user.create({
+      data: { name: "D", email: `demoreel.${RUN}@exemple.cd`, passwordHash: "x", status: "ACTIVE", isDemo: true, organizationId: org.id },
+    });
+    const r = grant(["--email", demoReal.email, "--apply"]);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /compte de démonstration/);
+  });
+
+  await step("script : simulation par défaut, n'écrit rien et n'affiche pas l'adresse complète", async () => {
+    const r = grant(["--email", adminEmail]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Simulation : rien n'a été écrit/);
+    assert.ok(!r.out.includes(adminEmail));
+    assert.equal(await prisma.userRole.count({ where: { userId: admin.id, roleId: superAdmin.id } }), 0);
+  });
+
+  await step("script : retrait de l'informaticien refusé tant que Super Admin n'est pas attribué", async () => {
+    assert.equal(grant(["--email", adminEmail, "--remove-informaticien", "--apply"]).code, 2);
+  });
+
+  await step("attribution : Super Admin ajouté, informaticien conservé, sauvegarde + audit", async () => {
+    const before = fs.readdirSync(BACKUP_DIR).length;
+    const r = grant(["--email", adminEmail, "--apply"]);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(fs.readdirSync(BACKUP_DIR).length, before + 1, "sauvegarde écrite");
+    const keys = (await loadUserAccess(admin.id)).roles.map((x) => x.key).sort();
+    assert.deepEqual(keys, [ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN].sort());
+    assert.equal(await prisma.auditLog.count({ where: { entityId: admin.id, action: "role.super_admin.grant" } }), 1);
+    assert.equal(grant(["--email", adminEmail, "--apply"]).code, 0, "réapplication sans effet (idempotente)");
+    assert.equal(await prisma.userRole.count({ where: { userId: admin.id, roleId: superAdmin.id } }), 1);
+  });
+
+  await step("rôle Informaticien de l'IPP inchangé (libellé, permissions, autres titulaires)", async () => {
+    const info = await prisma.roleDefinition.findUniqueOrThrow({
+      where: { key: ROLE_KEYS.INFORMATICIEN },
+      include: { rolePermissions: { include: { permission: true } } },
+    });
+    assert.equal(info.label, informaticien.label);
+    assert.ok(info.rolePermissions.some((rp) => rp.permission.key === "publication.manage"));
+    assert.ok(await prisma.userRole.findFirst({ where: { roleId: info.id, userId: demoInfo.id } }));
+  });
+
+  await step("retrait de l'informaticien : droits = exactement ceux du Super Admin", async () => {
+    const r = grant(["--email", adminEmail, "--remove-informaticien", "--apply"]);
+    assert.equal(r.code, 0, r.out);
+    const access = await loadUserAccess(admin.id);
+    assert.deepEqual(access.roles.map((x) => x.key), [ROLE_KEYS.SUPER_ADMIN]);
+    assert.deepEqual([...new Set(access.permissions.map((p) => p.permissionKey))].sort(), [...SUPER_ADMIN_PERMISSIONS].sort());
+    assert.match(grant(["--email", adminEmail, "--verify"]).out, /Valider les demandes \(accounts\.manage\) : oui/);
+  });
+
+  await step("le Super Admin valide les demandes, sans autorité de publication ni données institutionnelles", async () => {
+    const r = await request({ name: "Après", email: `apres.${RUN}@exemple.cd`, username: `apres.${RUN}`, password: "Apres-mdp-1" });
+    const res = await approveAccountRequest({ actorId: admin.id, organizationId: org.id, requestId: r.requestId, roleId: ipp.id, poolId: null, baseUrl: BASE });
+    assert.ok(res.activated);
+    await rejects(() => requirePublicationAuthority(admin.id), /Seuls l'IPP et l'informaticien/);
+    const perms = (await loadUserAccess(admin.id)).permissions.map((p) => p.permissionKey);
+    for (const k of ["pools.manage", "publication.manage", "reports.validate", "schools.manage"]) assert.ok(!perms.includes(k), k);
+  });
+
+  await step("retour arrière : informaticien rétabli, Super Admin retiré ; puis réattribution", async () => {
+    assert.equal(grant(["--email", adminEmail, "--rollback", "--apply"]).code, 0);
+    assert.deepEqual((await loadUserAccess(admin.id)).roles.map((x) => x.key), [ROLE_KEYS.INFORMATICIEN]);
+    assert.equal(grant(["--email", adminEmail, "--apply"]).code, 0);
+    assert.equal(grant(["--email", adminEmail, "--remove-informaticien", "--apply"]).code, 0);
+    assert.deepEqual((await loadUserAccess(admin.id)).roles.map((x) => x.key), [ROLE_KEYS.SUPER_ADMIN]);
+  });
+
   await step("aucun jeton, mot de passe ni empreinte dans le journal d'audit", async () => {
     const logs = await prisma.auditLog.findMany({ where: { createdAt: { gt: new Date(Date.now() - 15 * 60 * 1000) } } });
     const dump = JSON.stringify(logs);
     assert.doesNotMatch(dump, /token=|[0-9a-f]{64}|\$2[aby]\$/);
     assert.doesNotMatch(dump, /Alice-mdp|Admin-|Demo-mdp|motdepasse|Nouveau-mdp/i);
+    const superLogs = logs.filter((l) => l.action.startsWith("role.super_admin") || (l.action === "user.role_remove" && l.entityId === admin.id));
+    assert.ok(superLogs.length >= 4, "trace d'audit de chaque étape Super Admin");
   });
 
   console.log(`\n${passed} vérifications réussies.`);

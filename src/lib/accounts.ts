@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, isDemoActor, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
-import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { PERMISSIONS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { emailChannel } from "@/lib/notifications/channels/email";
 import {
@@ -130,7 +130,7 @@ export async function submitAccountRequest(params: {
     params.requestedRoleId ? prisma.roleDefinition.findUnique({ where: { id: params.requestedRoleId } }) : null,
     params.poolId ? prisma.pool.findUnique({ where: { id: params.poolId } }) : null,
   ]);
-  if (params.requestedRoleId && !role) throw new AccountError("Fonction inconnue.");
+  if (params.requestedRoleId && (!role || RESTRICTED_ROLE_KEYS.includes(role.key))) throw new AccountError("Fonction inconnue.");
   if (params.poolId && (!pool || !pool.active || pool.organizationId !== params.organizationId)) {
     throw new AccountError("POOL inconnu.");
   }
@@ -198,6 +198,9 @@ async function requireOfficialForRealAccount(actorId: string, targetIsDemo: bool
 async function resolveRoleAndPool(roleId: string, poolId: string | null, organizationId: string) {
   const role = roleId ? await prisma.roleDefinition.findUnique({ where: { id: roleId } }) : null;
   if (!role) throw new AccountError("Choisissez une fonction valide pour ce compte.");
+  if (RESTRICTED_ROLE_KEYS.includes(role.key)) {
+    throw new AccountError(`La fonction « ${role.label} » ne s'attribue pas depuis l'application.`);
+  }
   if (role.key === ROLE_KEYS.CHEF_POOL) {
     throw new AccountError("Créez le compte comme inspecteur, puis nommez-le chef depuis la fiche du POOL.");
   }

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { PERMISSIONS, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { NewUserForm } from "../new-user-form";
 
@@ -12,7 +12,7 @@ export default async function NouvelInspecteurPage() {
   }
 
   const [roles, pools] = await Promise.all([
-    prisma.roleDefinition.findMany({ orderBy: { label: "asc" } }),
+    prisma.roleDefinition.findMany({ where: { key: { notIn: [...RESTRICTED_ROLE_KEYS] } }, orderBy: { label: "asc" } }),
     prisma.pool.findMany({
       where: { active: true, organizationId: session.user.organizationId },
       orderBy: { name: "asc" },

@@ -46,6 +46,7 @@ export const ROLE_KEYS = {
   SECRETAIRE_POOL: "secretaire_pool",
   INFORMATICIEN: "informaticien",
   CHARGE_MEDIAS: "charge_medias",
+  SUPER_ADMIN: "super_admin",
 } as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[keyof typeof ROLE_KEYS];
@@ -64,6 +65,23 @@ export const ASSIGNMENT_END_REASON_LABELS: Record<string, string> = {
   [ASSIGNMENT_END_REASONS.SCHOOL_POOL_CHANGED]: "École changée de POOL",
   [ASSIGNMENT_END_REASONS.ROLE_REMOVED]: "Fonction d'inspecteur retirée",
 };
+
+// Administration technique de la plateforme (partenaire technologique). Droits
+// volontairement limités aux comptes et au journal d'audit : aucune décision
+// institutionnelle (publication, validation de rapports, POOL, écoles).
+export const SUPER_ADMIN_LABEL = "Super Admin (administration technique)";
+export const SUPER_ADMIN_DESCRIPTION =
+  "Administration technique de la plateforme par le partenaire technologique : comptes et journal d'audit. Ne remplace aucune fonction de l'Inspection.";
+export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = [
+  PERMISSIONS.ACCOUNTS_MANAGE,
+  PERMISSIONS.USERS_MANAGE,
+  PERMISSIONS.AUDIT_VIEW,
+];
+
+// Fonctions qui ne s'attribuent JAMAIS depuis l'application (formulaire public,
+// validation de demande, création de compte, fiche POOL) : uniquement par le
+// script serveur prisma/scripts/grant-super-admin.ts. Leur clé est réservée.
+export const RESTRICTED_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN];
 
 // Décision de l'Inspection : seuls l'IPP et l'informaticien autorisent la
 // publication d'un agent (le Chef de POOL, notamment, ne le peut pas).

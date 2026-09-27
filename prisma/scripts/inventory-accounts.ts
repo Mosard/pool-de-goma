@@ -3,12 +3,42 @@
 // personnelle (ni nom, ni e-mail, ni téléphone) — seulement des compteurs.
 //
 // Usage : POSTGRES_URL=<url de la base à inspecter> npx tsx prisma/scripts/inventory-accounts.ts
+// Réseau qui filtre le port 5432 : DATABASE_URL_SCRIPT=<url prisma+postgres://…> (voir db-connection.ts).
+// L'URL et ses identifiants ne sont jamais affichés.
 
-import { PrismaClient } from "@prisma/client";
+import { describe, probePostgres, scriptClient, scrub } from "./db-connection";
 
-const prisma = new PrismaClient();
+const { prisma, shape } = scriptClient();
+
+async function checkConnection(): Promise<boolean> {
+  console.log(`Connexion via ${describe(shape)}`);
+  const t0 = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    console.log(`Connexion établie en ${Date.now() - t0} ms.\n`);
+    return true;
+  } catch (e) {
+    const err = e as { errorCode?: string; code?: string; message?: string };
+    console.error(`\nÉchec de connexion (${err.errorCode ?? err.code ?? "sans code"}) : ${scrub(err.message ?? String(e)).split("\n").filter(Boolean).pop()}`);
+    if (shape.scheme.startsWith("postgres")) {
+      const probe = await probePostgres(shape.host, Number(shape.port));
+      console.error(`Test du protocole Postgres sur ${shape.host}:${shape.port} (sans identifiant) : ${probe}`);
+      if (!probe.startsWith("OK")) {
+        console.error(
+          "=> Le port s'ouvre mais le protocole Postgres n'aboutit pas : le réseau de ce poste filtre ce trafic.\n" +
+            "   Utilisez l'URL Prisma Postgres passant par HTTPS (prisma+postgres://accelerate.prisma-data.net/?api_key=…)\n" +
+            "   dans DATABASE_URL_SCRIPT, ou lancez le script depuis un autre réseau."
+        );
+      }
+    }
+    return false;
+  }
+}
 
 async function main() {
+  if (!(await checkConnection())) process.exitCode = 1;
+  if (process.exitCode) return;
+
   const orgs = await prisma.organization.count();
   console.log(`Organisations : ${orgs}`);
 

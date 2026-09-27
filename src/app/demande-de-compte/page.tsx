@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { getDefaultOrganization } from "@/lib/organization";
+import { RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { AccountRequestForm } from "./account-request-form";
 
 export const metadata: Metadata = {
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function DemandeDeComptePage() {
   const organization = await getDefaultOrganization();
   const [roles, pools] = await Promise.all([
-    prisma.roleDefinition.findMany({ orderBy: { label: "asc" } }),
+    prisma.roleDefinition.findMany({ where: { key: { notIn: [...RESTRICTED_ROLE_KEYS] } }, orderBy: { label: "asc" } }),
     prisma.pool.findMany({
       where: { active: true, organizationId: organization.id },
       orderBy: { name: "asc" },

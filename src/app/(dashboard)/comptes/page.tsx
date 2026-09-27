@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Alert, Card, PageHeader, Badge, EmptyState } from "@/components/ui";
-import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { PERMISSIONS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, isDemoActor } from "@/lib/permissions";
 import { isDemoEmail } from "@/lib/accounts";
 import { RequestReview } from "./request-review";
@@ -21,7 +21,7 @@ export default async function ComptesPage() {
     }),
     // Le chef de POOL se nomme depuis la fiche du POOL, jamais à la validation.
     prisma.roleDefinition.findMany({
-      where: { key: { not: ROLE_KEYS.CHEF_POOL } },
+      where: { key: { notIn: [ROLE_KEYS.CHEF_POOL, ...RESTRICTED_ROLE_KEYS] } },
       orderBy: { label: "asc" },
       select: { id: true, label: true, scope: true },
     }),

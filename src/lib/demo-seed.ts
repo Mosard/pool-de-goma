@@ -5,6 +5,9 @@ import {
   PERMISSION_CATALOG,
   PERMISSIONS,
   ROLE_KEYS,
+  SUPER_ADMIN_DESCRIPTION,
+  SUPER_ADMIN_LABEL,
+  SUPER_ADMIN_PERMISSIONS,
   WORKFLOW_STATUS_KEYS,
   type PermissionKey,
   type RoleKey,
@@ -28,6 +31,7 @@ const ROLE_DEFINITIONS: { key: RoleKey; label: string; description: string; scop
   { key: ROLE_KEYS.SECRETAIRE_POOL, label: "Secrétaire de pool", description: "Gestion administrative des écoles au sein d'un pool.", scope: "POOL" },
   { key: ROLE_KEYS.INFORMATICIEN, label: "Informaticien de l'Inspection", description: "Administration de la plateforme, validation des comptes.", scope: "PROVINCE" },
   { key: ROLE_KEYS.CHARGE_MEDIAS, label: "Chargé des médias", description: "Gestion des contenus du site public (à venir avec le back-office éditorial).", scope: "PROVINCE" },
+  { key: ROLE_KEYS.SUPER_ADMIN, label: SUPER_ADMIN_LABEL, description: SUPER_ADMIN_DESCRIPTION, scope: "PROVINCE" },
 ];
 
 const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
@@ -60,6 +64,7 @@ const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.PUBLICATION_MANAGE,
   ],
   [ROLE_KEYS.CHARGE_MEDIAS]: [],
+  [ROLE_KEYS.SUPER_ADMIN]: [...SUPER_ADMIN_PERMISSIONS],
 };
 
 // Pools cités au §7. "Karisimbi 2" est explicitement signalé comme incertain

@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { poolSchema, functionSchema } from "@/lib/validations";
 import { demoRefusal, requireOfficialActor, requirePermission } from "@/lib/permissions";
-import { PERMISSIONS, PERMISSION_CATALOG } from "@/lib/rbac-data";
+import { PERMISSIONS, PERMISSION_CATALOG, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
 
@@ -130,6 +130,7 @@ export async function createFunctionAction(
 
   const key = slugifyRoleKey(parsed.data.label);
   if (!key) return { errors: { label: "Nom invalide." } };
+  if (RESTRICTED_ROLE_KEYS.includes(key)) return { errors: { label: "Ce nom de fonction est réservé." } };
 
   let role;
   try {
