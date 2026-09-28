@@ -20,6 +20,12 @@ export type NavItem = {
   permission?: string; // absent = visible à tout utilisateur connecté
 };
 
+// Menu latéral réduit en icônes : choix mémorisé dans ce cookie, lu par le
+// layout serveur (pas de saut d'affichage au chargement). Constante placée
+// ici et non dans nav.tsx : un module « use client » ne fournit pas ses
+// constantes au serveur.
+export const SIDEBAR_COOKIE = "sidebar";
+
 /** Lien « Mon POOL » du chef de POOL (fiche du bureau, inspecteurs). */
 export function myPoolItem(href: string): NavItem {
   return { href, label: "Mon POOL", icon: Building2 };

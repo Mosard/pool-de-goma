@@ -131,7 +131,7 @@ export default async function DashboardPage({
           )}
         </Card>
 
-        <Card className="mt-6">
+        <Card className="mt-6 overflow-x-auto">
           <h2 className="mb-4 text-sm font-semibold text-gray-900">Comparaison par pool</h2>
           {poolStats.length === 0 ? (
             <p className="text-sm text-gray-500">Aucun pool actif pour le moment.</p>

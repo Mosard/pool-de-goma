@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Sidebar, Topbar } from "@/components/nav";
+import { SIDEBAR_COOKIE } from "@/components/nav-items";
 import { RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { ViewModeBar } from "./view-mode-bar";
 
@@ -59,8 +61,15 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
-      <Sidebar permissions={session.user.permissions} myPoolHref={myPoolHref} />
-      <div className="flex flex-1 flex-col">
+      <Sidebar
+        permissions={session.user.permissions}
+        myPoolHref={myPoolHref}
+        initialCollapsed={(await cookies()).get(SIDEBAR_COOKIE)?.value === "collapsed"}
+      />
+      {/* min-w-0 : sans lui, cette colonne s'élargit à la largeur du plus grand
+          tableau et toute la page défile horizontalement, menu compris. Chaque
+          tableau défile seul dans son conteneur overflow-x-auto. */}
+      <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           name={session.user.name ?? ""}
           roleLabels={roleLabels}
@@ -76,7 +85,7 @@ export default async function DashboardLayout({
             pools={pools}
           />
         )}
-        <main className="flex-1 p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-6">{children}</main>
       </div>
     </div>
   );
