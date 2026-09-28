@@ -153,10 +153,10 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
         description={`Code ${pool.code} — fiche publique, personnel et publication`}
         actions={
           <Link
-            href={canEditProfile ? "/parametres" : "/dashboard"}
+            href={canEditProfile ? "/parametres" : canPublish ? "/publication" : "/dashboard"}
             className="text-sm font-medium text-gray-500 hover:text-gray-900"
           >
-            {canEditProfile ? "Retour aux paramètres" : "Retour au tableau de bord"}
+            {canEditProfile ? "Retour aux paramètres" : canPublish ? "Retour à la publication" : "Retour au tableau de bord"}
           </Link>
         }
       />
