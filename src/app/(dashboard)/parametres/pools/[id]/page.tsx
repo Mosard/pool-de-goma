@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Alert, Avatar, Badge, Card, PageHeader } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
+import { Globe, Undo2 } from "lucide-react";
 import { hasPermissionAnyPool, isChiefOf } from "@/lib/permissions";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { LEGACY_POOL_PAGES } from "@/components/homepage/homepage-data";
@@ -210,7 +211,8 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
                 label="Revenir à la maquette"
                 confirmLabel="Revenir à la maquette"
                 variant="danger"
-                className="!min-h-0 px-3 py-1.5 text-xs"
+                icon={<Undo2 size={14} aria-hidden />}
+                className="!min-h-0 px-3.5 py-1.5 text-xs"
                 formAction={setOfficialPageAction.bind(null, pool.id, false)}
               />
             )}
@@ -227,7 +229,8 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
               <ConfirmButton
                 label="Passer la page en mode officiel"
                 confirmLabel="Confirmer le passage en mode officiel"
-                className="!min-h-0 px-3 py-1.5 text-xs"
+                icon={<Globe size={14} aria-hidden />}
+                className="!min-h-0 px-3.5 py-1.5 text-xs shadow-sm"
                 formAction={setOfficialPageAction.bind(null, pool.id, true)}
               />
             ) : (
@@ -366,10 +369,14 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
                         hasPhoto={Boolean(u.photoUrl)}
                       />
                     ) : (
-                      <span className="text-xs text-gray-500">
-                        Accord : {u.publicationConsentIdentity ? "oui" : "non"} — Autorisation :{" "}
-                        {u.publicationAuthIdentity ? "oui" : "non"}
-                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge color={u.publicationConsentIdentity ? "green" : "gray"}>
+                          Accord : {u.publicationConsentIdentity ? "oui" : "non"}
+                        </Badge>
+                        <Badge color={u.publicationAuthIdentity ? "green" : "gray"}>
+                          Autorisation : {u.publicationAuthIdentity ? "oui" : "non"}
+                        </Badge>
+                      </div>
                     )}
                   </td>
                 </tr>

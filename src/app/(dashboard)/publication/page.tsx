@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { clsx } from "clsx";
+import { ChevronRight, ShieldCheck } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
@@ -110,8 +112,18 @@ export default async function PublicationPage() {
                       {pending > 0 ? <Badge color="orange">{pending}</Badge> : <span className="text-gray-400">0</span>}
                     </td>
                     <td className="px-6 py-3 text-right">
-                      <Link href={`/parametres/pools/${p.id}`} className="text-sm font-medium text-blue-700 hover:underline">
-                        Ouvrir la fiche
+                      <Link
+                        href={`/parametres/pools/${p.id}`}
+                        className={clsx(
+                          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
+                          pending > 0
+                            ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+                            : "border border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-700"
+                        )}
+                      >
+                        {pending > 0 ? <ShieldCheck size={14} aria-hidden /> : null}
+                        {pending > 0 ? "Examiner les accords" : "Ouvrir la fiche"}
+                        <ChevronRight size={14} aria-hidden />
                       </Link>
                     </td>
                   </tr>
