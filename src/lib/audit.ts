@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { isSuperAdmin } from "@/lib/permissions";
+import { canUseViewMode } from "@/lib/permissions";
 import { readViewMode } from "@/lib/view-mode";
 
 export async function logAudit(params: {
@@ -12,10 +12,10 @@ export async function logAudit(params: {
   newValue?: unknown;
   metadata?: unknown;
 }) {
-  // Action d'un Super Admin en mode « Voir comme » : le mode est consigné.
+  // Action faite en mode « Voir comme » (Super Admin, IPP) : le mode est consigné.
   let metadata = params.metadata;
   const mode = params.actorId ? await readViewMode() : null;
-  if (mode && params.actorId && (await isSuperAdmin(params.actorId))) {
+  if (mode && params.actorId && (await canUseViewMode(params.actorId))) {
     metadata = { ...((params.metadata as object | undefined) ?? {}), viewMode: mode };
   }
   await prisma.auditLog.create({

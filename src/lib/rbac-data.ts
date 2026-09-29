@@ -81,6 +81,11 @@ export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = PERMISSION_CATA
 // script serveur prisma/scripts/grant-super-admin.ts. Leur clé est réservée.
 export const RESTRICTED_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN];
 
+// « Voir comme » (bascule de profil) : Super Admin (toute fonction non
+// réservée) et IPP (décision du 2026-09-29 : fonctions de POOL seulement,
+// pour suivre chaque POOL, sans jamais dépasser ses propres droits).
+export const VIEW_MODE_HOLDER_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.IPP];
+
 // Décision de l'Inspection : seuls l'IPP et l'informaticien autorisent la
 // publication d'un agent (le Chef de POOL, notamment, ne le peut pas).
 // Le Super Admin aussi (décision du 2026-09-27), sauf lorsqu'il simule une

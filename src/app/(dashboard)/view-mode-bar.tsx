@@ -8,21 +8,25 @@ type RoleOption = { key: string; label: string; scope: string };
 type PoolOption = { id: string; name: string };
 
 /**
- * Bandeau du Super Admin : « Voir comme » une fonction (et un POOL) pour
- * reproduire exactement l'écran et les droits de ce profil. Les actions faites
- * dans ce mode sont tracées à son nom, avec le mode actif.
+ * Bandeau « Voir comme » (Super Admin, IPP) : une fonction (et un POOL) pour
+ * voir l'écran de ce profil. Super Admin : exactement les droits du profil.
+ * IPP : fonctions de POOL seulement, sans jamais dépasser ses propres droits.
+ * Les actions faites dans ce mode sont tracées à son nom, avec le mode actif.
  */
 export function ViewModeBar({
+  holderLabel,
   active,
   roles,
   pools,
 }: {
+  holderLabel: string;
   active: { label: string; poolName: string | null } | null;
   roles: RoleOption[];
   pools: PoolOption[];
 }) {
   const [roleKey, setRoleKey] = useState("");
   const role = roles.find((r) => r.key === roleKey);
+  const limited = holderLabel !== "Super Admin";
 
   if (active) {
     return (
@@ -32,11 +36,13 @@ export function ViewModeBar({
           {active.poolName ? ` — ${active.poolName}` : ""}
         </span>
         <span className="text-amber-800">
-          Vous avez exactement les droits de ce profil. Vos actions sont tracées à votre nom.
+          {limited
+            ? "Vous voyez l'écran de ce profil, dans la limite de vos propres droits. Vos actions sont tracées à votre nom."
+            : "Vous avez exactement les droits de ce profil. Vos actions sont tracées à votre nom."}
         </span>
         <form action={clearViewModeAction} className="ml-auto">
           <Button type="submit" variant="secondary" className="!min-h-0 !px-3 !py-1 text-xs">
-            Revenir en Super Admin
+            Revenir en {holderLabel}
           </Button>
         </form>
       </div>
@@ -48,7 +54,7 @@ export function ViewModeBar({
       action={setViewModeAction}
       className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-6 py-2 text-sm text-indigo-900"
     >
-      <span className="font-semibold">Super Admin — voir comme :</span>
+      <span className="font-semibold">{holderLabel} — voir comme :</span>
       <Select
         name="role"
         aria-label="Profil à simuler"

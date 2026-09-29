@@ -11,6 +11,8 @@ declare module "next-auth" {
       permissions: SessionPermission[];
       /** Rôle Super Admin réellement détenu (indépendant du mode simulé). */
       isSuperAdmin?: boolean;
+      /** Rôle réellement détenu autorisant « Voir comme » (Super Admin, IPP). */
+      canViewAs?: boolean;
       /** Fonction simulée (« Voir comme »), sinon null. */
       viewMode?: { role: string; label: string; poolId: string | null; poolName: string | null } | null;
     } & DefaultSession["user"];

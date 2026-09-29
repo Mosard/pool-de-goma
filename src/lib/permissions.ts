@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, RESTRICTED_ROLE_KEYS, ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
+import {
+  PERMISSIONS,
+  PUBLICATION_AUTHORITY_ROLE_KEYS,
+  RESTRICTED_ROLE_KEYS,
+  ROLE_KEYS,
+  VIEW_MODE_HOLDER_ROLE_KEYS,
+  type PermissionKey,
+} from "@/lib/rbac-data";
 import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
 
@@ -22,7 +29,9 @@ export type UserAccess = {
   permissions: SessionPermission[];
   /** Détient RÉELLEMENT le rôle Super Admin (indépendamment du mode simulé). */
   superAdmin: boolean;
-  /** Fonction simulée par le Super Admin (« Voir comme »), sinon null. */
+  /** Détient RÉELLEMENT un rôle autorisé à « Voir comme » (Super Admin, IPP). */
+  canViewAs: boolean;
+  /** Fonction simulée (« Voir comme »), sinon null. */
   viewMode: ActiveViewMode | null;
 };
 
@@ -49,14 +58,23 @@ async function loadRealAccess(userId: string) {
  * Droits simulés : ceux de la fonction choisie, pour le POOL choisi s'il
  * s'agit d'une fonction de POOL. null si le mode est invalide (fonction
  * inconnue ou réservée, POOL absent, inactif ou d'une autre organisation).
+ *
+ * `limitTo` (IPP) : seules les fonctions de POOL se simulent, et chaque
+ * permission simulée n'est conservée que si le compte la détient déjà
+ * réellement pour ce POOL — la bascule ne donne jamais plus de droits.
  */
-async function simulateAccess(mode: ViewMode, organizationId: string): Promise<Omit<UserAccess, "superAdmin"> | null> {
+async function simulateAccess(
+  mode: ViewMode,
+  organizationId: string,
+  limitTo: SessionPermission[] | null
+): Promise<Omit<UserAccess, "superAdmin" | "canViewAs"> | null> {
   if (RESTRICTED_ROLE_KEYS.includes(mode.role)) return null;
   const role = await prisma.roleDefinition.findUnique({
     where: { key: mode.role },
     include: { rolePermissions: { include: { permission: true } } },
   });
   if (!role) return null;
+  if (limitTo && role.scope !== "POOL") return null;
   let pool: { id: string; name: string } | null = null;
   if (role.scope === "POOL") {
     if (!mode.poolId) return null;
@@ -67,9 +85,12 @@ async function simulateAccess(mode: ViewMode, organizationId: string): Promise<O
     if (!pool) return null;
   }
   const poolId = pool?.id ?? null;
+  const permissions = role.rolePermissions
+    .map((rp) => ({ permissionKey: rp.permission.key, poolId, organizationId }))
+    .filter((p) => !limitTo || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
   return {
     roles: [{ key: role.key, label: role.label, poolId }],
-    permissions: role.rolePermissions.map((rp) => ({ permissionKey: rp.permission.key, poolId, organizationId })),
+    permissions,
     viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null },
   };
 }
@@ -79,21 +100,25 @@ async function simulateAccess(mode: ViewMode, organizationId: string): Promise<O
  * Un compte qui n'est pas ACTIVE (suspendu, désactivé, en attente) n'a aucune
  * permission, même si son jeton de session (JWT) est encore valide.
  *
- * Super Admin en mode « Voir comme » : droits de la fonction simulée, et
- * uniquement ceux-là — contrôles serveur compris. Le mode est lu dans le
- * cookie de la requête, sauf si `opts.viewMode` est fourni (null = aucun).
+ * Mode « Voir comme » : droits de la fonction simulée, et uniquement
+ * ceux-là — contrôles serveur compris. Super Admin : toute fonction non
+ * réservée. IPP : fonctions de POOL seulement, bornées à ses propres droits.
+ * Le mode est lu dans le cookie de la requête, sauf si `opts.viewMode` est
+ * fourni (null = aucun) ; il est ignoré pour tout autre compte.
  */
 export async function loadUserAccess(userId: string, opts?: { viewMode?: ViewMode | null }): Promise<UserAccess> {
   const real = await loadRealAccess(userId);
-  if (!real) return { roles: [], permissions: [], superAdmin: false, viewMode: null };
+  if (!real) return { roles: [], permissions: [], superAdmin: false, canViewAs: false, viewMode: null };
 
   const superAdmin = real.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
-  if (!superAdmin) return { roles: real.roles, permissions: real.permissions, superAdmin: false, viewMode: null };
+  const canViewAs = real.roles.some((r) => VIEW_MODE_HOLDER_ROLE_KEYS.includes(r.key));
+  const own = { roles: real.roles, permissions: real.permissions, superAdmin, canViewAs, viewMode: null };
+  if (!canViewAs) return own;
 
   const mode = opts && "viewMode" in opts ? opts.viewMode : await readViewMode();
-  const simulated = mode ? await simulateAccess(mode, real.organizationId) : null;
-  if (!simulated) return { roles: real.roles, permissions: real.permissions, superAdmin: true, viewMode: null };
-  return { ...simulated, superAdmin: true };
+  const simulated = mode ? await simulateAccess(mode, real.organizationId, superAdmin ? null : real.permissions) : null;
+  if (!simulated) return own;
+  return { ...simulated, superAdmin, canViewAs };
 }
 
 /** Revérifie la permission côté serveur en interrogeant la base (ne jamais se fier uniquement au JWT). */
@@ -167,6 +192,11 @@ export async function requirePublicationAuthority(userId: string): Promise<void>
 /** Détient RÉELLEMENT le rôle Super Admin (le mode « Voir comme » n'y change rien). */
 export async function isSuperAdmin(userId: string): Promise<boolean> {
   return (await loadUserAccess(userId, { viewMode: null })).superAdmin;
+}
+
+/** Détient RÉELLEMENT un rôle autorisé à « Voir comme » (Super Admin ou IPP). */
+export async function canUseViewMode(userId: string): Promise<boolean> {
+  return (await loadUserAccess(userId, { viewMode: null })).canViewAs;
 }
 
 export async function getRoleLabels(): Promise<Record<string, string>> {

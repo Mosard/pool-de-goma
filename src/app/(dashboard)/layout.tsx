@@ -43,11 +43,15 @@ export default async function DashboardLayout({
       ? `/parametres/pools/${chiefPoolId}`
       : null;
 
-  // « Voir comme » : réservé au Super Admin (rôle réel, relu en base).
-  const [simulableRoles, pools] = session.user.isSuperAdmin
+  // « Voir comme » : Super Admin (toute fonction non réservée) et IPP
+  // (fonctions de POOL seulement), d'après les rôles réels relus en base.
+  const [simulableRoles, pools] = session.user.canViewAs
     ? await Promise.all([
         prisma.roleDefinition.findMany({
-          where: { key: { notIn: [...RESTRICTED_ROLE_KEYS] } },
+          where: {
+            key: { notIn: [...RESTRICTED_ROLE_KEYS] },
+            ...(session.user.isSuperAdmin ? {} : { scope: "POOL" as const }),
+          },
           orderBy: { label: "asc" },
           select: { key: true, label: true, scope: true },
         }),
@@ -78,8 +82,9 @@ export default async function DashboardLayout({
           photoUrl={currentUser?.photoUrl}
           myPoolHref={myPoolHref}
         />
-        {session.user.isSuperAdmin && (
+        {session.user.canViewAs && (
           <ViewModeBar
+            holderLabel={session.user.isSuperAdmin ? "Super Admin" : "IPP"}
             active={session.user.viewMode ? { label: session.user.viewMode.label, poolName: session.user.viewMode.poolName } : null}
             roles={simulableRoles}
             pools={pools}

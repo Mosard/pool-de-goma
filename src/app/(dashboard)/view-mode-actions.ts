@@ -3,21 +3,22 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { ForbiddenError, isSuperAdmin, loadUserAccess } from "@/lib/permissions";
+import { ForbiddenError, loadUserAccess } from "@/lib/permissions";
 import { VIEW_MODE_COOKIE, VIEW_MODE_MAX_AGE } from "@/lib/view-mode";
 import { logAudit } from "@/lib/audit";
 
-async function requireRealSuperAdmin() {
+/** Super Admin ou IPP, d'après les rôles RÉELS en base (jamais le mode simulé ni le jeton). */
+async function requireViewModeHolder() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  // Rôle RÉEL en base, jamais celui du mode simulé ni celui du jeton.
-  if (!(await isSuperAdmin(session.user.id))) throw new ForbiddenError("Réservé au Super Admin.");
-  return session.user;
+  const real = await loadUserAccess(session.user.id, { viewMode: null });
+  if (!real.canViewAs) throw new ForbiddenError("Réservé au Super Admin et à l'IPP.");
+  return { user: session.user, auditAction: real.superAdmin ? "super_admin.view_mode" : "ipp.view_mode" };
 }
 
 /** « Voir comme » : fonction (et POOL) simulés, avec leurs seuls droits. */
 export async function setViewModeAction(formData: FormData) {
-  const user = await requireRealSuperAdmin();
+  const { user, auditAction } = await requireViewModeHolder();
   const role = String(formData.get("role") ?? "");
   const poolId = String(formData.get("poolId") ?? "") || null;
   if (!role) return clearViewModeAction();
@@ -35,7 +36,7 @@ export async function setViewModeAction(formData: FormData) {
   await logAudit({
     actorId: user.id,
     organizationId: user.organizationId,
-    action: "super_admin.view_mode",
+    action: auditAction,
     entityType: "User",
     entityId: user.id,
     newValue: { role: access.viewMode.role, poolId: access.viewMode.poolId },
@@ -44,15 +45,15 @@ export async function setViewModeAction(formData: FormData) {
 }
 
 export async function clearViewModeAction() {
-  const user = await requireRealSuperAdmin();
+  const { user, auditAction } = await requireViewModeHolder();
   (await cookies()).delete(VIEW_MODE_COOKIE);
   await logAudit({
     actorId: user.id,
     organizationId: user.organizationId,
-    action: "super_admin.view_mode",
+    action: auditAction,
     entityType: "User",
     entityId: user.id,
-    newValue: { role: "super_admin" },
+    newValue: { role: null },
   });
   redirect("/dashboard");
 }
