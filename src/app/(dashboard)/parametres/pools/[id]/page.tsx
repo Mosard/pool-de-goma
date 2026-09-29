@@ -8,8 +8,14 @@ import { Globe, Undo2 } from "lucide-react";
 import { hasPermissionAnyPool, isChiefOf } from "@/lib/permissions";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { LEGACY_POOL_PAGES } from "@/components/homepage/homepage-data";
-import { AddRoleForm, AuthorizationForm, ChiefForm, PoolProfileForm } from "./pool-admin-forms";
-import { removeChiefAction, removePoolRoleAction, setOfficialPageAction } from "./actions";
+import { AddRoleForm, ChiefForm, PoolProfileForm } from "./pool-admin-forms";
+import { AuthorizationForm } from "@/components/publication-authorization-form";
+import {
+  removeChiefAction,
+  removePoolRoleAction,
+  setOfficialPageAction,
+  updatePublicationAuthorizationAction,
+} from "./actions";
 import { DEMO_POOL_SHOWCASES } from "@/lib/pool-demo";
 
 const RECORD_LABELS = {
@@ -360,8 +366,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
                       <span className="text-xs text-gray-400">Compte de démonstration : jamais publié.</span>
                     ) : canPublish && isOfficial ? (
                       <AuthorizationForm
-                        poolId={pool.id}
-                        userId={u.id}
+                        action={updatePublicationAuthorizationAction.bind(null, pool.id, u.id)}
                         consentIdentity={u.publicationConsentIdentity}
                         consentPhoto={u.publicationConsentPhoto}
                         authIdentity={u.publicationAuthIdentity}

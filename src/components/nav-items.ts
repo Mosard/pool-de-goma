@@ -10,6 +10,7 @@ import {
   Settings,
   Building2,
   BadgeCheck,
+  Landmark,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 
@@ -40,6 +41,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/inspecteurs", label: "Inspecteurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
   { href: "/comptes", label: "Demandes de compte", icon: UserPlus, permission: PERMISSIONS.ACCOUNTS_MANAGE },
   { href: "/publication", label: "Publication", icon: BadgeCheck, permission: PERMISSIONS.PUBLICATION_MANAGE },
+  // Page accessible aussi avec direction.manage (IPP) : l'IPP détient les deux.
+  { href: "/direction", label: "Direction", icon: Landmark, permission: PERMISSIONS.PUBLICATION_MANAGE },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
   { href: "/parametres", label: "Paramètres", icon: Settings, permission: PERMISSIONS.POOLS_MANAGE },
 ];

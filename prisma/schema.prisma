@@ -72,9 +72,32 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  pools           Pool[]
-  users           User[]
-  accountRequests AccountRequest[]
+  pools                 Pool[]
+  users                 User[]
+  accountRequests       AccountRequest[]
+  directionAttributions DirectionAttribution[]
+}
+
+// Attribution d'un IPP adjoint (domaine dont il est chargé : Formation,
+// Évaluation, Titres…). Créée et modifiée par l'IPP principal (permission
+// direction.manage) ; elle ne remplace pas le rôle « ipa » du compte, elle
+// décrit son domaine. Une attribution sans titulaire publié reste une place
+// neutre sur le site (libellé seul, jamais de nom ni de portrait fictif).
+model DirectionAttribution {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  label          String
+  // Ordre d'affichage (croissant), puis libellé.
+  position       Int          @default(0)
+  // Compte titulaire (rôle « ipa »). Vide : place non attribuée.
+  holderId       String?
+  holder         User?        @relation("DirectionHolder", fields: [holderId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, label])
+  @@index([holderId])
 }
 
 model Pool {
@@ -214,6 +237,7 @@ model User {
   assignmentsEnded        Assignment[]          @relation("EndedBy")
   publicationRecords      PublicationRecord[]   @relation("PublicationSubject")
   publicationDecisions    PublicationRecord[]   @relation("PublicationActor")
+  directionAttributions   DirectionAttribution[] @relation("DirectionHolder")
   assignments             Assignment[]          @relation("Inspector")
   inspections             Inspection[]          @relation("InspectorInspections")
   comments                Comment[]

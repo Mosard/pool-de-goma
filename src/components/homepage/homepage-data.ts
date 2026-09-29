@@ -181,23 +181,12 @@ export type LeadershipMember = {
   contact: LeadershipContact;
 };
 
-// Nom et contacts réels à fournir par l'Inspection — voir
-// MASTER_INSPECTION_NORD_KIVU_1.md §13 et §24 (liste des dix IPPA et de
-// leurs attributions non encore confirmée).
-export const IPP_LEADER: LeadershipMember = {
-  id: "ipp",
-  name: "Nom de l'Inspecteur Principal Provincial",
-  role: "Inspecteur Principal Provincial — Nord-Kivu 1",
-  photo: "/scrollytelling/ipp.png",
-  contact: {},
-};
-
-// Fonctions confirmées à ce stade (MASTER_INSPECTION_NORD_KIVU_1.md §13 +
-// précisions reçues) : formation, évaluation, titres, administration et
-// finances, exploitation, personnel. Ne pas en inventer d'autres — les 4
-// IPPA restants gardent une attribution à préciser tant qu'elle n'est pas
-// confirmée.
-const KNOWN_IPPA_ATTRIBUTIONS = [
+// La Direction de l'Inspection (IPP principal et IPP adjoints) est alimentée
+// par le back-office : src/lib/public-direction.ts et la page /direction.
+// Attributions déjà confirmées par l'Inspection (MASTER_INSPECTION_NORD_KIVU_1.md
+// §13 + précisions reçues) : proposées à l'IPP dans le back-office, jamais
+// affichées d'office. Ne pas en inventer d'autres (4 restent inconnues).
+export const CONFIRMED_IPPA_ATTRIBUTIONS: readonly string[] = [
   "Formation",
   "Évaluation",
   "Titres",
@@ -205,14 +194,6 @@ const KNOWN_IPPA_ATTRIBUTIONS = [
   "Exploitation",
   "Personnel",
 ];
-
-export const IPPA_MEMBERS: LeadershipMember[] = Array.from({ length: 10 }, (_, i) => ({
-  id: `ippa-${i + 1}`,
-  name: `IPPA ${i + 1}`,
-  role: "Inspecteur Principal Adjoint",
-  attribution: KNOWN_IPPA_ATTRIBUTIONS[i] ?? "Attribution à préciser",
-  contact: {},
-}));
 
 // URL publiques déjà en ligne (et indexées) avant la liaison au back-office.
 // Elles NE sont PAS une source de données : un POOL n'est présenté comme

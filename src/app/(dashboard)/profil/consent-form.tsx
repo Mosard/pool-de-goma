@@ -32,8 +32,9 @@ export function ConsentForm({
     <Card>
       <h3 className="text-sm font-semibold text-gray-900">Publication sur le site public</h3>
       <p className="mt-1 text-xs text-gray-500">
-        Votre nom, votre fonction et votre photo n&apos;apparaissent sur la page publique de votre POOL qu&apos;avec
-        votre accord ET l&apos;autorisation de l&apos;IPP ou de l&apos;informaticien. Vous pouvez retirer votre accord à tout
+        Votre nom, votre fonction et votre photo n&apos;apparaissent sur le site public (page de votre POOL ou section
+        « Direction de l&apos;Inspection ») qu&apos;avec votre accord ET l&apos;autorisation d&apos;un compte habilité (IPP ou
+        informaticien, jamais vous-même). Vous pouvez retirer votre accord à tout
         moment : l&apos;information disparaît alors immédiatement du site.
       </p>
       <form action={formAction} className="mt-4 space-y-3">
