@@ -10,7 +10,7 @@ export function SiteHeader({ isConnected }: { isConnected: boolean }) {
       <nav className="hidden items-center gap-6 text-sm text-gray-300 md:flex">
         <Link href="/#accueil" className="hover:text-white">Accueil</Link>
         <Link href="/#inspection" className="hover:text-white">L&apos;Inspection</Link>
-        <Link href="/#actualites" className="hover:text-white">Actualités</Link>
+        <Link href="/actualites" className="hover:text-white">Actualités</Link>
         <Link href="/#contacts" className="hover:text-white">Contacts</Link>
       </nav>
       <Link href={isConnected ? "/dashboard" : "/login"}>

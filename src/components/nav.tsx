@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
 import { Home, LogOut, PanelLeftClose, PanelLeftOpen, User as UserIcon } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
-import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
+import type { SessionPermission } from "@/lib/permission-checks";
 import { NotificationBell, type NotificationItem } from "./notifications-bell";
 import { MobileNav } from "./mobile-nav";
 import { Avatar } from "./ui";
-import { NAV_ITEMS, SIDEBAR_COOKIE, myPoolItem } from "./nav-items";
+import { NAV_ITEMS, SIDEBAR_COOKIE, isNavItemVisible, myPoolItem } from "./nav-items";
 
 export function Sidebar({
   permissions,
@@ -23,7 +23,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
-  const items = NAV_ITEMS.filter((item) => !item.permission || hasPermissionAnyPool(permissions, item.permission));
+  const items = NAV_ITEMS.filter((item) => isNavItemVisible(item, permissions));
   if (myPoolHref) items.splice(1, 0, myPoolItem(myPoolHref));
 
   const toggle = () => {

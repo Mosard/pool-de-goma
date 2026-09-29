@@ -76,6 +76,83 @@ model Organization {
   users                 User[]
   accountRequests       AccountRequest[]
   directionAttributions DirectionAttribution[]
+  contents              Content[]
+}
+
+// Contenus éditoriaux du site public (actualités, articles, communiqués).
+// Rédigés par le chargé des médias (content.write), publiés après validation
+// par un compte habilité (content.publish : IPP, IPP adjoint, informaticien,
+// Super Admin), jamais par leur propre auteur.
+enum ContentKind {
+  ACTUALITE
+  ARTICLE
+  COMMUNIQUE
+}
+
+enum ContentStatus {
+  BROUILLON
+  SOUMIS
+  A_CORRIGER
+  PUBLIE
+  RETIRE
+}
+
+enum MediaRole {
+  COVER      // image de couverture (une par contenu)
+  INLINE     // image insérée dans le texte
+  ATTACHMENT // PDF joint (communiqué)
+}
+
+model Content {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  kind           ContentKind
+  status         ContentStatus @default(BROUILLON)
+  title          String
+  // URL publique (/actualites/<slug>), figée à la première publication.
+  slug           String        @unique
+  summary        String
+  // Texte au format de l'éditeur simple (sous-ensemble de Markdown, rendu
+  // sans HTML libre : src/lib/content-markup.tsx).
+  body           String        @db.Text
+  authorId       String
+  author         User          @relation("ContentAuthor", fields: [authorId], references: [id])
+  submittedAt    DateTime?
+  // Dernière décision de validation (publication, renvoi, retrait).
+  reviewedById   String?
+  reviewedBy     User?         @relation("ContentReviewer", fields: [reviewedById], references: [id])
+  reviewedAt     DateTime?
+  reviewNote     String?
+  publishedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  media MediaFile[]
+
+  @@index([organizationId, status, publishedAt])
+  @@index([authorId])
+}
+
+// Fichier d'un contenu (image compressée ou PDF), stocké en base. Servi par
+// /medias/<id> : public seulement si le contenu est publié.
+model MediaFile {
+  id           String    @id @default(cuid())
+  contentId    String
+  content      Content   @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  role         MediaRole
+  mime         String
+  data         Bytes
+  size         Int
+  width        Int?
+  height       Int?
+  alt          String?
+  fileName     String?
+  uploadedById String
+  uploadedBy   User      @relation("MediaUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime  @default(now())
+
+  @@index([contentId, role])
 }
 
 // Attribution d'un IPP adjoint (domaine dont il est chargé : Formation,
@@ -238,6 +315,9 @@ model User {
   publicationRecords      PublicationRecord[]   @relation("PublicationSubject")
   publicationDecisions    PublicationRecord[]   @relation("PublicationActor")
   directionAttributions   DirectionAttribution[] @relation("DirectionHolder")
+  contentsAuthored        Content[]             @relation("ContentAuthor")
+  contentsReviewed        Content[]             @relation("ContentReviewer")
+  mediaUploaded           MediaFile[]           @relation("MediaUploader")
   assignments             Assignment[]          @relation("Inspector")
   inspections             Inspection[]          @relation("InspectorInspections")
   comments                Comment[]

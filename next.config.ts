@@ -4,10 +4,10 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
   experimental: {
     serverActions: {
-      // Photo de profil : 2 Mo max côté action (profil/actions.ts), plus la
-      // surcharge multipart. La limite par défaut (1 Mo) refusait en silence
-      // les photos entre 1 et 2 Mo.
-      bodySizeLimit: "3mb",
+      // Photo de profil (2 Mo) et fichiers des contenus : image réduite dans
+      // le navigateur, PDF de communiqué jusqu'à 4 Mo (contenus/actions.ts),
+      // plus la surcharge multipart. Plafond de Vercel : 4,5 Mo par requête.
+      bodySizeLimit: "4.5mb",
     },
   },
   async headers() {

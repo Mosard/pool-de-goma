@@ -16,6 +16,8 @@ export const PERMISSIONS = {
   FORM_TEMPLATES_MANAGE: "form_templates.manage",
   PUBLICATION_MANAGE: "publication.manage",
   DIRECTION_MANAGE: "direction.manage",
+  CONTENT_WRITE: "content.write",
+  CONTENT_PUBLISH: "content.publish",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -34,6 +36,8 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.FORM_TEMPLATES_MANAGE, label: "Gérer les catégories et fiches d'inspection", category: "Administration" },
   { key: PERMISSIONS.PUBLICATION_MANAGE, label: "Autoriser la publication publique des profils (nom, fonction, photo)", category: "Publication" },
   { key: PERMISSIONS.DIRECTION_MANAGE, label: "Gérer la Direction de l'Inspection (attributions des IPP adjoints)", category: "Publication" },
+  { key: PERMISSIONS.CONTENT_WRITE, label: "Rédiger des actualités, articles et communiqués (brouillons, soumission)", category: "Site public" },
+  { key: PERMISSIONS.CONTENT_PUBLISH, label: "Valider et publier les contenus du site, les renvoyer en correction ou les retirer", category: "Site public" },
 ];
 
 export const ROLE_KEYS = {

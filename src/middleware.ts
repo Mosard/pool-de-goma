@@ -13,6 +13,9 @@ const PUBLIC_PREFIXES = [
   "/reinitialiser-mot-de-passe",
   "/activer-compte",
   "/pools",
+  // Actualités publiées et leurs fichiers (la route /medias revérifie le statut).
+  "/actualites",
+  "/medias/",
   // Vignettes publiques de la Direction de l'Inspection (revérifiées par la route).
   "/photos/direction/",
   "/inuka-tech",

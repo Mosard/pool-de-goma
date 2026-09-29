@@ -11,15 +11,26 @@ import {
   Building2,
   BadgeCheck,
   Landmark,
+  Newspaper,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
+import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: React.ElementType;
-  permission?: string; // absent = visible à tout utilisateur connecté
+  // Visible si l'utilisateur détient l'une de ces permissions ; absent =
+  // visible à tout utilisateur connecté.
+  permission?: string | string[];
 };
+
+/** Règle de visibilité commune au menu latéral et au menu mobile. */
+export function isNavItemVisible(item: NavItem, permissions: SessionPermission[]): boolean {
+  if (!item.permission) return true;
+  const keys = Array.isArray(item.permission) ? item.permission : [item.permission];
+  return keys.some((key) => hasPermissionAnyPool(permissions, key));
+}
 
 // Menu latéral réduit en icônes : choix mémorisé dans ce cookie, lu par le
 // layout serveur (pas de saut d'affichage au chargement). Constante placée
@@ -43,6 +54,13 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/publication", label: "Publication", icon: BadgeCheck, permission: PERMISSIONS.PUBLICATION_MANAGE },
   // Page accessible aussi avec direction.manage (IPP) : l'IPP détient les deux.
   { href: "/direction", label: "Direction", icon: Landmark, permission: PERMISSIONS.PUBLICATION_MANAGE },
+  // Rédacteurs (chargé des médias) et valideurs (IPP, IPP adjoints, informaticien).
+  {
+    href: "/contenus",
+    label: "Actualités",
+    icon: Newspaper,
+    permission: [PERMISSIONS.CONTENT_WRITE, PERMISSIONS.CONTENT_PUBLISH],
+  },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
   { href: "/parametres", label: "Paramètres", icon: Settings, permission: PERMISSIONS.POOLS_MANAGE },
 ];

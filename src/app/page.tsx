@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui";
-import { InstitutionalCarousel } from "@/components/institutional-carousel";
+import { LatestNewsSection } from "@/components/homepage/latest-news-section";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LeadershipSection } from "@/components/homepage/leadership-section";
@@ -83,12 +83,8 @@ export default async function Home() {
       {/* Vie institutionnelle */}
       <ActionSection />
 
-      <section id="actualites" className="bg-white px-6 py-20 sm:px-10">
-        <div className="mx-auto max-w-5xl">
-          <h2 className="mb-8 text-center text-2xl font-bold text-gray-900 sm:text-3xl">Actualités</h2>
-          <InstitutionalCarousel />
-        </div>
-      </section>
+      {/* Actualités validées depuis le back-office */}
+      <LatestNewsSection />
 
       <PoolsSection />
 
