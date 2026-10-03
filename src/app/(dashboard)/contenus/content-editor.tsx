@@ -17,42 +17,33 @@ import {
 } from "lucide-react";
 import { Alert, Button, Card, FieldError, Input, Label, Select, Textarea } from "@/components/ui";
 import { renderContentBody } from "@/lib/content-markup";
-import { CONTENT_KIND_LABELS, CONTENT_KINDS, CONTENT_LIMITS, type ContentKindKey } from "@/lib/content-meta";
+import {
+  CONTENT_CATEGORIES,
+  CONTENT_KIND_LABELS,
+  CONTENT_KINDS,
+  CONTENT_LIMITS,
+  toGomaInputValue,
+  type ContentKindKey,
+} from "@/lib/content-meta";
 import { saveContentAction, uploadInlineImageAction, type ContentFormState } from "./actions";
+import { downscaleImage } from "./downscale-image";
+import { GalleryManager, type GalleryItem } from "./gallery-manager";
 
 export type EditorContent = {
   id: string;
   kind: ContentKindKey;
+  category: string | null;
   title: string;
   summary: string;
   body: string;
+  scheduledFor: string | null;
+  videoLinks: string[];
   cover: { id: string; alt: string | null } | null;
   attachment: { id: string; fileName: string | null } | null;
+  gallery: GalleryItem[];
 };
 
 const initialState: ContentFormState = {};
-
-/**
- * Réduit une photo dans le navigateur (2000 px, JPEG) avant l'envoi : les
- * photos de téléphone dépassent souvent la limite d'envoi. Le serveur
- * revérifie et recompresse de toute façon.
- */
-async function downscaleImage(file: File): Promise<File> {
-  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1 && file.size < 2_500_000) return file;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-    return blob ? new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }) : file;
-  } catch {
-    return file;
-  }
-}
 
 const fileInputClass =
   "block w-full text-xs text-gray-600 file:mr-3 file:rounded-full file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-medium";
@@ -162,6 +153,31 @@ export function ContentEditor({ content }: { content: EditorContent | null }) {
             <FieldError message={state.errors?.title} />
           </div>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="category">Catégorie</Label>
+            <Select id="category" name="category" defaultValue={content?.category ?? ""}>
+              <option value="">Sans catégorie</option>
+              {CONTENT_CATEGORIES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+            </Select>
+            <FieldError message={state.errors?.category} />
+          </div>
+          <div>
+            <Label htmlFor="scheduledFor">Date de publication souhaitée (facultatif, heure de Goma)</Label>
+            <Input
+              id="scheduledFor"
+              name="scheduledFor"
+              type="datetime-local"
+              defaultValue={toGomaInputValue(content?.scheduledFor)}
+            />
+            <p className="mt-1 text-xs text-gray-400">Vide : en ligne dès la validation. Le valideur peut changer la date.</p>
+            <FieldError message={state.errors?.scheduledFor} />
+          </div>
+        </div>
         <div>
           <Label htmlFor="summary">Résumé (affiché sur les cartes et dans les moteurs de recherche)</Label>
           <Textarea
@@ -184,7 +200,9 @@ export function ContentEditor({ content }: { content: EditorContent | null }) {
 
       <Card className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-900">Texte</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            Texte{kind === "GALERIE" && <span className="font-normal text-gray-500"> (facultatif pour un album)</span>}
+          </h2>
           <div className="inline-flex rounded-full bg-gray-100 p-1 text-xs font-medium lg:hidden">
             {(["write", "preview"] as const).map((t) => (
               <button
@@ -332,6 +350,34 @@ export function ContentEditor({ content }: { content: EditorContent | null }) {
         )}
       </Card>
 
+      <Card className="space-y-5">
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-gray-900">Vidéos</h2>
+          <Textarea
+            name="videoLinks"
+            rows={3}
+            defaultValue={content?.videoLinks.join("\n") ?? ""}
+            placeholder={"https://www.youtube.com/watch?v=…\nhttps://www.facebook.com/…/videos/…"}
+            aria-label="Liens des vidéos"
+          />
+          <p className="text-xs text-gray-400">
+            Un lien YouTube ou Facebook par ligne ({CONTENT_LIMITS.videosPerContent} au plus). Les vidéos s&apos;affichent dans
+            la page, sous le texte.
+          </p>
+          <FieldError message={state.errors?.videoLinks} />
+        </div>
+        <div className="border-t border-gray-100 pt-5">
+          {content ? (
+            <GalleryManager contentId={content.id} initial={content.gallery} />
+          ) : (
+            <p className="text-sm text-gray-500">
+              <span className="font-semibold text-gray-900">Galerie photos</span> — enregistrez d&apos;abord le brouillon pour
+              ajouter des photos.
+            </p>
+          )}
+        </div>
+      </Card>
+
       {state.formError && <Alert variant="error">{state.formError}</Alert>}
       {state.success && <Alert variant="success">Brouillon enregistré.</Alert>}
 
@@ -342,7 +388,8 @@ export function ContentEditor({ content }: { content: EditorContent | null }) {
         </Button>
         {!content && (
           <p className="text-xs text-gray-500">
-            Après ce premier enregistrement, vous pourrez insérer des images et soumettre le contenu.
+            Après ce premier enregistrement, vous pourrez insérer des images, ajouter des photos d&apos;album et soumettre le
+            contenu.
           </p>
         )}
       </div>

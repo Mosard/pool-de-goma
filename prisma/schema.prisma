@@ -87,6 +87,7 @@ enum ContentKind {
   ACTUALITE
   ARTICLE
   COMMUNIQUE
+  GALERIE
 }
 
 enum ContentStatus {
@@ -101,6 +102,7 @@ enum MediaRole {
   COVER      // image de couverture (une par contenu)
   INLINE     // image insérée dans le texte
   ATTACHMENT // PDF joint (communiqué)
+  GALLERY    // photo d'album (galerie du contenu)
 }
 
 model Content {
@@ -124,7 +126,17 @@ model Content {
   reviewedBy     User?         @relation("ContentReviewer", fields: [reviewedById], references: [id])
   reviewedAt     DateTime?
   reviewNote     String?
+  // Date de mise en ligne (passée ou future : un contenu programmé est
+  // PUBLIE avec une date future et reste invisible jusqu'à cette date).
   publishedAt    DateTime?
+  // Date de publication souhaitée par l'auteur, proposée au valideur.
+  scheduledFor   DateTime?
+  // Catégorie éditoriale (clé de CONTENT_CATEGORIES, src/lib/content-meta.ts).
+  category       String?
+  // Liens YouTube / Facebook intégrés à la page (5 au plus).
+  videoLinks     String[]      @default([])
+  // « À la une » : épinglé par un valideur (accueil et page Actualités).
+  pinnedAt       DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

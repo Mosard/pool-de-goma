@@ -92,6 +92,12 @@ export const RESTRICTED_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN];
 // pour suivre chaque POOL, sans jamais dépasser ses propres droits).
 export const VIEW_MODE_HOLDER_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.IPP];
 
+// Fonctions provinciales que l'IPP peut AUSSI simuler (décision du
+// 2026-10-03 : basculer dans l'espace du chargé des médias). Leurs droits
+// sont pris tels quels, sans être bornés aux droits réels de l'IPP : la
+// rédaction ne publie rien sans validation d'un autre compte habilité.
+export const IPP_VIEW_MODE_EXTRA_ROLE_KEYS: readonly string[] = [ROLE_KEYS.CHARGE_MEDIAS];
+
 // Décision de l'Inspection : seuls l'IPP et l'informaticien autorisent la
 // publication d'un agent (le Chef de POOL, notamment, ne le peut pas).
 // Le Super Admin aussi (décision du 2026-09-27), sauf lorsqu'il simule une

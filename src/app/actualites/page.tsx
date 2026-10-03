@@ -5,13 +5,13 @@ import { auth } from "@/lib/auth";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { ContentCard } from "@/components/content-card";
-import { getPublishedContents, PUBLIC_PAGE_SIZE } from "@/lib/contents";
-import { CONTENT_KIND_PLURALS, type ContentKindKey } from "@/lib/content-meta";
+import { getPublishedContents, getUsedCategories, publicCutoff, PUBLIC_PAGE_SIZE } from "@/lib/contents";
+import { CONTENT_CATEGORIES, CONTENT_KIND_PLURALS, type ContentKindKey } from "@/lib/content-meta";
 
 export const metadata: Metadata = {
   title: "Actualités",
   description:
-    "Actualités, articles et communiqués officiels de l'Inspection Principale Provinciale de l'Enseignement Nord-Kivu 1.",
+    "Actualités, articles, communiqués officiels et albums photo de l'Inspection Principale Provinciale de l'Enseignement Nord-Kivu 1.",
   alternates: { canonical: "/actualites" },
 };
 
@@ -20,20 +20,43 @@ const FILTERS: { key: string; label: string; kind: ContentKindKey | null }[] = [
   { key: "actualite", label: CONTENT_KIND_PLURALS.ACTUALITE, kind: "ACTUALITE" },
   { key: "article", label: CONTENT_KIND_PLURALS.ARTICLE, kind: "ARTICLE" },
   { key: "communique", label: CONTENT_KIND_PLURALS.COMMUNIQUE, kind: "COMMUNIQUE" },
+  { key: "album", label: CONTENT_KIND_PLURALS.GALERIE, kind: "GALERIE" },
 ];
+
+const chip = (active: boolean) =>
+  clsx(
+    "whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium",
+    active ? "bg-gray-900 text-white" : "border border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+  );
 
 export default async function ActualitesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; page?: string }>;
+  searchParams: Promise<{ type?: string; categorie?: string; page?: string }>;
 }) {
-  const { type, page: rawPage } = await searchParams;
+  const { type, categorie, page: rawPage } = await searchParams;
   const filter = FILTERS.find((f) => f.key === (type ?? "")) ?? FILTERS[0];
+  const category = CONTENT_CATEGORIES.find((c) => c.key === categorie)?.key ?? null;
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
-  const [session, { items, total }] = await Promise.all([auth(), getPublishedContents(filter.kind, page)]);
+  const cutoff = publicCutoff();
+  const [session, { items, total }, used] = await Promise.all([
+    auth(),
+    getPublishedContents({ kind: filter.kind, category }, page, cutoff),
+    getUsedCategories(cutoff),
+  ]);
   const pages = Math.max(1, Math.ceil(total / PUBLIC_PAGE_SIZE));
-  const href = (p: number) =>
-    `/actualites?${new URLSearchParams({ ...(filter.key ? { type: filter.key } : {}), ...(p > 1 ? { page: String(p) } : {}) })}`;
+  const href = (p: { type?: string; categorie?: string | null; page?: number }) => {
+    const qs = new URLSearchParams();
+    const t = p.type ?? filter.key;
+    const c = p.categorie === undefined ? category : p.categorie;
+    if (t) qs.set("type", t);
+    if (c) qs.set("categorie", c);
+    if (p.page && p.page > 1) qs.set("page", String(p.page));
+    const s = qs.toString();
+    return s ? `/actualites?${s}` : "/actualites";
+  };
+  // Seules les catégories qui ont des publications en ligne sont proposées.
+  const categories = CONTENT_CATEGORIES.filter((c) => used.includes(c.key) || c.key === category);
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
@@ -42,23 +65,33 @@ export default async function ActualitesPage({
         <div className="mx-auto max-w-6xl">
           <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">Actualités</h1>
           <p className="mt-2 max-w-2xl text-sm text-gray-600 sm:text-base">
-            Actualités, articles et communiqués officiels de l&apos;Inspection Principale Provinciale — Nord-Kivu 1.
+            Actualités, articles, communiqués officiels et albums photo de l&apos;Inspection Principale Provinciale — Nord-Kivu 1.
           </p>
 
           <nav className="mt-8 flex gap-2 overflow-x-auto pb-1" aria-label="Filtrer par type">
             {FILTERS.map((f) => (
-              <Link
-                key={f.key || "tout"}
-                href={f.key ? `/actualites?type=${f.key}` : "/actualites"}
-                className={clsx(
-                  "whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium",
-                  f.key === filter.key ? "bg-gray-900 text-white" : "border border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                )}
-              >
+              <Link key={f.key || "tout"} href={href({ type: f.key, page: 1 })} className={chip(f.key === filter.key)}>
                 {f.label}
               </Link>
             ))}
           </nav>
+          {categories.length > 0 && (
+            <nav className="mt-3 flex items-center gap-2 overflow-x-auto pb-1" aria-label="Filtrer par catégorie">
+              <span className="mr-1 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-gray-400">Catégorie</span>
+              <Link href={href({ categorie: null, page: 1 })} className={clsx(chip(category === null), "!px-3 !py-1.5 !text-xs")}>
+                Toutes
+              </Link>
+              {categories.map((c) => (
+                <Link
+                  key={c.key}
+                  href={href({ categorie: c.key, page: 1 })}
+                  className={clsx(chip(category === c.key), "!px-3 !py-1.5 !text-xs")}
+                >
+                  {c.label}
+                </Link>
+              ))}
+            </nav>
+          )}
 
           {items.length === 0 ? (
             <p className="mt-12 rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center text-sm text-gray-500">
@@ -76,7 +109,7 @@ export default async function ActualitesPage({
             <nav className="mt-10 flex items-center justify-center gap-3 text-sm" aria-label="Pagination">
               {page > 1 && (
                 <Link
-                  href={href(page - 1)}
+                  href={href({ page: page - 1 })}
                   className="rounded-full border border-gray-200 bg-white px-4 py-2 font-medium text-gray-700 hover:border-gray-300"
                 >
                   Plus récents
@@ -87,7 +120,7 @@ export default async function ActualitesPage({
               </span>
               {page < pages && (
                 <Link
-                  href={href(page + 1)}
+                  href={href({ page: page + 1 })}
                   className="rounded-full border border-gray-200 bg-white px-4 py-2 font-medium text-gray-700 hover:border-gray-300"
                 >
                   Plus anciens

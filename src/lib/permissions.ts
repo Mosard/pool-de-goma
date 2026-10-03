@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import {
+  IPP_VIEW_MODE_EXTRA_ROLE_KEYS,
   PERMISSIONS,
   PUBLICATION_AUTHORITY_ROLE_KEYS,
   RESTRICTED_ROLE_KEYS,
@@ -74,7 +75,10 @@ async function simulateAccess(
     include: { rolePermissions: { include: { permission: true } } },
   });
   if (!role) return null;
-  if (limitTo && role.scope !== "POOL") return null;
+  // IPP : fonctions de POOL, plus les fonctions provinciales autorisées
+  // (chargé des médias), dont les droits ne sont pas bornés.
+  const ippExtra = IPP_VIEW_MODE_EXTRA_ROLE_KEYS.includes(role.key);
+  if (limitTo && role.scope !== "POOL" && !ippExtra) return null;
   let pool: { id: string; name: string } | null = null;
   if (role.scope === "POOL") {
     if (!mode.poolId) return null;
@@ -87,7 +91,7 @@ async function simulateAccess(
   const poolId = pool?.id ?? null;
   const permissions = role.rolePermissions
     .map((rp) => ({ permissionKey: rp.permission.key, poolId, organizationId }))
-    .filter((p) => !limitTo || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
+    .filter((p) => !limitTo || ippExtra || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
   return {
     roles: [{ key: role.key, label: role.label, poolId }],
     permissions,
@@ -102,7 +106,8 @@ async function simulateAccess(
  *
  * Mode « Voir comme » : droits de la fonction simulée, et uniquement
  * ceux-là — contrôles serveur compris. Super Admin : toute fonction non
- * réservée. IPP : fonctions de POOL seulement, bornées à ses propres droits.
+ * réservée. IPP : fonctions de POOL, bornées à ses propres droits, et
+ * chargé des médias (IPP_VIEW_MODE_EXTRA_ROLE_KEYS, droits non bornés).
  * Le mode est lu dans le cookie de la requête, sauf si `opts.viewMode` est
  * fourni (null = aucun) ; il est ignoré pour tout autre compte.
  */

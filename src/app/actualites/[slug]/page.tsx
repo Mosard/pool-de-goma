@@ -6,29 +6,47 @@ import { auth } from "@/lib/auth";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { ContentArticle } from "@/components/content-article";
-import { getPublishedContent } from "@/lib/contents";
+import { ShareButtons } from "@/components/share-buttons";
+import { getPublishedContent, publicCutoff } from "@/lib/contents";
+
+const SITE_URL = "https://ippnk1.online";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const content = await getPublishedContent(slug);
+  const content = await getPublishedContent(slug, publicCutoff());
   if (!content) return {};
+  // Aperçu de partage : couverture, sinon première photo d'album, en JPEG 1200 × 630.
+  const imageId = content.coverId ?? content.gallery[0]?.id ?? null;
+  const imageAlt = content.coverId ? content.coverAlt : (content.gallery[0]?.alt ?? null);
+  const images = imageId
+    ? [{ url: `/medias/${imageId}?format=partage`, width: 1200, height: 630, alt: imageAlt ?? content.title }]
+    : undefined;
   return {
     title: content.title,
     description: content.summary,
     alternates: { canonical: `/actualites/${content.slug}` },
     openGraph: {
       type: "article",
+      url: `/actualites/${content.slug}`,
+      siteName: "IPP Nord-Kivu 1",
+      locale: "fr_CD",
       title: content.title,
       description: content.summary,
       publishedTime: content.publishedAt,
-      ...(content.coverId ? { images: [{ url: `/medias/${content.coverId}`, alt: content.coverAlt ?? undefined }] } : {}),
+      ...(images ? { images } : {}),
+    },
+    twitter: {
+      card: images ? "summary_large_image" : "summary",
+      title: content.title,
+      description: content.summary,
+      ...(images ? { images: images.map((i) => i.url) } : {}),
     },
   };
 }
 
 export default async function ActualitePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const [session, content] = await Promise.all([auth(), getPublishedContent(slug)]);
+  const [session, content] = await Promise.all([auth(), getPublishedContent(slug, publicCutoff())]);
   if (!content) notFound();
 
   return (
@@ -44,14 +62,20 @@ export default async function ActualitePage({ params }: { params: Promise<{ slug
           <ContentArticle
             content={{
               kind: content.kind,
+              category: content.category,
               title: content.title,
               summary: content.summary,
               body: content.body,
               date: content.publishedAt,
               cover: content.coverId ? { id: content.coverId, alt: content.coverAlt } : null,
               attachment: content.attachment,
+              gallery: content.gallery,
+              videos: content.videos,
             }}
           />
+          <div className="mx-auto mt-10 max-w-3xl border-t border-gray-100 pt-6">
+            <ShareButtons url={`${SITE_URL}/actualites/${content.slug}`} title={content.title} />
+          </div>
         </div>
       </main>
       <SiteFooter />

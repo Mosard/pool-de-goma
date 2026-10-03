@@ -11,7 +11,16 @@ import { logAudit } from "@/lib/audit";
 import { notify } from "@/lib/notifications/dispatcher";
 import { isPdf, normalizeContentImage, revalidatePublicContents } from "@/lib/contents";
 import { inlineMediaIds } from "@/lib/content-markup";
-import { CONTENT_KINDS, CONTENT_LIMITS, EDITABLE_STATUSES, slugify, type ContentStatusKey } from "@/lib/content-meta";
+import {
+  CONTENT_CATEGORY_KEYS,
+  CONTENT_KINDS,
+  CONTENT_LIMITS,
+  EDITABLE_STATUSES,
+  parseGomaDateTime,
+  parseVideoLink,
+  slugify,
+  type ContentStatusKey,
+} from "@/lib/content-meta";
 
 // Contenus du site public. Droits vérifiés en base à chaque appel, comptes
 // officiels uniquement (jamais un compte de démonstration) :
@@ -82,7 +91,28 @@ const contentSchema = z.object({
     .max(CONTENT_LIMITS.summary, `${CONTENT_LIMITS.summary} caractères maximum`),
   body: z.string().max(CONTENT_LIMITS.body, "Texte trop long"),
   coverAlt: z.string().trim().max(CONTENT_LIMITS.alt).optional(),
+  category: z.union([z.enum(CONTENT_CATEGORY_KEYS), z.literal("")], { message: "Catégorie inconnue." }),
+  scheduledFor: z.string().trim().max(20),
+  videoLinks: z.string().max(3000),
 });
+
+/** Liens vidéo saisis (un par ligne) : adresses normalisées, ou message d'erreur. */
+function parseVideoLinks(raw: string): { links: string[] } | { error: string } {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length > CONTENT_LIMITS.videosPerContent) {
+    return { error: `${CONTENT_LIMITS.videosPerContent} vidéos maximum.` };
+  }
+  const links: string[] = [];
+  for (const line of lines) {
+    const video = parseVideoLink(line);
+    if (!video) return { error: `Lien non reconnu : ${line.slice(0, 80)}. Seuls YouTube et Facebook sont acceptés.` };
+    links.push(video.url);
+  }
+  return { links: [...new Set(links)] };
+}
 
 function uploadedFile(formData: FormData, name: string): File | null {
   const f = formData.get(name);
@@ -126,9 +156,22 @@ export async function saveContentAction(
     summary: formData.get("summary") ?? "",
     body: formData.get("body") ?? "",
     coverAlt: formData.get("coverAlt") ?? "",
+    category: formData.get("category") ?? "",
+    scheduledFor: formData.get("scheduledFor") ?? "",
+    videoLinks: formData.get("videoLinks") ?? "",
   });
   if (!parsed.success) return { errors: firstErrors(parsed.error.flatten().fieldErrors) };
   const data = parsed.data;
+
+  const videos = parseVideoLinks(data.videoLinks);
+  if ("error" in videos) return { errors: { videoLinks: videos.error } };
+  // Date souhaitée : facultative, mais jamais dans le passé.
+  const scheduledFor = parseGomaDateTime(data.scheduledFor);
+  if (data.scheduledFor && !scheduledFor) return { errors: { scheduledFor: "Date invalide." } };
+  if (scheduledFor && scheduledFor.getTime() < Date.now()) {
+    return { errors: { scheduledFor: "Cette date est déjà passée. Laissez vide pour une publication dès la validation." } };
+  }
+  const extra = { category: data.category || null, scheduledFor, videoLinks: videos.links };
 
   let existing = null;
   if (contentId) {
@@ -173,7 +216,7 @@ export async function saveContentAction(
   const saved = existing
     ? await prisma.content.update({
         where: { id: existing.id },
-        data: { kind: data.kind, title: data.title, summary: data.summary, body: data.body, slug, status },
+        data: { kind: data.kind, title: data.title, summary: data.summary, body: data.body, slug, status, ...extra },
       })
     : await prisma.content.create({
         data: {
@@ -184,6 +227,7 @@ export async function saveContentAction(
           summary: data.summary,
           body: data.body,
           slug,
+          ...extra,
         },
       });
 
@@ -281,12 +325,80 @@ export async function uploadInlineImageAction(
   return { success: true, snippet: `![${alt}](/medias/${media.id})` };
 }
 
+// ---------------------------------------------------------------------------
+// Galerie (photos d'album) : une photo par appel, pour rester sous la limite
+// d'envoi de 4,5 Mo ; l'éditeur envoie les photos choisies l'une après l'autre.
+
+async function editableOwnContent(contentId: string) {
+  const user = await requireWriter();
+  const content = await findContent(contentId, user.organizationId);
+  if (!content || content.authorId !== user.id) return { user, content: null };
+  if (!EDITABLE_STATUSES.includes(content.status as ContentStatusKey)) return { user, content: null };
+  return { user, content };
+}
+
+export type GalleryUploadResult = { error?: string; photo?: { id: string; alt: string | null } };
+
+export async function uploadGalleryPhotoAction(contentId: string, formData: FormData): Promise<GalleryUploadResult> {
+  const { user, content } = await editableOwnContent(contentId);
+  if (!content) return { error: "Contenu introuvable ou non modifiable." };
+
+  const file = uploadedFile(formData, "photo");
+  if (!file) return { error: "Choisissez une photo." };
+  if (file.size > CONTENT_LIMITS.uploadBytes) return { error: `${file.name} : photo trop lourde (4 Mo maximum).` };
+  const count = await prisma.mediaFile.count({ where: { contentId, role: "GALLERY" } });
+  if (count >= CONTENT_LIMITS.galleryPerContent) return { error: `${CONTENT_LIMITS.galleryPerContent} photos maximum par album.` };
+
+  const image = await normalizeContentImage(Buffer.from(await file.arrayBuffer()));
+  if (!image) return { error: `${file.name} : la photo doit être au format JPEG, PNG ou WebP.` };
+  const alt = String(formData.get("alt") ?? "").trim().slice(0, CONTENT_LIMITS.alt) || null;
+
+  const media = await prisma.mediaFile.create({
+    data: {
+      contentId,
+      role: "GALLERY",
+      mime: image.mime,
+      data: new Uint8Array(image.data),
+      size: image.data.length,
+      width: image.width,
+      height: image.height,
+      alt,
+      uploadedById: user.id,
+    },
+    select: { id: true, alt: true },
+  });
+  revalidatePath(`/contenus/${contentId}`);
+  return { photo: media };
+}
+
+export async function updateGalleryCaptionAction(contentId: string, mediaId: string, alt: string): Promise<{ error?: string }> {
+  const { content } = await editableOwnContent(contentId);
+  if (!content) return { error: "Contenu introuvable ou non modifiable." };
+  const caption = alt.trim().slice(0, CONTENT_LIMITS.alt) || null;
+  const res = await prisma.mediaFile.updateMany({ where: { id: mediaId, contentId, role: "GALLERY" }, data: { alt: caption } });
+  return res.count === 1 ? {} : { error: "Photo introuvable." };
+}
+
+export async function deleteGalleryPhotoAction(contentId: string, mediaId: string): Promise<{ error?: string }> {
+  const { content } = await editableOwnContent(contentId);
+  if (!content) return { error: "Contenu introuvable ou non modifiable." };
+  await prisma.mediaFile.deleteMany({ where: { id: mediaId, contentId, role: "GALLERY" } });
+  revalidatePath(`/contenus/${contentId}`);
+  return {};
+}
+
 export async function submitContentAction(contentId: string) {
   const user = await requireWriter();
   const content = await findContent(contentId, user.organizationId);
   if (!content || content.authorId !== user.id) return;
   if (!EDITABLE_STATUSES.includes(content.status as ContentStatusKey)) return;
-  if (!content.body.trim()) redirect(`/contenus/${contentId}?erreur=texte`);
+  // Un album peut se passer de texte s'il a au moins une photo ou une vidéo.
+  if (content.kind === "GALERIE") {
+    const photos = await prisma.mediaFile.count({ where: { contentId, role: "GALLERY" } });
+    if (photos === 0 && content.videoLinks.length === 0) redirect(`/contenus/${contentId}?erreur=album`);
+  } else if (!content.body.trim()) {
+    redirect(`/contenus/${contentId}?erreur=texte`);
+  }
 
   await prisma.content.update({
     where: { id: content.id },
@@ -360,31 +472,104 @@ async function reviewable(contentId: string, expected: ContentStatusKey) {
   return { user, content, refusal: null };
 }
 
-export async function publishContentAction(contentId: string, _prev: ContentFormState): Promise<ContentFormState> {
+const fmtGoma = (d: Date) =>
+  d.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "Africa/Lubumbashi" });
+
+/**
+ * Publication, immédiate ou programmée (champ « publishAt », heure de Goma).
+ * Programmé = PUBLIE avec une date future : le site ne l'affiche qu'à cette
+ * date (src/lib/contents.ts). Une republication garde la date d'origine.
+ */
+export async function publishContentAction(contentId: string, _prev: ContentFormState, formData: FormData): Promise<ContentFormState> {
   const { user, content, refusal } = await reviewable(contentId, "SOUMIS");
   if (!content) return { formError: refusal ?? "Contenu introuvable." };
 
   const now = new Date();
+  const raw = String(formData.get("publishAt") ?? "").trim();
+  const publishAt = parseGomaDateTime(raw);
+  if (raw && !publishAt) return { errors: { publishAt: "Date invalide." } };
+  if (publishAt && publishAt.getTime() < now.getTime() - 60_000) {
+    return { errors: { publishAt: "Cette date est déjà passée. Videz le champ pour publier maintenant." } };
+  }
+  const scheduled = publishAt !== null && publishAt.getTime() > now.getTime();
+  const publishedAt = scheduled
+    ? publishAt
+    : content.publishedAt && content.publishedAt.getTime() <= now.getTime()
+      ? content.publishedAt
+      : now;
+
   await prisma.content.update({
     where: { id: content.id },
-    data: { status: "PUBLIE", publishedAt: content.publishedAt ?? now, reviewedById: user.id, reviewedAt: now, reviewNote: null },
+    data: { status: "PUBLIE", publishedAt, scheduledFor: null, reviewedById: user.id, reviewedAt: now, reviewNote: null },
   });
   await logAudit({
     actorId: user.id,
     organizationId: user.organizationId,
-    action: "content.publish",
+    action: scheduled ? "content.schedule" : "content.publish",
     entityType: "Content",
     entityId: content.id,
     oldValue: { status: content.status },
-    newValue: { status: "PUBLIE", slug: content.slug },
+    newValue: { status: "PUBLIE", slug: content.slug, publishedAt: publishedAt.toISOString() },
   });
   await notify({
     userId: content.authorId,
     event: "content.published",
-    title: "Contenu publié",
-    body: `« ${content.title} » est en ligne sur le site.`,
+    title: scheduled ? "Contenu programmé" : "Contenu publié",
+    body: scheduled
+      ? `« ${content.title} » paraîtra sur le site le ${fmtGoma(publishedAt)}.`
+      : `« ${content.title} » est en ligne sur le site.`,
     data: { contentId: content.id },
     channels: ["IN_APP"],
+  });
+  revalidatePublicContents(content.slug);
+  revalidatePath("/contenus");
+  revalidatePath(`/contenus/${content.id}`);
+  return { success: true };
+}
+
+/** Met en ligne tout de suite un contenu programmé. */
+export async function publishNowAction(contentId: string) {
+  const user = await requirePublisher();
+  const content = await findContent(contentId, user.organizationId);
+  const now = new Date();
+  if (!content || content.status !== "PUBLIE" || !content.publishedAt || content.publishedAt <= now) return;
+  await prisma.content.update({ where: { id: content.id }, data: { publishedAt: now } });
+  await logAudit({
+    actorId: user.id,
+    organizationId: user.organizationId,
+    action: "content.publish_now",
+    entityType: "Content",
+    entityId: content.id,
+    oldValue: { publishedAt: content.publishedAt.toISOString() },
+    newValue: { publishedAt: now.toISOString() },
+  });
+  revalidatePublicContents(content.slug);
+  revalidatePath("/contenus");
+  revalidatePath(`/contenus/${content.id}`);
+}
+
+/** Met un contenu publié « À la une », ou l'en retire (3 au plus en même temps). */
+export async function togglePinAction(contentId: string): Promise<ContentFormState> {
+  const user = await requirePublisher();
+  const content = await findContent(contentId, user.organizationId);
+  if (!content || content.status !== "PUBLIE") return { formError: "Seul un contenu publié peut être mis à la une." };
+
+  const pin = content.pinnedAt === null;
+  if (pin) {
+    const pinned = await prisma.content.count({
+      where: { organizationId: user.organizationId, status: "PUBLIE", pinnedAt: { not: null } },
+    });
+    if (pinned >= CONTENT_LIMITS.pinned) {
+      return { formError: `${CONTENT_LIMITS.pinned} contenus sont déjà à la une : retirez-en un d'abord.` };
+    }
+  }
+  await prisma.content.update({ where: { id: content.id }, data: { pinnedAt: pin ? new Date() : null } });
+  await logAudit({
+    actorId: user.id,
+    organizationId: user.organizationId,
+    action: pin ? "content.pin" : "content.unpin",
+    entityType: "Content",
+    entityId: content.id,
   });
   revalidatePublicContents(content.slug);
   revalidatePath("/contenus");
@@ -434,7 +619,7 @@ export async function unpublishContentAction(contentId: string, _prev: ContentFo
 
   await prisma.content.update({
     where: { id: content.id },
-    data: { status: "RETIRE", reviewedById: user.id, reviewedAt: new Date(), reviewNote: note },
+    data: { status: "RETIRE", pinnedAt: null, reviewedById: user.id, reviewedAt: new Date(), reviewNote: note },
   });
   await logAudit({
     actorId: user.id,

@@ -30,7 +30,7 @@ const ROLE_DEFINITIONS: { key: RoleKey; label: string; description: string; scop
   { key: ROLE_KEYS.AGENT_POOL, label: "Agent de pool", description: "Agent administratif (caisse, secrétariat, ...) au sein d'un pool.", scope: "POOL" },
   { key: ROLE_KEYS.SECRETAIRE_POOL, label: "Secrétaire de pool", description: "Gestion administrative des écoles au sein d'un pool.", scope: "POOL" },
   { key: ROLE_KEYS.INFORMATICIEN, label: "Informaticien de l'Inspection", description: "Administration de la plateforme, validation des comptes.", scope: "PROVINCE" },
-  { key: ROLE_KEYS.CHARGE_MEDIAS, label: "Chargé des médias", description: "Gestion des contenus du site public (à venir avec le back-office éditorial).", scope: "PROVINCE" },
+  { key: ROLE_KEYS.CHARGE_MEDIAS, label: "Chargé des médias", description: "Rédaction des actualités, articles, communiqués et albums photo du site public, soumis à validation avant publication.", scope: "PROVINCE" },
   { key: ROLE_KEYS.SUPER_ADMIN, label: SUPER_ADMIN_LABEL, description: SUPER_ADMIN_DESCRIPTION, scope: "PROVINCE" },
 ];
 

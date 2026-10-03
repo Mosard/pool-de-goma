@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { clsx } from "clsx";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Star } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
@@ -10,6 +10,7 @@ import {
   CONTENT_KIND_LABELS,
   CONTENT_STATUS_COLORS,
   CONTENT_STATUS_LABELS,
+  isScheduled,
   type ContentStatusKey,
 } from "@/lib/content-meta";
 
@@ -47,6 +48,8 @@ export default async function ContenusPage({ searchParams }: { searchParams: Pro
         title: true,
         status: true,
         updatedAt: true,
+        publishedAt: true,
+        pinnedAt: true,
         author: { select: { name: true } },
       },
     }),
@@ -113,10 +116,19 @@ export default async function ContenusPage({ searchParams }: { searchParams: Pro
             <tbody className="divide-y divide-gray-100">
               {contents.map((c) => (
                 <tr key={c.id} className="hover:bg-blue-50/40">
-                  <td className="max-w-md px-6 py-3 font-medium text-gray-900">{c.title}</td>
+                  <td className="max-w-md px-6 py-3 font-medium text-gray-900">
+                    {c.pinnedAt && c.status === "PUBLIE" && (
+                      <Star size={14} className="mr-1.5 inline fill-amber-400 text-amber-500" aria-label="À la une" />
+                    )}
+                    {c.title}
+                  </td>
                   <td className="px-6 py-3 text-gray-600">{CONTENT_KIND_LABELS[c.kind]}</td>
                   <td className="px-6 py-3">
-                    <Badge color={CONTENT_STATUS_COLORS[c.status]}>{CONTENT_STATUS_LABELS[c.status]}</Badge>
+                    {isScheduled(c.status, c.publishedAt) ? (
+                      <Badge color="blue">Programmé le {fmt(c.publishedAt!)}</Badge>
+                    ) : (
+                      <Badge color={CONTENT_STATUS_COLORS[c.status]}>{CONTENT_STATUS_LABELS[c.status]}</Badge>
+                    )}
                   </td>
                   {canPublish && <td className="px-6 py-3 text-gray-600">{c.author.name}</td>}
                   <td className="whitespace-nowrap px-6 py-3 text-gray-500">{fmt(c.updatedAt)}</td>

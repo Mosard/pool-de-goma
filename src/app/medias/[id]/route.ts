@@ -1,11 +1,15 @@
 import { auth } from "@/lib/auth";
-import { getServableMedia } from "@/lib/contents";
+import { getServableMedia, toShareJpeg } from "@/lib/contents";
 
 // Fichiers des contenus (images compressées, PDF). Public seulement si le
 // contenu est publié ; sinon réservé aux comptes qui rédigent ou valident
 // les contenus de la même organisation (aperçu du back-office).
 
-export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+//
+// ?format=partage : image en JPEG 1200 × 630 pour l'aperçu de partage
+// (WhatsApp, Facebook), seulement pour un contenu en ligne.
+
+export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   if (!/^[a-z0-9]{10,40}$/.test(id)) return new Response(null, { status: 404 });
 
@@ -13,6 +17,15 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const viewer = session?.user ? { organizationId: session.user.organizationId, permissions: session.user.permissions } : null;
   const media = await getServableMedia(id, viewer);
   if (!media) return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+
+  if (new URL(request.url).searchParams.get("format") === "partage" && media.published && media.mime.startsWith("image/")) {
+    const jpeg = await toShareJpeg(Buffer.from(media.data));
+    if (jpeg) {
+      return new Response(new Uint8Array(jpeg), {
+        headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=3600, s-maxage=86400" },
+      });
+    }
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": media.mime,

@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Sidebar, Topbar } from "@/components/nav";
 import { SIDEBAR_COOKIE } from "@/components/nav-items";
-import { RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
+import { IPP_VIEW_MODE_EXTRA_ROLE_KEYS, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { ViewModeBar } from "./view-mode-bar";
 
 // Extra safeguard: these pages already redirect to /login and are disallowed in robots.txt.
@@ -44,13 +44,15 @@ export default async function DashboardLayout({
       : null;
 
   // « Voir comme » : Super Admin (toute fonction non réservée) et IPP
-  // (fonctions de POOL seulement), d'après les rôles réels relus en base.
+  // (fonctions de POOL + chargé des médias), d'après les rôles réels relus en base.
   const [simulableRoles, pools] = session.user.canViewAs
     ? await Promise.all([
         prisma.roleDefinition.findMany({
           where: {
             key: { notIn: [...RESTRICTED_ROLE_KEYS] },
-            ...(session.user.isSuperAdmin ? {} : { scope: "POOL" as const }),
+            ...(session.user.isSuperAdmin
+              ? {}
+              : { OR: [{ scope: "POOL" as const }, { key: { in: [...IPP_VIEW_MODE_EXTRA_ROLE_KEYS] } }] }),
           },
           orderBy: { label: "asc" },
           select: { key: true, label: true, scope: true },

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getIndexablePoolSlugs } from "@/lib/pool-showcase";
-import { getPublishedSlugs } from "@/lib/contents";
+import { getPublishedSlugs, publicCutoff } from "@/lib/contents";
 
 const BASE_URL = "https://ippnk1.online";
 
@@ -12,7 +12,7 @@ export const revalidate = 3600;
 // POOL : uniquement ceux confirmés en base qui affichent des données
 // officielles (jamais une maquette fictive). Contenus : seulement publiés.
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [slugs, contents] = await Promise.all([getIndexablePoolSlugs(), getPublishedSlugs()]);
+  const [slugs, contents] = await Promise.all([getIndexablePoolSlugs(), getPublishedSlugs(publicCutoff())]);
   return [
     { url: BASE_URL, changeFrequency: "weekly", priority: 1 },
     { url: `${BASE_URL}/actualites`, changeFrequency: "daily", priority: 0.9 },

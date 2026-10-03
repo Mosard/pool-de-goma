@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { ContentCard } from "@/components/content-card";
-import { getPublishedContents } from "@/lib/contents";
+import { getPublishedContents, publicCutoff } from "@/lib/contents";
 
-/** Accueil : les trois dernières publications validées (aucun contenu fictif). */
+/** Accueil : les contenus « À la une » puis les dernières publications validées, trois au total (aucun contenu fictif). */
 export async function LatestNewsSection() {
-  const { items } = await getPublishedContents(null, 1);
+  const { items } = await getPublishedContents({ kind: null, category: null }, 1, publicCutoff());
   const latest = items.slice(0, 3);
 
   return (
