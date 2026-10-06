@@ -12,6 +12,7 @@ import {
   BadgeCheck,
   Landmark,
   Newspaper,
+  Sparkles,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
@@ -61,6 +62,8 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Newspaper,
     permission: [PERMISSIONS.CONTENT_WRITE, PERMISSIONS.CONTENT_PUBLISH],
   },
+  // Inspool (son POOL), IPP adjoints, IPP, informaticien, Super Admin.
+  { href: "/ia", label: "IA", icon: Sparkles, permission: PERMISSIONS.AI_ANALYZE },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
   { href: "/parametres", label: "Paramètres", icon: Settings, permission: PERMISSIONS.POOLS_MANAGE },
 ];

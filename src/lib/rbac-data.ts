@@ -18,6 +18,7 @@ export const PERMISSIONS = {
   DIRECTION_MANAGE: "direction.manage",
   CONTENT_WRITE: "content.write",
   CONTENT_PUBLISH: "content.publish",
+  AI_ANALYZE: "ai.analyze",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -38,6 +39,7 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.DIRECTION_MANAGE, label: "Gérer la Direction de l'Inspection (attributions des IPP adjoints)", category: "Publication" },
   { key: PERMISSIONS.CONTENT_WRITE, label: "Rédiger des actualités, articles et communiqués (brouillons, soumission)", category: "Site public" },
   { key: PERMISSIONS.CONTENT_PUBLISH, label: "Valider et publier les contenus du site, les renvoyer en correction ou les retirer", category: "Site public" },
+  { key: PERMISSIONS.AI_ANALYZE, label: "Consulter et lancer les analyses IA des rapports", category: "IA" },
 ];
 
 export const ROLE_KEYS = {

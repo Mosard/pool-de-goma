@@ -77,6 +77,7 @@ model Organization {
   accountRequests       AccountRequest[]
   directionAttributions DirectionAttribution[]
   contents              Content[]
+  aiAnalyses            AiAnalysis[]
 }
 
 // Contenus éditoriaux du site public (actualités, articles, communiqués).
@@ -99,10 +100,10 @@ enum ContentStatus {
 }
 
 enum MediaRole {
-  COVER      // image de couverture (une par contenu)
-  INLINE     // image insérée dans le texte
+  COVER // image de couverture (une par contenu)
+  INLINE // image insérée dans le texte
   ATTACHMENT // PDF joint (communiqué)
-  GALLERY    // photo d'album (galerie du contenu)
+  GALLERY // photo d'album (galerie du contenu)
 }
 
 model Content {
@@ -185,41 +186,44 @@ model DirectionAttribution {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  aiProblems AiProblem[]
+
   @@unique([organizationId, label])
   @@index([holderId])
 }
 
 model Pool {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  name           String
-  code           String       @unique
-  active         Boolean      @default(true)
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  name              String
+  code              String       @unique
+  active            Boolean      @default(true)
   // Fiche publique : un POOL n'apparaît sur le site que s'il est actif et
   // qu'un slug lui a été attribué depuis l'administration. Le slug fixe son
   // URL publique (/pools/<slug>) et n'est jamais recalculé à partir du nom.
-  slug           String?      @unique
+  slug              String?      @unique
   // Seules coordonnées publiées pour le bureau du POOL (décision de
   // l'Inspection) : adresse officielle et e-mail institutionnel.
-  address        String?
-  officialEmail  String?
+  address           String?
+  officialEmail     String?
   // Téléphone du bureau du POOL : visible dans l'application seulement, jamais
   // publié (décision de l'Inspection : aucun téléphone sur le site public).
-  officePhone    String?
+  officePhone       String?
   // Passage EXPLICITE de la page publique en mode officiel, décidé par
   // l'IPP ou l'informaticien. Tant qu'il est vide, un POOL qui dispose d'une
   // maquette (src/lib/pool-demo) l'affiche entièrement, même si une école ou
   // un agent est déjà publié ; une fois renseigné, plus aucune donnée
   // fictive n'apparaît sur la page.
   officialPageSince DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   schools         School[]
   users           User[]
   userRoles       UserRole[]
   accountRequests AccountRequest[]
+  aiAnalyses      AiAnalysis[]
 
   @@index([organizationId])
 }
@@ -281,64 +285,66 @@ model UserRole {
 // ---------------------------------------------------------------------------
 
 model User {
-  id                  String       @id @default(cuid())
-  name                String
-  email               String       @unique
+  id                         String       @id @default(cuid())
+  name                       String
+  email                      String       @unique
   // Identifiant de connexion choisi par la personne (minuscules). Distinct du
   // nom, que plusieurs personnes peuvent partager. Vide pour les comptes
   // antérieurs, qui se connectent avec leur e-mail.
-  username            String?      @unique
-  passwordHash        String
-  status              UserStatus   @default(PENDING)
-  sex                 Sex?
-  phone               String?
-  organizationId      String
-  organization        Organization @relation(fields: [organizationId], references: [id])
-  poolId              String?
-  pool                Pool?        @relation(fields: [poolId], references: [id])
+  username                   String?      @unique
+  passwordHash               String
+  status                     UserStatus   @default(PENDING)
+  sex                        Sex?
+  phone                      String?
+  organizationId             String
+  organization               Organization @relation(fields: [organizationId], references: [id])
+  poolId                     String?
+  pool                       Pool?        @relation(fields: [poolId], references: [id])
   // Profil détaillé (§18 du design) — additifs, `name` reste le nom complet
   // affiché partout ailleurs dans l'application.
-  postnom             String?
-  prenom              String?
-  dateNaissance       DateTime?
-  matricule           String?
-  statutAdministratif String?
-  mecanise            Boolean?
-  nombreEnfants       Int?
-  photoUrl            String?      @db.Text
-  photoUpdatedAt      DateTime?
+  postnom                    String?
+  prenom                     String?
+  dateNaissance              DateTime?
+  matricule                  String?
+  statutAdministratif        String?
+  mecanise                   Boolean?
+  nombreEnfants              Int?
+  photoUrl                   String?      @db.Text
+  photoUpdatedAt             DateTime?
   // Compte de démonstration (seed) : jamais publié ni présenté comme
   // officiel, et sans effet sur les informations officielles.
-  isDemo              Boolean      @default(false)
+  isDemo                     Boolean      @default(false)
   // Publication sur le site public : il faut À LA FOIS l'accord de l'agent
   // (consent*, donné depuis son profil) et l'autorisation de l'IPP ou de
   // l'informaticien (auth*). La photo exige en plus l'accord et
   // l'autorisation sur l'identité. Historique : PublicationRecord.
-  publicationConsentIdentity Boolean @default(false)
-  publicationConsentPhoto    Boolean @default(false)
-  publicationAuthIdentity    Boolean @default(false)
-  publicationAuthPhoto       Boolean @default(false)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  publicationConsentIdentity Boolean      @default(false)
+  publicationConsentPhoto    Boolean      @default(false)
+  publicationAuthIdentity    Boolean      @default(false)
+  publicationAuthPhoto       Boolean      @default(false)
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
 
   roles                   UserRole[]
-  assignmentsGiven        Assignment[]          @relation("AssignedBy")
-  assignmentsEnded        Assignment[]          @relation("EndedBy")
-  publicationRecords      PublicationRecord[]   @relation("PublicationSubject")
-  publicationDecisions    PublicationRecord[]   @relation("PublicationActor")
+  assignmentsGiven        Assignment[]           @relation("AssignedBy")
+  assignmentsEnded        Assignment[]           @relation("EndedBy")
+  publicationRecords      PublicationRecord[]    @relation("PublicationSubject")
+  publicationDecisions    PublicationRecord[]    @relation("PublicationActor")
   directionAttributions   DirectionAttribution[] @relation("DirectionHolder")
-  contentsAuthored        Content[]             @relation("ContentAuthor")
-  contentsReviewed        Content[]             @relation("ContentReviewer")
-  mediaUploaded           MediaFile[]           @relation("MediaUploader")
-  assignments             Assignment[]          @relation("Inspector")
-  inspections             Inspection[]          @relation("InspectorInspections")
+  contentsAuthored        Content[]              @relation("ContentAuthor")
+  contentsReviewed        Content[]              @relation("ContentReviewer")
+  mediaUploaded           MediaFile[]            @relation("MediaUploader")
+  assignments             Assignment[]           @relation("Inspector")
+  inspections             Inspection[]           @relation("InspectorInspections")
   comments                Comment[]
-  reviewedAccountRequests AccountRequest[]      @relation("ReviewedBy")
+  reviewedAccountRequests AccountRequest[]       @relation("ReviewedBy")
   notifications           Notification[]
   passwordResetTokens     PasswordResetToken[]
   auditLogs               AuditLog[]
   reportTransitions       ReportStatusHistory[]
   uploadedAttachments     Attachment[]
+  aiAnalyses              AiAnalysis[]
+  aiReactions             AiReaction[]
 
   @@index([organizationId])
   @@index([poolId])
@@ -416,30 +422,30 @@ model School {
 }
 
 model Assignment {
-  id           String   @id @default(cuid())
-  school       School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  schoolId     String
-  inspector    User     @relation("Inspector", fields: [inspectorId], references: [id], onDelete: Cascade)
-  inspectorId  String
-  assignedBy   User     @relation("AssignedBy", fields: [assignedById], references: [id])
-  assignedById String
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id            String    @id @default(cuid())
+  school        School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId      String
+  inspector     User      @relation("Inspector", fields: [inspectorId], references: [id], onDelete: Cascade)
+  inspectorId   String
+  assignedBy    User      @relation("AssignedBy", fields: [assignedById], references: [id])
+  assignedById  String
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
   // Date d'effet (pas de date de fin obligatoire). Une affectation n'est
   // valable qu'à partir de cette date et tant qu'elle n'est pas terminée.
-  effectiveFrom DateTime @default(now())
+  effectiveFrom DateTime  @default(now())
   // Historique : une affectation terminée est conservée (jamais supprimée).
-  endedAt      DateTime?
-  endReason    String?
-  endedById    String?
-  endedBy      User?    @relation("EndedBy", fields: [endedById], references: [id])
+  endedAt       DateTime?
+  endReason     String?
+  endedById     String?
+  endedBy       User?     @relation("EndedBy", fields: [endedById], references: [id])
 
   @@index([inspectorId])
   @@index([schoolId])
 }
 
 enum PublicationDecisionKind {
-  CONSENT       // accord de l'agent lui-même
+  CONSENT // accord de l'agent lui-même
   AUTHORIZATION // autorisation de l'IPP ou de l'informaticien
 }
 
@@ -661,4 +667,125 @@ model Notification {
   sentAt    DateTime?
 
   @@index([userId, status])
+}
+
+// ---------------------------------------------------------------------------
+// IA : analyse des rapports des inspecteurs itinérants
+// ---------------------------------------------------------------------------
+// Une analyse lit les rapports existants (Report + Form) d'un périmètre (un
+// POOL, ou toute l'inspection si poolId est vide) sur une période, et propose
+// des problèmes classés. Aucune décision n'est appliquée automatiquement :
+// chaque proposition attend la réaction d'un responsable (AiReaction).
+
+enum AiAnalysisStatus {
+  REUSSIE
+  ECHOUEE
+}
+
+enum AiGravity {
+  CRITIQUE
+  ELEVEE
+  MODEREE
+  FAIBLE
+}
+
+enum AiDecisionStatus {
+  PROPOSEE
+  VALIDEE
+  REJETEE
+  AJUSTEE
+}
+
+enum AiReactionKind {
+  VALIDATION
+  REJET
+  AJUSTEMENT
+  COMMENTAIRE
+  SERVICE_DESIGNE
+}
+
+model AiAnalysis {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  // Vide : toute l'inspection.
+  poolId         String?
+  pool           Pool?            @relation(fields: [poolId], references: [id], onDelete: Restrict)
+  periodFrom     DateTime
+  periodTo       DateTime
+  authorId       String
+  author         User             @relation(fields: [authorId], references: [id])
+  status         AiAnalysisStatus
+  model          String
+  // Identifiants des rapports envoyés au modèle (traçabilité).
+  reportIds      String[]         @default([])
+  synthese       String?          @db.Text
+  limites        Json?
+  error          String?
+  // Lancée depuis un compte de démonstration : ne porte que sur des données
+  // de démonstration et n'engage personne.
+  isDemo         Boolean          @default(false)
+  inputTokens    Int?
+  outputTokens   Int?
+  createdAt      DateTime         @default(now())
+
+  problems AiProblem[]
+
+  @@index([organizationId, createdAt])
+  @@index([poolId, createdAt])
+}
+
+model AiProblem {
+  id                 String                @id @default(cuid())
+  analysisId         String
+  analysis           AiAnalysis            @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  // Ordre proposé par l'analyse (0 = plus prioritaire).
+  rank               Int
+  titre              String
+  constat            String                @db.Text
+  gravite            AiGravity
+  nbRapports         Int
+  sites              Json
+  periode            String
+  sources            Json
+  hypothese          String                @db.Text
+  aVerifier          String                @db.Text
+  decisionProposee   String                @db.Text
+  // Service tel que nommé par l'analyse, et attribution de la Direction
+  // reconnue (ou désignée ensuite par l'IPP). Vide : à confirmer.
+  serviceResponsable String
+  attributionId      String?
+  attribution        DirectionAttribution? @relation(fields: [attributionId], references: [id], onDelete: SetNull)
+  delaiIndicatif     String
+  resultatAttendu    String                @db.Text
+  status             AiDecisionStatus      @default(PROPOSEE)
+  // Décision retenue après ajustement, et motif du dernier rejet.
+  decisionAjustee    String?               @db.Text
+  motifRejet         String?               @db.Text
+  decidedAt          DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  reactions AiReaction[]
+
+  @@index([analysisId, rank])
+  @@index([status])
+  @@index([attributionId])
+}
+
+// Journal des réactions : ajout seul, jamais modifié ni supprimé.
+model AiReaction {
+  id              String         @id @default(cuid())
+  problemId       String
+  problem         AiProblem      @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User           @relation(fields: [authorId], references: [id])
+  kind            AiReactionKind
+  comment         String?        @db.Text
+  motif           String?        @db.Text
+  decisionAjustee String?        @db.Text
+  attributionId   String?
+  createdAt       DateTime       @default(now())
+
+  @@index([problemId, createdAt])
 }
