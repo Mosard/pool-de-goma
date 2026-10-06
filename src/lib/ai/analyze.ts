@@ -141,7 +141,13 @@ async function previousDecisions(scope: AiScope, poolId: string | null) {
 
 export type RunAnalysisResult = { ok: true; analysisId: string } | { ok: false; error: string; analysisId?: string };
 
+const NO_CREDIT_MESSAGE =
+  "Solde insuffisant : vous devez recharger le crédit du modèle IA pour lancer l'analyse. Contactez le Super Admin, Mosard Salama, pour plus d'explications.";
+
 function apiErrorMessage(e: unknown): string {
+  // Solde épuisé : l'API répond 400 sans type d'erreur dédié, seul le
+  // message l'indique (« Your credit balance is too low… »).
+  if (e instanceof Anthropic.BadRequestError && /credit balance/i.test(e.message)) return NO_CREDIT_MESSAGE;
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "Le service d'analyse a mis trop de temps à répondre. Réduisez la période ou réessayez.";
   if (e instanceof Anthropic.AuthenticationError) return "La clé du service d'analyse est refusée : vérifiez ANTHROPIC_API_KEY.";
   if (e instanceof Anthropic.RateLimitError) return "Le service d'analyse est saturé pour le moment. Réessayez dans quelques minutes.";
@@ -168,7 +174,9 @@ export async function runAnalysis(params: {
     };
   }
   if (!process.env.ANTHROPIC_API_KEY) {
-    return { ok: false, error: "Le service d'analyse n'est pas configuré (clé ANTHROPIC_API_KEY absente sur le serveur)." };
+    // Clé pas encore installée (crédit non acheté) : même consigne que pour un solde épuisé.
+    console.warn("[ia] ANTHROPIC_API_KEY absente : analyse impossible.");
+    return { ok: false, error: NO_CREDIT_MESSAGE };
   }
 
   const [pool, attributions, decisions] = await Promise.all([
