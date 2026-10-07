@@ -1,6 +1,6 @@
 # Export des inspections et des rapports — Phase 1 (analyse)
 
-> **Statut : analyse seule, aucun code applicatif modifié.** En attente de validation et des réponses aux questions du § 6.
+> **Statut : validé (Q1 à Q4 acceptées) et réalisé sur la branche `feat/exports` (§ 7).**
 > Rédigé le 2026-10-07 d'après `master` (`ba31f03`).
 
 ## 1. Ce qui existe
@@ -95,3 +95,23 @@ La même fonction sert à la liste `/rapports`, à `/exploitation` et aux deux e
 - **Q2 — Démonstration dans les listes.** Pour que l'export « reprenne exactement l'écran » sans mélanger démonstration et officiel, il faut appliquer la même séparation **à l'écran** de `/rapports` et `/exploitation` : un compte officiel n'y verra plus les rapports de démonstration. Est-ce acceptable ?
 - **Q3 — Correction du périmètre de `/rapports`.** Je propose de remplacer la règle actuelle (permission sans POOL quelconque, POOL de rattachement) par le périmètre commun du § 3, fondé sur les permissions d'exploitation. Certains comptes verront alors **moins** de rapports si leur vue « province » venait d'une permission sans rapport avec l'exploitation. Aucun ne verra plus. D'accord ?
 - **Q4 — Rapports de l'ancien circuit et fiches simulées.** Le PDF de ces rapports serait une présentation simple (résumé, recommandations, champs « libellé → valeur »), faute de fiche officielle. Est-ce suffisant ?
+
+## 7. Réalisation (2026-10-08)
+
+| Élément | Fichiers |
+|---|---|
+| Périmètre commun (permissions d'exploitation effectives, démonstration séparée) et filtres | `src/lib/exports/scope.ts` (+ tests), `src/lib/exports/server.ts` |
+| Liste `/rapports` : filtres école, inspecteur, POOL, fiche, statut, dates ; export | `src/app/(dashboard)/rapports/page.tsx` |
+| `/exploitation` : même périmètre, filtres école, inspecteur, statut ; export | `src/app/(dashboard)/exploitation/page.tsx` |
+| Export Excel (403 si filtre hors périmètre, plafond 10 000, audit `reports.export_xlsx`) | `src/app/(dashboard)/rapports/export.xlsx/route.ts` |
+| PDF d'un rapport, selon la version de sa fiche et les calculs figés | `src/lib/exports/fiche-pdf.tsx`, `report-pdf-source.ts`, `report-pdf.tsx`, route `rapports/[id]/pdf` |
+| Boutons « Imprimer / PDF » et « Partager » | page du rapport ; lien « PDF » par fiche soumise sur la page d'une inspection |
+| Vérification de bout en bout sur base locale | `prisma/scripts/verify-exports.ts` |
+
+Points restant ouverts :
+- **Le rendu PDF n'est vérifié que par le build.** Le lanceur de scripts ne charge pas `@react-pdf/renderer`, qui n'existe qu'en module ES ; le script vérifie la préparation du PDF (accès, version), mais pas le fichier produit. À contrôler en ligne sur un rapport réel.
+- **Pas encore de PDF unique pour toute une visite :** chaque fiche soumise a le sien.
+- **Le détail complet des champs dans l'Excel** reste une évolution prévue.
+- **Ce qui change à l'écran** (décisions Q2 et Q3) :
+  - un compte officiel ne voit plus les rapports de démonstration dans `/rapports` et `/exploitation` ;
+  - le périmètre de `/rapports` se fonde désormais sur les permissions d'exploitation.
