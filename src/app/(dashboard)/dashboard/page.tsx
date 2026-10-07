@@ -1,43 +1,65 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { clsx } from "clsx";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, Badge } from "@/components/ui";
-import { School, Users, ClipboardList, FileCheck2, AlertTriangle } from "lucide-react";
-import { PERMISSIONS, ROLE_KEYS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
-import { hasPermissionAnyPool } from "@/lib/permissions";
-import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
+import { School, Users, ClipboardList, FileCheck2, AlertTriangle, MapPin, Inbox, Newspaper, UserPlus } from "lucide-react";
 import { PoolActivityChart } from "@/components/pool-activity-chart";
+import { resolveDashboardScopes, type DashboardScope } from "@/lib/dashboard/scope";
+import { PILOTAGE_BUCKETS, monthLabel } from "@/lib/dashboard/indicators";
+import {
+  loadAdministration,
+  loadContenus,
+  loadEcolesPool,
+  loadExploitation,
+  loadItinerant,
+  loadPilotageProvincial,
+  loadPoolDetail,
+} from "@/lib/dashboard/data";
 
-const PENDING_KEYS: string[] = [
-  WORKFLOW_STATUS_KEYS.SOUMIS,
-  WORKFLOW_STATUS_KEYS.RECU,
-  WORKFLOW_STATUS_KEYS.EN_EXPLOITATION,
-  WORKFLOW_STATUS_KEYS.A_CORRIGER,
-  WORKFLOW_STATUS_KEYS.TRANSMIS,
-  WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION,
-];
-const VALIDATED_KEYS: string[] = [WORKFLOW_STATUS_KEYS.VALIDE, WORKFLOW_STATUS_KEYS.CLOTURE];
+// Tableau de bord : une section par fonction du compte connecté, chacune
+// limitée au périmètre décidé par resolveDashboardScopes (session côté
+// serveur). Les paramètres d'URL (POOL, inspecteur à explorer) ne font que
+// choisir DANS ce périmètre ; data.ts les vérifie.
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: number;
-}) {
+const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+
+function StatCard({ icon: Icon, label, value, hint }: { icon: React.ElementType; label: string; value: number; hint?: string }) {
   return (
     <Card className="flex items-center gap-4">
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
         <Icon size={22} strokeWidth={1.75} />
       </div>
       <div>
         <p className="text-2xl font-bold text-gray-900">{value}</p>
         <p className="text-sm text-gray-500">{label}</p>
+        {hint && <p className="text-xs text-gray-400">{hint}</p>}
       </div>
     </Card>
+  );
+}
+
+function ActionLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+    >
+      {children}
+    </Link>
+  );
+}
+
+/** Bandeau du périmètre : fonction et étendue des données affichées. */
+function ScopeBanner({ scope, perimeter }: { scope: DashboardScope; perimeter: string }) {
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+      <MapPin size={16} className="text-blue-600" aria-hidden />
+      <span>
+        Fonction : <strong className="text-gray-900">{scope.roleLabel}</strong> — Périmètre :{" "}
+        <strong className="text-gray-900">{perimeter}</strong>
+      </span>
+    </p>
   );
 }
 
@@ -47,277 +69,206 @@ export default async function DashboardPage({
   searchParams: Promise<{ poolId?: string; inspecteurId?: string }>;
 }) {
   const session = await auth();
-  const user = session!.user;
-  const { poolId: selectedPoolId, inspecteurId: selectedInspectorId } = await searchParams;
+  if (!session?.user) redirect("/login");
+  const user = session.user;
+  const { poolId, inspecteurId } = await searchParams;
 
-  const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
-
-  if (isProvinceScoped) {
-    const organizationId = user.organizationId;
-    const [schools, activeUsers, realizedInspections, pendingReports, toValidateReports, validatedReports, alertsCount, pools] =
-      await Promise.all([
-        prisma.school.count({ where: { pool: { organizationId } } }),
-        prisma.user.count({ where: { status: "ACTIVE", organizationId } }),
-        prisma.inspection.count({ where: { completedAt: { not: null }, school: { pool: { organizationId } } } }),
-        prisma.report.count({
-          where: { status: { key: { in: PENDING_KEYS } }, AND: [reportsOfOrganization(organizationId)] },
-        }),
-        prisma.report.count({
-          where: {
-            status: { key: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION },
-            AND: [reportsOfOrganization(organizationId)],
-          },
-        }),
-        prisma.report.count({
-          where: { status: { key: { in: VALIDATED_KEYS } }, AND: [reportsOfOrganization(organizationId)] },
-        }),
-        prisma.report.count({
-          where: {
-            status: { key: WORKFLOW_STATUS_KEYS.A_CORRIGER },
-            AND: [reportsOfOrganization(organizationId)],
-          },
-        }),
-        prisma.pool.findMany({ where: { active: true, organizationId }, orderBy: { name: "asc" } }),
-      ]);
-
-    const poolStats = await Promise.all(
-      pools.map(async (pool) => {
-        const [schoolCount, reportCount, pendingCount] = await Promise.all([
-          prisma.school.count({ where: { poolId: pool.id } }),
-          prisma.report.count({ where: { AND: [reportsOfPool(pool.id)] } }),
-          prisma.report.count({
-            where: { AND: [reportsOfPool(pool.id)], status: { key: { in: PENDING_KEYS } } },
-          }),
-        ]);
-        return { pool, schoolCount, reportCount, pendingCount };
-      })
-    );
-
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Tableau de bord provincial"
-          description="Vue d'ensemble de l'Inspection Principale Provinciale — Nord-Kivu 1"
-        />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard icon={School} label="Écoles enregistrées" value={schools} />
-          <StatCard icon={Users} label="Utilisateurs actifs" value={activeUsers} />
-          <StatCard icon={ClipboardList} label="Inspections réalisées" value={realizedInspections} />
-          <StatCard icon={FileCheck2} label="Rapports en attente" value={pendingReports} />
-          <StatCard icon={FileCheck2} label="Rapports à valider" value={toValidateReports} />
-          <StatCard icon={FileCheck2} label="Rapports validés" value={validatedReports} />
-        </div>
-
-        {alertsCount > 0 && (
-          <Card className="mt-4 flex items-center gap-3 border-amber-200 bg-amber-50">
-            <AlertTriangle size={20} className="text-amber-600" strokeWidth={1.75} />
-            <p className="text-sm text-amber-800">
-              {alertsCount} rapport{alertsCount > 1 ? "s" : ""} en attente de correction par un inspecteur.
-            </p>
-          </Card>
-        )}
-
-        <Card className="mt-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Activité par pool</h2>
-          {poolStats.length === 0 ? (
-            <p className="text-sm text-gray-500">Aucun pool actif pour le moment.</p>
-          ) : (
-            <PoolActivityChart
-              data={poolStats.map(({ pool, reportCount, pendingCount }) => ({
-                pool: pool.name,
-                rapports: reportCount,
-                aTraiter: pendingCount,
-              }))}
-            />
-          )}
-        </Card>
-
-        <Card className="mt-6 overflow-x-auto">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Comparaison par pool</h2>
-          {poolStats.length === 0 ? (
-            <p className="text-sm text-gray-500">Aucun pool actif pour le moment.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
-                <tr>
-                  <th className="py-2">Pool</th>
-                  <th className="py-2">Écoles</th>
-                  <th className="py-2">Rapports</th>
-                  <th className="py-2">À traiter</th>
-                  <th className="py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {poolStats.map(({ pool, schoolCount, reportCount, pendingCount }) => (
-                  <tr key={pool.id} className={clsx(selectedPoolId === pool.id && "bg-blue-50/60")}>
-                    <td className="py-2 font-medium text-gray-900">{pool.name}</td>
-                    <td className="py-2">{schoolCount}</td>
-                    <td className="py-2">{reportCount}</td>
-                    <td className="py-2">{pendingCount}</td>
-                    <td className="py-2 text-right">
-                      <Link href={`/dashboard?poolId=${pool.id}`} className="text-xs font-medium text-blue-600 hover:underline">
-                        Explorer
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
-
-        {selectedPoolId && (
-          <PoolExplorer
-            poolId={selectedPoolId}
-            organizationId={organizationId}
-            selectedInspectorId={selectedInspectorId}
-          />
-        )}
-      </div>
-    );
-  }
-
-  const canManagePool =
-    user.poolId &&
-    (hasPermissionAnyPool(user.permissions, PERMISSIONS.SCHOOLS_MANAGE) ||
-      hasPermissionAnyPool(user.permissions, PERMISSIONS.ASSIGNMENTS_MANAGE) ||
-      hasPermissionAnyPool(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL));
-
-  if (canManagePool && user.poolId) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Tableau de bord du pool" description="Vue d'ensemble de votre pool d'inspection" />
-        <PoolExplorer poolId={user.poolId} organizationId={user.organizationId} selectedInspectorId={selectedInspectorId} />
-      </div>
-    );
-  }
-
-  const [assigned, mine, inspectedSchoolIds] = await Promise.all([
-    prisma.assignment.count({ where: { inspectorId: user.id, active: true } }),
-    prisma.inspection.findMany({
-      where: { inspectorId: user.id },
-      take: 5,
-      orderBy: { updatedAt: "desc" },
-      include: { school: true },
-    }),
-    prisma.inspection.findMany({
-      where: { inspectorId: user.id },
-      distinct: ["schoolId"],
-      select: { schoolId: true },
-    }),
-  ]);
-
-  const aFaire = Math.max(assigned - inspectedSchoolIds.length, 0);
-  const enCours = await prisma.inspection.count({ where: { inspectorId: user.id, status: "EN_COURS" } });
-  const aCompleter = await prisma.inspection.count({ where: { inspectorId: user.id, status: "PLANIFIEE" } });
-  const envoyees = await prisma.inspection.count({
-    where: { inspectorId: user.id, status: { in: ["RAPPORT_SOUMIS", "VALIDEE"] } },
+  const scopes = resolveDashboardScopes({
+    id: user.id,
+    organizationId: user.organizationId,
+    roles: user.roles,
+    permissions: user.permissions,
   });
 
   return (
-    <div>
-      <PageHeader
-        title="Mon tableau de bord"
-        description="Vos écoles et inspections"
-        actions={
-          <Link href="/inspections">
-            <span className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
-              Nouvelle inspection
-            </span>
-          </Link>
-        }
-      />
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard icon={School} label="À faire" value={aFaire} />
-        <StatCard icon={ClipboardList} label="En cours" value={enCours} />
-        <StatCard icon={FileCheck2} label="Envoyées" value={envoyees} />
-        <StatCard icon={FileCheck2} label="À compléter" value={aCompleter} />
-      </div>
-      <Card className="mt-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-900">Mes dernières inspections</h2>
-        {mine.length === 0 ? (
-          <p className="text-sm text-gray-500">Aucune inspection pour le moment.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {mine.map((i) => (
-              <li key={i.id} className="flex items-center justify-between py-3 text-sm">
-                <span className="font-medium text-gray-900">{i.school.name}</span>
-                <Badge color="blue">{i.status}</Badge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+    <div className="space-y-10">
+      {scopes.length > 1 && (
+        <Card className="border-blue-100 bg-blue-50/60 text-sm text-blue-900">
+          Vous exercez {scopes.length} fonctions. Chaque section ci-dessous est limitée au périmètre de la fonction indiquée.
+        </Card>
+      )}
+      {scopes.map((scope) => (
+        <section key={`${scope.kind}:${scope.poolId ?? "org"}`} className="space-y-6">
+          <Section scope={scope} poolId={poolId ?? null} inspectorId={inspecteurId ?? null} />
+        </section>
+      ))}
     </div>
   );
 }
 
-async function PoolExplorer({
-  poolId,
-  organizationId,
-  selectedInspectorId,
-}: {
-  poolId: string;
-  organizationId: string;
-  selectedInspectorId?: string;
-}) {
-  const pool = await prisma.pool.findFirst({ where: { id: poolId, organizationId } });
-  if (!pool) return <Card><p className="text-sm text-gray-500">Pool introuvable.</p></Card>;
+async function Section({ scope, poolId, inspectorId }: { scope: DashboardScope; poolId: string | null; inspectorId: string | null }) {
+  switch (scope.kind) {
+    case "pilotage_provincial":
+      return <PilotageProvincial scope={scope} poolId={poolId} inspectorId={inspectorId} />;
+    case "suivi_adjoint":
+    case "exploitation_provinciale":
+    case "exploitation_pool":
+      return <Exploitation scope={scope} />;
+    case "pilotage_pool":
+      return <PilotagePool scope={scope} inspectorId={inspectorId} />;
+    case "ecoles_pool":
+      return <EcolesPool scope={scope} />;
+    case "itinerant":
+      return <Itinerant scope={scope} />;
+    case "administration":
+      return <Administration scope={scope} />;
+    case "contenus":
+      return <Contenus scope={scope} />;
+    default:
+      return (
+        <>
+          <PageHeader title="Tableau de bord" description="Aucun tableau de bord n'est défini pour votre fonction." />
+          <ScopeBanner scope={scope} perimeter="aucune donnée de suivi" />
+          <Card>
+            <p className="text-sm text-gray-600">
+              Votre fonction ne comporte pas encore d&apos;indicateurs de suivi. Le menu donne accès aux pages autorisées. Si
+              vous pensez qu&apos;il vous manque un accès, adressez-vous à l&apos;informaticien de l&apos;Inspection.
+            </p>
+          </Card>
+        </>
+      );
+  }
+}
 
-  const [schools, inspectors, pendingReports, validatedReports] = await Promise.all([
-    prisma.school.count({ where: { poolId } }),
-    prisma.user.findMany({
-      where: { poolId, roles: { some: { role: { key: ROLE_KEYS.INSPECTEUR } } } },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.report.count({ where: { AND: [reportsOfPool(poolId)], status: { key: { in: PENDING_KEYS } } } }),
-    prisma.report.count({ where: { AND: [reportsOfPool(poolId)], status: { key: { in: VALIDATED_KEYS } } } }),
+// ─── IPP : pilotage provincial ────────────────────────────────────────────
+
+async function PilotageProvincial({ scope, poolId, inspectorId }: { scope: DashboardScope; poolId: string | null; inspectorId: string | null }) {
+  const [data, detail] = await Promise.all([
+    loadPilotageProvincial(scope),
+    poolId ? loadPoolDetail(scope, poolId, inspectorId) : Promise.resolve(null),
   ]);
-
-  const inspectorStats = await Promise.all(
-    inspectors.map(async (insp) => ({
-      ...insp,
-      reportCount: await prisma.report.count({ where: reportsOfAuthor(insp.id) }),
-    }))
-  );
-
-  const selectedReports = selectedInspectorId
-    ? await prisma.report.findMany({
-        where: { AND: [reportsOfAuthor(selectedInspectorId), reportsOfPool(poolId)] },
-        orderBy: { updatedAt: "desc" },
-        include: REPORT_SCOPE_INCLUDE,
-      })
-    : [];
-
+  const label = (key: string) => PILOTAGE_BUCKETS.find((b) => b.key === key)!.label;
   return (
-    <div className="space-y-6">
+    <>
+      <PageHeader
+        title="Pilotage provincial"
+        description="Synthèse de l'Inspection Principale Provinciale — Nord-Kivu 1"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ActionLink href="/rapports">Rapports</ActionLink>
+            <ActionLink href="/exploitation">Exploitation des fiches</ActionLink>
+          </div>
+        }
+      />
+      <ScopeBanner scope={scope} perimeter="tous les POOL de l'Inspection" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={FileCheck2} label={label("a_valider")} value={data.buckets.a_valider} hint="Décision de l'IPP attendue" />
+        <StatCard icon={Inbox} label={label("en_circuit")} value={data.buckets.en_circuit} />
+        <StatCard icon={FileCheck2} label={label("valides")} value={data.buckets.valides} />
+        <StatCard icon={ClipboardList} label="Inspections réalisées" value={data.realizedInspections} />
+        <StatCard icon={School} label="Écoles actives" value={data.schools} />
+        <StatCard icon={Users} label="Comptes actifs" value={data.activeUsers} />
+        <StatCard icon={FileCheck2} label={label("rejetes")} value={data.buckets.rejetes} />
+        <StatCard icon={Inbox} label="Rapports reçus (total)" value={data.received} />
+      </div>
+      {data.buckets.corrections > 0 && (
+        <Card className="flex items-center gap-3 border-amber-200 bg-amber-50">
+          <AlertTriangle size={20} className="text-amber-600" strokeWidth={1.75} />
+          <p className="text-sm text-amber-800">
+            {data.buckets.corrections} rapport{data.buckets.corrections > 1 ? "s" : ""} en correction chez un inspecteur.
+          </p>
+        </Card>
+      )}
+
       <Card>
-        <h2 className="mb-1 text-sm font-semibold text-gray-900">Pool {pool.name}</h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <StatCard icon={School} label="Écoles" value={schools} />
-          <StatCard icon={FileCheck2} label="Rapports à traiter" value={pendingReports} />
-          <StatCard icon={FileCheck2} label="Rapports validés" value={validatedReports} />
-        </div>
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Production par POOL</h2>
+        {data.byPool.length === 0 ? (
+          <p className="text-sm text-gray-500">Aucun POOL actif pour le moment.</p>
+        ) : (
+          <PoolActivityChart
+            data={data.byPool.map((p) => ({
+              pool: p.pool.name,
+              rapports: p.received,
+              aTraiter: p.buckets.en_circuit + p.buckets.a_valider,
+            }))}
+          />
+        )}
       </Card>
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="overflow-x-auto lg:col-span-2">
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Comparaison par POOL</h2>
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+              <tr>
+                <th className="py-2">POOL</th>
+                <th className="py-2">Écoles</th>
+                <th className="py-2">Reçus</th>
+                <th className="py-2">Dans le circuit</th>
+                <th className="py-2">À valider</th>
+                <th className="py-2">Validés</th>
+                <th className="py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.byPool.map((p) => (
+                <tr key={p.pool.id} className={clsx(detail?.pool.id === p.pool.id && "bg-blue-50/60")}>
+                  <td className="py-2 font-medium text-gray-900">{p.pool.name}</td>
+                  <td className="py-2">{p.schools}</td>
+                  <td className="py-2">{p.received}</td>
+                  <td className="py-2">{p.buckets.en_circuit}</td>
+                  <td className="py-2">{p.buckets.a_valider}</td>
+                  <td className="py-2">{p.buckets.valides}</td>
+                  <td className="py-2 text-right">
+                    <Link href={`/dashboard?poolId=${p.pool.id}`} className="text-xs font-medium text-blue-600 hover:underline">
+                      Explorer
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Tendance : rapports soumis par mois</h2>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {data.trend.map((m) => (
+                <tr key={m.month}>
+                  <td className="py-2 text-gray-600">{monthLabel(m.month)}</td>
+                  <td className="py-2 text-right font-medium text-gray-900">{m.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+
+      {detail && <PoolDetailCards detail={detail} basePath={`/dashboard?poolId=${detail.pool.id}&`} />}
+    </>
+  );
+}
+
+// ─── Détail d'un POOL (IPP qui explore, chef de POOL) ─────────────────────
+
+type PoolDetail = NonNullable<Awaited<ReturnType<typeof loadPoolDetail>>>;
+
+function PoolDetailCards({ detail, basePath }: { detail: PoolDetail; basePath: string }) {
+  return (
+    <>
       <Card>
-        <h2 className="mb-4 text-sm font-semibold text-gray-900">Inspecteurs itinérants</h2>
-        {inspectorStats.length === 0 ? (
-          <p className="text-sm text-gray-500">Aucun inspecteur rattaché à ce pool.</p>
+        <h2 className="mb-1 text-sm font-semibold text-gray-900">POOL {detail.pool.name}</h2>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard icon={School} label="Écoles actives" value={detail.schools} />
+          <StatCard icon={School} label="Écoles sans inspecteur affecté" value={detail.unassignedSchools} />
+          <StatCard icon={Inbox} label="Rapports à traiter" value={detail.buckets.a_traiter} />
+          <StatCard icon={AlertTriangle} label="Corrections attendues" value={detail.buckets.corrections} />
+        </div>
+      </Card>
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Inspecteurs itinérants du POOL</h2>
+        {detail.inspectors.length === 0 ? (
+          <p className="text-sm text-gray-500">Aucun inspecteur rattaché à ce POOL.</p>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {inspectorStats.map((insp) => (
+            {detail.inspectors.map((insp) => (
               <li key={insp.id} className="flex items-center justify-between py-3 text-sm">
-                <span className={clsx("font-medium", insp.id === selectedInspectorId ? "text-blue-600" : "text-gray-900")}>
+                <span className={clsx("font-medium", insp.id === detail.selectedInspector?.id ? "text-blue-600" : "text-gray-900")}>
                   {insp.name}
                 </span>
                 <div className="flex items-center gap-3">
-                  <Badge color="blue">{insp.reportCount} rapport(s)</Badge>
-                  <Link
-                    href={`/dashboard?poolId=${poolId}&inspecteurId=${insp.id}`}
-                    className="text-xs font-medium text-blue-600 hover:underline"
-                  >
+                  <Badge color="blue">{insp.reportCount} rapport(s) reçu(s)</Badge>
+                  <Link href={`${basePath}inspecteurId=${insp.id}`} className="text-xs font-medium text-blue-600 hover:underline">
                     Voir
                   </Link>
                 </div>
@@ -326,19 +277,18 @@ async function PoolExplorer({
           </ul>
         )}
       </Card>
-
-      {selectedInspectorId && (
+      {detail.selectedInspector && (
         <Card>
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Rapports de l&apos;inspecteur sélectionné</h2>
-          {selectedReports.length === 0 ? (
-            <p className="text-sm text-gray-500">Aucun rapport pour le moment.</p>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Rapports de {detail.selectedInspector.name} dans ce POOL</h2>
+          {detail.selectedReports.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun rapport reçu pour le moment.</p>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {selectedReports.map((r) => (
+              {detail.selectedReports.map((r) => (
                 <li key={r.id} className="flex items-center justify-between py-3 text-sm">
-                  <span className="font-medium text-gray-900">{reportScope(r).title}</span>
+                  <span className="font-medium text-gray-900">{r.title}</span>
                   <div className="flex items-center gap-3">
-                    <Badge color="blue">{r.status.label}</Badge>
+                    <Badge color="blue">{r.status}</Badge>
                     <Link href={`/rapports/${r.id}`} className="text-xs font-medium text-blue-600 hover:underline">
                       Ouvrir
                     </Link>
@@ -349,6 +299,368 @@ async function PoolExplorer({
           )}
         </Card>
       )}
-    </div>
+    </>
+  );
+}
+
+// ─── Chef de POOL ─────────────────────────────────────────────────────────
+
+async function PilotagePool({ scope, inspectorId }: { scope: DashboardScope; inspectorId: string | null }) {
+  const detail = await loadPoolDetail(scope, null, inspectorId);
+  if (!detail) {
+    return (
+      <Card>
+        <p className="text-sm text-gray-500">POOL introuvable ou inactif.</p>
+      </Card>
+    );
+  }
+  return (
+    <>
+      <PageHeader
+        title={`Pilotage du POOL ${detail.pool.name}`}
+        description="Écoles, affectations et suivi des rapports de votre POOL"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ActionLink href="/affectations">Affectations</ActionLink>
+            <ActionLink href="/rapports">Rapports</ActionLink>
+          </div>
+        }
+      />
+      <ScopeBanner scope={scope} perimeter={`POOL ${detail.pool.name}`} />
+      <PoolDetailCards detail={detail} basePath="/dashboard?" />
+    </>
+  );
+}
+
+// ─── Exploitation : exploitant de POOL, exploitant IPP, IPP adjoint ────────
+
+async function Exploitation({ scope }: { scope: DashboardScope }) {
+  const data = await loadExploitation(scope);
+  const provincial = scope.poolId === null;
+  const poolName = data.byPool[0]?.pool.name ?? "";
+  const title =
+    scope.kind === "suivi_adjoint"
+      ? "Suivi provincial de l'exploitation"
+      : provincial
+        ? "Mes activités d'exploitation (bureau IPP)"
+        : `Exploitation des rapports — POOL ${poolName}`;
+  return (
+    <>
+      <PageHeader
+        title={title}
+        description={
+          provincial
+            ? "Rapports reçus de tous les POOL et leur traitement. La validation reste à l'IPP."
+            : "Rapports reçus de votre POOL et leur traitement avant transmission au bureau IPP."
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ActionLink href="/rapports">Traiter les rapports</ActionLink>
+            <ActionLink href="/exploitation">Exploitation des fiches</ActionLink>
+          </div>
+        }
+      />
+      <ScopeBanner scope={scope} perimeter={provincial ? "tous les POOL de l'Inspection" : `POOL ${poolName}`} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={Inbox} label="Rapports reçus (total)" value={data.received} hint={`dont ${data.receivedLast30} sur 30 jours`} />
+        {data.buckets.map((b) => (
+          <StatCard key={b.key} icon={FileCheck2} label={b.label} value={data.counts[b.key]} hint={b.hint} />
+        ))}
+        <StatCard icon={ClipboardList} label="Mes actions sur 30 jours" value={data.myActions} hint="Changements de statut faits par vous" />
+      </div>
+
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Dossiers en attente depuis le plus longtemps</h2>
+        {data.oldestPending.length === 0 ? (
+          <p className="text-sm text-gray-500">Aucun rapport en attente de traitement.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {data.oldestPending.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+                <span>
+                  <span className="font-medium text-gray-900">{r.title}</span>
+                  <span className="text-gray-500">
+                    {" "}
+                    — {r.author}, soumis le {fmtDate(r.submittedAt)}
+                  </span>
+                </span>
+                <div className="flex items-center gap-3">
+                  <Badge color="orange">{r.status}</Badge>
+                  <Link href={`/rapports/${r.id}`} className="text-xs font-medium text-blue-600 hover:underline">
+                    Ouvrir
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {provincial && (
+        <Card className="overflow-x-auto">
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Suivi par POOL</h2>
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+              <tr>
+                <th className="py-2">POOL</th>
+                <th className="py-2">Reçus</th>
+                {data.buckets.map((b) => (
+                  <th key={b.key} className="py-2">
+                    {b.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.byPool.map((p) => (
+                <tr key={p.pool.id}>
+                  <td className="py-2 font-medium text-gray-900">{p.pool.name}</td>
+                  <td className="py-2">{p.received}</td>
+                  {data.buckets.map((b) => (
+                    <td key={b.key} className="py-2">
+                      {p.counts[b.key]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </>
+  );
+}
+
+// ─── Secrétaire de POOL ───────────────────────────────────────────────────
+
+async function EcolesPool({ scope }: { scope: DashboardScope }) {
+  const data = await loadEcolesPool(scope);
+  if (!data) {
+    return (
+      <Card>
+        <p className="text-sm text-gray-500">POOL introuvable.</p>
+      </Card>
+    );
+  }
+  return (
+    <>
+      <PageHeader
+        title={`Écoles du POOL ${data.pool.name}`}
+        description="Gestion administrative des fiches écoles"
+        actions={<ActionLink href="/ecoles">Gérer les écoles</ActionLink>}
+      />
+      <ScopeBanner scope={scope} perimeter={`POOL ${data.pool.name}`} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard icon={School} label="Écoles actives" value={data.active} />
+        <StatCard icon={School} label="Écoles inactives" value={data.inactive} />
+        <StatCard icon={AlertTriangle} label="Écoles sans inspecteur affecté" value={data.unassigned.length} />
+      </div>
+      {data.unassigned.length > 0 && (
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Écoles sans inspecteur affecté</h2>
+          <ul className="divide-y divide-gray-100 text-sm">
+            {data.unassigned.slice(0, 10).map((s) => (
+              <li key={s.id} className="py-2 text-gray-900">
+                {s.name}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </>
+  );
+}
+
+// ─── Inspecteur itinérant ─────────────────────────────────────────────────
+
+async function Itinerant({ scope }: { scope: DashboardScope }) {
+  const data = await loadItinerant(scope);
+  return (
+    <>
+      <PageHeader
+        title="Mon tableau de bord"
+        description="Vos écoles, vos inspections et vos rapports"
+        actions={
+          <Link href="/inspections">
+            <span className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
+              Nouvelle inspection
+            </span>
+          </Link>
+        }
+      />
+      <ScopeBanner scope={scope} perimeter="vos écoles et vos propres inspections" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard icon={School} label="Écoles affectées" value={data.assignments.length} />
+        <StatCard icon={ClipboardList} label="Inspections réalisées" value={data.realized} />
+        <StatCard icon={ClipboardList} label="Inspections programmées" value={data.planned.length} hint="Créées, non commencées" />
+        <StatCard icon={AlertTriangle} label="Corrections demandées" value={data.corrections.length} />
+      </div>
+
+      {data.corrections.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <h2 className="mb-3 text-sm font-semibold text-amber-900">Rapports à corriger</h2>
+          <ul className="divide-y divide-amber-100 text-sm">
+            {data.corrections.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span>
+                  <span className="font-medium text-amber-900">{c.title}</span>
+                  {c.comment && <span className="text-amber-800"> — « {c.comment} »</span>}
+                </span>
+                <Link href={`/rapports/${c.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+                  Corriger
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Mes écoles affectées</h2>
+          {data.assignments.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucune école ne vous est affectée actuellement.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 text-sm">
+              {data.assignments.map((a) => (
+                <li key={a.id} className="flex items-center justify-between py-2">
+                  <span className="font-medium text-gray-900">{a.schoolName}</span>
+                  <span className="text-xs text-gray-500">
+                    {a.poolName}
+                    {a.upcoming && <span className="ml-1 text-amber-700">(à partir du {fmtDate(a.effectiveFrom)})</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Inspections programmées</h2>
+          {data.planned.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Aucune inspection programmée. Créez-la depuis « Inspections & fiches » avec sa date prévue.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100 text-sm">
+              {data.planned.map((i) => (
+                <li key={i.id} className="flex items-center justify-between py-2">
+                  <span className="font-medium text-gray-900">{i.schoolName}</span>
+                  <Link href={`/inspections/${i.id}`} className="text-xs font-medium text-blue-600 hover:underline">
+                    {i.scheduledDate ? `Prévue le ${fmtDate(i.scheduledDate)}` : "Date non fixée"}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Mes rapports par statut</h2>
+          {data.reportsByStatus.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun rapport pour le moment.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 text-sm">
+              {data.reportsByStatus.map((s) => (
+                <li key={s.key} className="flex items-center justify-between py-2">
+                  <span className="text-gray-700">{s.label}</span>
+                  <span className="font-medium text-gray-900">{s.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-gray-900">Derniers retours sur mes rapports</h2>
+          {data.recentComments.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun retour pour le moment.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 text-sm">
+              {data.recentComments.map((c) => (
+                <li key={c.id} className="py-2">
+                  <p className="text-gray-900">{c.content}</p>
+                  <p className="text-xs text-gray-500">
+                    {c.author.name}, le {fmtDate(c.createdAt)} —{" "}
+                    <Link href={`/rapports/${c.reportId}`} className="text-blue-600 hover:underline">
+                      voir le rapport
+                    </Link>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ─── Informaticien ────────────────────────────────────────────────────────
+
+async function Administration({ scope }: { scope: DashboardScope }) {
+  const data = await loadAdministration(scope);
+  return (
+    <>
+      <PageHeader
+        title="Administration de la plateforme"
+        description="Comptes et organisation de l'Inspection"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ActionLink href="/comptes">Demandes de compte</ActionLink>
+            <ActionLink href="/inspecteurs">Comptes</ActionLink>
+            <ActionLink href="/parametres">Paramètres</ActionLink>
+          </div>
+        }
+      />
+      <ScopeBanner scope={scope} perimeter="comptes et POOL de l'Inspection" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={UserPlus} label="Demandes de compte en attente" value={data.pendingRequests} />
+        <StatCard icon={Users} label="Comptes actifs" value={data.activeUsers} />
+        <StatCard icon={Users} label="Comptes en attente d'activation" value={data.pendingActivation} />
+        <StatCard icon={Users} label="Comptes suspendus ou désactivés" value={data.suspended} />
+        <StatCard icon={MapPin} label="POOL actifs" value={data.activePools} />
+      </div>
+    </>
+  );
+}
+
+// ─── Chargé des médias ────────────────────────────────────────────────────
+
+async function Contenus({ scope }: { scope: DashboardScope }) {
+  const { counts, toFix } = await loadContenus(scope);
+  return (
+    <>
+      <PageHeader
+        title="Mes contenus du site public"
+        description="Actualités, articles, communiqués et albums"
+        actions={<ActionLink href="/contenus/nouveau">Nouveau contenu</ActionLink>}
+      />
+      <ScopeBanner scope={scope} perimeter="vos propres contenus" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard icon={Newspaper} label="Brouillons" value={counts.BROUILLON ?? 0} />
+        <StatCard icon={Newspaper} label="En attente de validation" value={counts.SOUMIS ?? 0} />
+        <StatCard icon={AlertTriangle} label="À corriger" value={counts.A_CORRIGER ?? 0} />
+        <StatCard icon={Newspaper} label="Publiés" value={counts.PUBLIE ?? 0} />
+      </div>
+      {toFix.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <h2 className="mb-3 text-sm font-semibold text-amber-900">Renvoyés en correction</h2>
+          <ul className="divide-y divide-amber-100 text-sm">
+            {toFix.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span>
+                  <span className="font-medium text-amber-900">{c.title}</span>
+                  {c.reviewNote && <span className="text-amber-800"> — « {c.reviewNote} »</span>}
+                </span>
+                <Link href={`/contenus/${c.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+                  Corriger
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </>
   );
 }

@@ -34,7 +34,7 @@ const ROLE_DEFINITIONS: { key: RoleKey; label: string; description: string; scop
   { key: ROLE_KEYS.SUPER_ADMIN, label: SUPER_ADMIN_LABEL, description: SUPER_ADMIN_DESCRIPTION, scope: "PROVINCE" },
 ];
 
-const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
+export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   [ROLE_KEYS.IPP]: [
     PERMISSIONS.ACCOUNTS_MANAGE,
     PERMISSIONS.USERS_MANAGE,
