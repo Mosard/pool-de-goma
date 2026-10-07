@@ -687,3 +687,40 @@ déploiement sans accord. Les étapes ci-dessous donnent chacune un ou plusieurs
    d'inspection et de rapport, retours visibles par l'itinérant.
 8. **Exploitation** : vues provinciales des notes et statistiques ; analyse IA adaptée au nouveau format.
 9. **Vérifications finales** : tests, lint et build ; résumé des modifications et des points restants.
+
+---
+
+## 11. Mise en œuvre de la phase 2 (branche `feat/fiches-itinerant`, non déployée)
+
+### 11.1 Ce qui a été réalisé
+
+| Élément | Fichiers |
+|---|---|
+| Format des fiches officielles (sections, postes notés, tableaux, signatures, champs calculés), versionné | `src/lib/fiches/types.ts` |
+| Moteur de calcul : tableaux de conversion propres à chaque fiche (Q1), Z = P × 100 / (Rr × 4) arrondi, synthèses, sommes et pourcentages des tableaux, délai A12, numérotation (Q5) | `src/lib/fiches/calculs.ts` |
+| Définitions des 16 fiches, libellés repris des fiches ; F1 officielle = F1 version 2 (Q7) | `src/lib/fiches/defs/*` |
+| Contrôles avant soumission (§ 8) | `src/lib/fiches/validation.ts` |
+| Migration additive `20261007120000_fiches_officielles` : (code, version), plusieurs exemplaires par visite, fiches de période, rapport par fiche, numéro, calculs figés ; droits de l'exploitant IPP (Q8) | `prisma/schema.prisma`, `prisma/migrations/…` |
+| Inscription des fiches en base à la première utilisation, en création seulement (une version n'est jamais modifiée) | `src/lib/fiches/server.ts` |
+| Saisie sur téléphone : choix des fiches, brouillon, copie locale en cas de coupure, signature au doigt (Q6), soumission par fiche (Q3), correction et resoumission | `src/components/fiches/*`, `src/app/(dashboard)/fiches/*`, `src/app/(dashboard)/inspections/[id]` |
+| Circuit par fiche : statut de la visite suivant ses fiches ; resoumission réservée à l'auteur (E12) | `src/lib/workflow.ts` |
+| Accès restreint aux pages d'inspection, de fiche et de rapport (E11) | `src/lib/fiches/report-scope.ts` |
+| Partie réservée au service destinataire (A5, récépissé A6), remplie depuis le rapport | `saveReservedPartAction` |
+| Vue d'exploitation par fiche, par POOL et par période ; analyse IA adaptée aux fiches officielles | `src/app/(dashboard)/exploitation`, `src/lib/fiches/exploitation.ts`, `src/lib/ai/reports.ts` |
+
+### 11.2 Vérifications
+
+- `npm test` : 55 tests (barèmes vérifiés case par case contre les fiches, exemples chiffrés du module, définitions, contrôles, exploitation).
+- `prisma/scripts/verify-fiches-flow.ts` sur base locale seedée : 10 vérifications de bout en bout.
+- Migration appliquée sur une base contenant des fiches, rapports et modèles de l'ancien format : empreintes identiques avant et après.
+- `tsc`, `eslint` et `next build` sans erreur.
+
+### 11.3 Points restant ouverts
+
+- **Déploiement :** la construction Vercel applique la migration et ajoute les droits de l'exploitant IPP en production. Aucun push sans accord.
+- Fiches non fournies : A1, C3M, C4, C5B, C6A, C7, F2, T1 ; formules sans canevas (A7, A8, C8, F3, F4, T2).
+- C2C 6.1 « Domaine contrôlé » : note saisie par l'inspecteur, faute de rubriques notées sur la fiche (§ 4.3-4).
+- Sceau de l'établissement et annexes (plan, liste du personnel, pièces à conviction) : non saisis dans l'application (dépôt de fichiers hors périmètre).
+- Pas de mode hors ligne complet : copie locale du brouillon seulement ; enregistrer et soumettre demandent une connexion.
+- Ligne « % » du synoptique de la notation : chaque pourcentage est arrondi, leur somme peut faire 99 ou 101.
+- Les exploitants IPP reçoivent désormais les notifications de soumission de tous les POOL (conséquence de Q8).
