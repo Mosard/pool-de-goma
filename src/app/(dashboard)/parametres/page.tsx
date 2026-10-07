@@ -6,6 +6,7 @@ import { Button, Card, PageHeader, Badge, EmptyState } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
+import { canOpenAccessScreen } from "@/lib/access-rules";
 import { togglePoolStatusAction } from "./actions";
 
 export default async function ParametresPage() {
@@ -29,7 +30,17 @@ export default async function ParametresPage() {
 
   return (
     <div className="space-y-10">
-      <PageHeader title="Paramètres" description="Organisation provinciale — pools et fonctions" />
+      <PageHeader
+        title="Paramètres"
+        description="Organisation provinciale — pools et fonctions"
+        actions={
+          canOpenAccessScreen(user.roles) ? (
+            <Link href="/parametres/acces">
+              <Button type="button">Gérer les accès</Button>
+            </Link>
+          ) : undefined
+        }
+      />
 
       <div>
         <div className="mb-4 flex items-center justify-between">

@@ -168,7 +168,7 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
   }
 
   // --- Fonctions à retirer ---
-  const rolesToRemove = [];
+  const rolesToRemove: (typeof target.roles)[number][] = [];
   for (const id of changes.removeUserRoleIds) {
     const ur = target.roles.find((r) => r.id === id);
     if (!ur) throw new ForbiddenError("Fonction introuvable sur ce compte.");
