@@ -15,6 +15,7 @@ import {
   Sparkles,
   CalendarRange,
   BarChart3,
+  FileText,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
@@ -60,6 +61,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Exploitation",
     icon: BarChart3,
     permission: [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE],
+  },
+  // Rapports de synthèse des exploitants (rédaction : review_pool ; examen : review_province).
+  {
+    href: "/syntheses",
+    label: "Synthèses",
+    icon: FileText,
+    permission: [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE],
   },
   { href: "/inspecteurs", label: "Inspecteurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
   { href: "/comptes", label: "Demandes de compte", icon: UserPlus, permission: PERMISSIONS.ACCOUNTS_MANAGE },

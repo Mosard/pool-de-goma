@@ -14,6 +14,8 @@ import { PdfButtons } from "@/components/pdf-buttons";
 import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope } from "@/lib/fiches/report-scope";
 import { resolveFicheDef } from "@/lib/fiches/defs/index";
 import { ficheData, workflowStatusById } from "@/lib/fiches/server";
+import { loadActor, synthesesIncludingReport } from "@/lib/synthese/server";
+import { SYNTHESIS_STATUS_LABELS } from "@/lib/synthese/rules";
 
 export default async function RapportDetailPage({
   params,
@@ -62,6 +64,8 @@ export default async function RapportDetailPage({
   const hasReservedPart = Boolean(def?.sections.some((s) => s.blocks.some((b) => (b.kind === "field" || b.kind === "signature") && b.notForAuthor)));
   const editorMode = hasReservedPart && canComment && scope.authorId !== user.id ? "reserved" : "view";
   const legacyForms = form ? (def ? [] : [form]) : (report.inspection?.forms ?? []);
+  // Synthèses lisibles par ce compte qui reprennent ce rapport (remonter de la source vers la synthèse).
+  const syntheses = await synthesesIncludingReport(await loadActor(user.id), report.id);
 
   return (
     <div className="space-y-6">
@@ -141,6 +145,25 @@ export default async function RapportDetailPage({
           </ul>
         )}
       </Card>
+
+      {syntheses.length > 0 && (
+        <Card>
+          <h3 className="mb-4 text-sm font-semibold text-gray-900">Synthèses qui reprennent ce rapport</h3>
+          <ul className="space-y-2 text-sm">
+            {syntheses.map((s) => (
+              <li key={s.id}>
+                <Link href={`/syntheses/${s.id}`} className="font-medium text-blue-600 hover:underline">
+                  {s.title}
+                </Link>
+                <span className="text-gray-500">
+                  {" "}
+                  — {s.reference ?? "non soumise"} · {SYNTHESIS_STATUS_LABELS[s.status]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <h3 className="mb-4 text-sm font-semibold text-gray-900">Observations</h3>
