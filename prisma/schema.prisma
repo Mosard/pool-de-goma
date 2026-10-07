@@ -78,6 +78,7 @@ model Organization {
   directionAttributions DirectionAttribution[]
   contents              Content[]
   aiAnalyses            AiAnalysis[]
+  syntheses             Synthesis[]
 }
 
 // Contenus éditoriaux du site public (actualités, articles, communiqués).
@@ -227,6 +228,7 @@ model Pool {
   forms           Form[]
   reports         Report[]
   userPermissions UserPermission[]
+  syntheses       Synthesis[]
 
   @@index([organizationId])
 }
@@ -356,18 +358,18 @@ model User {
   updatedAt                  DateTime     @updatedAt
 
   roles                   UserRole[]
-  assignmentsGiven        Assignment[]           @relation("AssignedBy")
-  assignmentsEnded        Assignment[]           @relation("EndedBy")
-  publicationRecords      PublicationRecord[]    @relation("PublicationSubject")
-  publicationDecisions    PublicationRecord[]    @relation("PublicationActor")
-  directionAttributions   DirectionAttribution[] @relation("DirectionHolder")
-  contentsAuthored        Content[]              @relation("ContentAuthor")
-  contentsReviewed        Content[]              @relation("ContentReviewer")
-  mediaUploaded           MediaFile[]            @relation("MediaUploader")
-  assignments             Assignment[]           @relation("Inspector")
-  inspections             Inspection[]           @relation("InspectorInspections")
+  assignmentsGiven        Assignment[]             @relation("AssignedBy")
+  assignmentsEnded        Assignment[]             @relation("EndedBy")
+  publicationRecords      PublicationRecord[]      @relation("PublicationSubject")
+  publicationDecisions    PublicationRecord[]      @relation("PublicationActor")
+  directionAttributions   DirectionAttribution[]   @relation("DirectionHolder")
+  contentsAuthored        Content[]                @relation("ContentAuthor")
+  contentsReviewed        Content[]                @relation("ContentReviewer")
+  mediaUploaded           MediaFile[]              @relation("MediaUploader")
+  assignments             Assignment[]             @relation("Inspector")
+  inspections             Inspection[]             @relation("InspectorInspections")
   comments                Comment[]
-  reviewedAccountRequests AccountRequest[]       @relation("ReviewedBy")
+  reviewedAccountRequests AccountRequest[]         @relation("ReviewedBy")
   notifications           Notification[]
   passwordResetTokens     PasswordResetToken[]
   auditLogs               AuditLog[]
@@ -375,10 +377,13 @@ model User {
   uploadedAttachments     Attachment[]
   aiAnalyses              AiAnalysis[]
   aiReactions             AiReaction[]
-  formsAuthored           Form[]                 @relation("FormAuthor")
-  permissionAdjustments   UserPermission[]       @relation("UserPermissionTarget")
-  permissionAdjustmentsBy UserPermission[]       @relation("UserPermissionGrantor")
-  reportsAuthored         Report[]               @relation("ReportAuthor")
+  formsAuthored           Form[]                   @relation("FormAuthor")
+  permissionAdjustments   UserPermission[]         @relation("UserPermissionTarget")
+  permissionAdjustmentsBy UserPermission[]         @relation("UserPermissionGrantor")
+  reportsAuthored         Report[]                 @relation("ReportAuthor")
+  synthesesAuthored       Synthesis[]              @relation("SynthesisAuthor")
+  synthesisTransitions    SynthesisStatusHistory[]
+  synthesisVersions       SynthesisVersion[]
 
   @@index([organizationId])
   @@index([poolId])
@@ -650,9 +655,10 @@ model Report {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  comments      Comment[]
-  statusHistory ReportStatusHistory[]
-  attachments   Attachment[]
+  comments         Comment[]
+  statusHistory    ReportStatusHistory[]
+  attachments      Attachment[]
+  synthesisSources SynthesisSource[]
 
   @@index([statusId])
   @@index([poolId])
@@ -862,4 +868,105 @@ model AiReaction {
   createdAt       DateTime       @default(now())
 
   @@index([problemId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Rapport de synthèse de l'exploitant (docs/rapport-synthese-exploitant.md).
+// Document distinct des rapports d'inspection (et de leurs commentaires),
+// construit à partir de plusieurs rapports exploités, avec son propre circuit
+// reprenant les mêmes clés de statut.
+// ---------------------------------------------------------------------------
+
+enum SynthesisStatus {
+  BROUILLON
+  SOUMIS
+  A_CORRIGER
+  VALIDE
+}
+
+model Synthesis {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  // POOL de la synthèse ; vide = synthèse provinciale (exploitant IPP).
+  poolId         String?
+  pool           Pool?           @relation(fields: [poolId], references: [id])
+  authorId       String
+  author         User            @relation("SynthesisAuthor", fields: [authorId], references: [id])
+  // Compte de démonstration auteur : synthèse de démonstration (rapports de démonstration seulement).
+  isDemo         Boolean         @default(false)
+  title          String
+  periodFrom     DateTime?
+  periodTo       DateTime?
+  // Partie rédigée : { sections: { <clé>: <texte> } }, structure décrite par formatVersion (src/lib/synthese/format.ts).
+  formatVersion  Int             @default(1)
+  content        Json            @default("{}")
+  status         SynthesisStatus @default(BROUILLON)
+  // Numéro officiel attribué à la première soumission, jamais modifié : 61/<POOL>/SYN.<n°>/<année>.
+  number         String?         @unique
+  numberYear     Int?
+  numberSeq      Int?
+  numberScope    String?
+  // Nombre de soumissions (version courante : -V<n>).
+  version        Int             @default(0)
+  submittedAt    DateTime?
+  validatedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  sources       SynthesisSource[]
+  statusHistory SynthesisStatusHistory[]
+  versions      SynthesisVersion[]
+
+  @@unique([organizationId, numberScope, numberYear, numberSeq])
+  @@index([organizationId, status])
+  @@index([poolId])
+  @@index([authorId])
+}
+
+// Rapport d'inspection d'origine inclus dans une synthèse, avec les
+// informations reprises (copie figée, actualisée tant que la synthèse est modifiable).
+model SynthesisSource {
+  id          String    @id @default(cuid())
+  synthesisId String
+  synthesis   Synthesis @relation(fields: [synthesisId], references: [id], onDelete: Cascade)
+  reportId    String
+  report      Report    @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  snapshot    Json
+  addedAt     DateTime  @default(now())
+
+  @@unique([synthesisId, reportId])
+  @@index([reportId])
+}
+
+model SynthesisStatusHistory {
+  id          String           @id @default(cuid())
+  synthesisId String
+  synthesis   Synthesis        @relation(fields: [synthesisId], references: [id], onDelete: Cascade)
+  fromStatus  SynthesisStatus?
+  toStatus    SynthesisStatus
+  changedById String
+  changedBy   User             @relation(fields: [changedById], references: [id])
+  comment     String?
+  // Version concernée (soumission n°) au moment du changement.
+  version     Int              @default(0)
+  createdAt   DateTime         @default(now())
+
+  @@index([synthesisId])
+}
+
+// Copie de la synthèse à chaque soumission (V1, V2 après correction…).
+model SynthesisVersion {
+  id            String    @id @default(cuid())
+  synthesisId   String
+  synthesis     Synthesis @relation(fields: [synthesisId], references: [id], onDelete: Cascade)
+  number        Int
+  title         String
+  content       Json
+  sources       Json
+  submittedById String
+  submittedBy   User      @relation(fields: [submittedById], references: [id])
+  createdAt     DateTime  @default(now())
+
+  @@unique([synthesisId, number])
 }
