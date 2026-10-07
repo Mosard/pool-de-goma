@@ -298,3 +298,33 @@ test("synoptique de la notation : ligne % = total de colonne × 100 / total gén
   assert.deepEqual(res.totals, { n4: 1, n3: 7, tot: 8 });
   assert.deepEqual(res.columnPercents, { n4: 13, n3: 88, tot: 100 });
 });
+
+// ---------------------------------------------------------------------------
+// Exploitation (décision Q8)
+// ---------------------------------------------------------------------------
+
+import { finalNoteOf, summarize, verdictOf } from "@/lib/fiches/exploitation";
+
+test("exploitation : décompte par fiche et par POOL, notes finales, appréciations et conclusions", () => {
+  const rows = [
+    { code: "C3", poolId: "p1", poolName: "Goma", statusKey: "SOUMIS", finalNote: 3, verdict: null },
+    { code: "C3", poolId: "p1", poolName: "Goma", statusKey: "VALIDE", finalNote: 3, verdict: null },
+    { code: "C3", poolId: "p2", poolName: "Karisimbi", statusKey: "REJETE", finalNote: 0, verdict: null },
+    { code: "C6B", poolId: "p2", poolName: "Karisimbi", statusKey: "CLOTURE", finalNote: null, verdict: "VIABLE" },
+  ];
+  const [c3, c6b] = summarize(rows);
+  assert.equal(c3.code, "C3");
+  assert.deepEqual([c3.total, c3.pending, c3.validated], [3, 1, 1]);
+  assert.deepEqual(c3.notes, [0, 2, 0, 0, 1]);
+  assert.deepEqual(c3.byPool.p1, { poolName: "Goma", total: 2, pending: 1, validated: 1 });
+  assert.deepEqual(c6b.verdicts, { VIABLE: 1 });
+});
+
+test("exploitation : lecture de la note figée et des appréciations", () => {
+  assert.equal(finalNoteOf({ synthese: { note: 2 } }), 2);
+  assert.equal(finalNoteOf({ synthese: { note: null } }), null);
+  assert.equal(finalNoteOf(null), null);
+  assert.equal(verdictOf("C2B", { values: { "5": "TRES BON" } }), "TRES BON");
+  assert.equal(verdictOf("C6B", { values: { "7": "A PARFAIRE" } }), "A PARFAIRE");
+  assert.equal(verdictOf("C3", { values: { "5": "x" } }), null);
+});
