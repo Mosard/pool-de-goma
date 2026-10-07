@@ -1,8 +1,8 @@
 # Inventaire des fiches d'inspection itinérante — Phase 1 (analyse)
 
-> **Statut : analyse seule, aucun code applicatif modifié.** Ce document attend
-> la validation de l'Inspection (et les réponses à la section 9) avant toute
-> adaptation (phase 2).
+> **Statut : analyse terminée ; décisions prises le 2026-10-07 (section 10).**
+> Aucun code applicatif n'a encore été modifié. La section 10 fait foi lorsqu'elle
+> contredit une proposition des sections précédentes.
 >
 > Rédigé le 2026-10-07 à partir du dossier `D:\inuka Tech\PROJET\Pool de Goma\Document itinerant`
 > (19 fichiers, pas de sous-dossier) et de l'état du dépôt sur la branche
@@ -635,3 +635,55 @@ Seules les questions qui empêchent une implémentation fiable figurent ici.
   des vues d'exploitation consolidées (notation, statistiques, par POOL) ? Ou doivent-ils
   pouvoir agir sur un rapport **avant** sa transmission par le POOL, ce qui modifierait le
   circuit et leurs droits ?
+
+---
+
+## 10. Décisions (2026-10-07)
+
+Réponses données par le responsable technique (INUKA TECH) aux questions de la section 9.
+Elles remplacent les propositions contraires des sections 6 à 8.
+
+| Question | Décision | Conséquence pour la phase 2 |
+|---|---|---|
+| **Q1** Tableau de conversion | **Chaque fiche garde son propre tableau.** | C3 utilise le tableau de `C3.docx`. C3B et C2C utilisent le tableau imprimé sur leur fiche : la coquille « 25 – 2 » est lue 25–22, par continuité avec la case voisine. C2 et C5A lisent leur note finale à la **ligne 3 du tableau de C3** [DOC]. Les postes de plus de 10 rubriques, ou d'une seule rubrique, sont convertis par Z = P × 100 / (Rr × 4) et le tableau des %, arrondi à l'entier le plus proche [PROPOSÉ, § 8.2]. |
+| **Q2** Périmètre | **Les 16 fiches présentes**, y compris A2, A3, A4 et A6. | A2, A3, A4 et A6 sont rattachées à l'inspecteur et à une période, pas à une école : un nouveau type de saisie « hors visite » est créé. A1, C3M, C4, C5B, C6A, C7, F2 et T1 restent hors périmètre tant que leurs fiches ne sont pas fournies. Les formules sans canevas (A7, A8, C8, F3, F4, T2) ne sont pas traitées dans cette phase. |
+| **Q3** Circuit | **Chaque fiche est soumise et suit le circuit séparément.** | Chaque fiche remplie devient un rapport à part entière : statut, historique, observations, correction et resoumission propres. La soumission d'une fiche ne resoumet jamais les autres, et une même fiche n'est jamais soumise deux fois (la resoumission ne vaut qu'après « À corriger »). Le bordereau A6 est une fiche ordinaire, saisie par l'inspecteur. |
+| **Q4** C2 et C2C | **Garder C2 « ancienne » et C2C.** | C2 « ancienne » = **C2 version 1** ; une version plus récente pourra être ajoutée plus tard sans altérer les anciens rapports. C2C est conservée telle quelle. |
+| **Q5** Numéro de rapport | **Format du module**, généré automatiquement. | `61 / <code du POOL> / <initiales de l'inspecteur> / <code>.<n° thématique> / <n° universel> / <année civile>`. Le n° thématique compte les fiches d'un même code ; le n° universel compte toutes les fiches de l'inspecteur, sans interruption, dans l'année civile [DOC]. Le code du POOL est celui déjà saisi dans l'application (`Pool.code`). Le numéro est attribué à la **première soumission** et ne change plus. |
+| **Q6** Signatures | **Signature au doigt sur l'écran** du téléphone de l'inspecteur. | Chaque attestation (CE, enseignant, adjoint, CCB, incriminé, facilitateurs, inspecteur) enregistre une image de signature, le nom, le lieu et la date. « Refus de signer » reste possible, avec les deux témoins signataires prévus par le module. Une signature est **figée** une fois la fiche soumise. Le dépôt d'annexes (photos, scans) n'a pas été demandé : il est hors périmètre. |
+| **Q7** Fiches simulées | **Ne pas les renommer ni les supprimer** ; appliquer la proposition. | Les fiches simulées A1, C101, T1 et F1 restent **intactes en base**, et leurs rapports restent lisibles. La base accepte désormais plusieurs versions d'un même code. Les fiches officielles qui partagent un code avec une fiche simulée prennent la **version suivante** : F1 officiel = F1 v2. Seule la **dernière version active** de chaque code est proposée pour une nouvelle saisie. A1 et T1 officielles n'étant pas fournies, A1 et T1 simulées restent proposables jusqu'à nouvel ordre. C101 n'a pas d'équivalent officiel. |
+| **Q8** Exploitants de l'IPP | **Agir avant la transmission du POOL + accès à l'analyse IA** (options 2 et 3). | **Élargissement de droits décidé explicitement** par le responsable : la fonction « Exploitant IPP » reçoit, sur **tous les POOL**, les droits d'exploitation du niveau POOL. Elle peut donc accuser réception, démarrer l'exploitation, renvoyer pour correction et transmettre, sans attendre le POOL. Elle reçoit aussi le droit « Consulter et lancer les analyses IA ». Les autres fonctions ne changent pas. Ces droits sont des données en base : une **migration de données** les ajoutera à la fonction existante, uniquement par ajout. |
+
+### 10.1 Plan de la phase 2
+
+Le travail se fait sur une branche dédiée `feat/fiches-itinerant`, sans aucun push ni
+déploiement sans accord. Les étapes ci-dessous donnent chacune un ou plusieurs commits.
+
+1. **Tests** : mise en place de `node:test` via `tsx --test` (aucune nouvelle dépendance), script `npm test`.
+2. **Moteur de calcul** (`src/lib/fiches/calculs.ts`), avec un test pour chaque règle :
+   - les tableaux de conversion propres à chaque fiche et le calcul Z ;
+   - l'exclusion de « – » et « S.O. » ;
+   - les synthèses de C2, C5A, C3, C3B, C2C et C6B ;
+   - les totaux et pourcentages de A2, A3 et A4 ;
+   - le délai de A12 et la numérotation.
+3. **Format de définition des fiches**, versionné et validé par zod : sections, postes notés,
+   tableaux, cases, champs calculés, attestations. L'ancien format plat reste lu pour les fiches simulées.
+4. **Définition des 16 fiches**, libellés repris mot pour mot (`src/lib/fiches/<code>/v1.ts`).
+5. **Migrations additives**, décrites avant application :
+   - unicité `(code, version)` sur `FormTemplate` ;
+   - plusieurs exemplaires d'une fiche par inspection ;
+   - statut et numéro par fiche ;
+   - rapport par fiche ;
+   - signatures ;
+   - fiches « hors visite » (A2, A3, A4, A6) ;
+   - droits de l'exploitant IPP.
+6. **Saisie sur téléphone** :
+   - choix des fiches ;
+   - brouillon serveur et copie locale en cas de coupure ;
+   - « marquer comme complète » avec contrôles ;
+   - signature à l'écran ;
+   - soumission par fiche.
+7. **Circuit par fiche** : correction et resoumission réparées, contrôle d'accès des pages
+   d'inspection et de rapport, retours visibles par l'itinérant.
+8. **Exploitation** : vues provinciales des notes et statistiques ; analyse IA adaptée au nouveau format.
+9. **Vérifications finales** : tests, lint et build ; résumé des modifications et des points restants.
