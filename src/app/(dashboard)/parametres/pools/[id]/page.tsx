@@ -396,9 +396,9 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
           <div className="border-t border-gray-100 pt-4">
             {!canManageStaff && (
               <p className="mb-2 text-xs text-gray-500">
-                En tant que chef de POOL, vous attribuez les fonctions d&apos;appui (exploitant, secrétaire, agent) à
-                des comptes déjà validés. Les inspecteurs sont rattachés par l&apos;IPP, l&apos;informaticien ou le
-                Super Admin.
+                En tant que chef de POOL, vous rattachez à votre POOL des inspecteurs et des fonctions d&apos;appui
+                (exploitant, secrétaire, agent), pour des comptes déjà validés par l&apos;IPP, l&apos;informaticien ou
+                le Super Admin.
               </p>
             )}
             <AddRoleForm poolId={pool.id} users={activeUsers} roles={addableRoles} />
