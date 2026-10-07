@@ -9,6 +9,7 @@ import { PERMISSIONS } from "@/lib/rbac-data";
 import { demoRefusal, hasPermission } from "@/lib/permissions";
 import { applyTransition } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
+import { REPORT_SCOPE_INCLUDE, reportScope } from "@/lib/fiches/report-scope";
 
 export type CommentState = {
   errors?: Record<string, string>;
@@ -23,20 +24,18 @@ export async function addCommentAction(
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const report = await prisma.report.findUnique({
-    where: { id: reportId },
-    include: { inspection: { include: { school: { include: { pool: true } } } } },
-  });
+  const report = await prisma.report.findUnique({ where: { id: reportId }, include: REPORT_SCOPE_INCLUDE });
   if (!report) return { formError: "Rapport introuvable." };
 
-  const poolId = report.inspection.school.poolId;
-  const organizationId = report.inspection.school.pool.organizationId;
+  const scope = reportScope(report);
+  const poolId = scope.poolId;
+  const organizationId = scope.organizationId;
   const canComment =
     hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId, organizationId }) ||
     hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId, organizationId }) ||
     hasPermission(session.user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId, organizationId });
   if (!canComment) return { formError: "Action non autorisée." };
-  const refusal = await demoRefusal(session.user.id, report.inspection.school.isDemo);
+  const refusal = await demoRefusal(session.user.id, scope.isDemo);
   if (refusal) return { formError: refusal };
 
   const parsed = commentSchema.safeParse({ content: formData.get("content") });

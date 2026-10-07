@@ -224,6 +224,8 @@ model Pool {
   userRoles       UserRole[]
   accountRequests AccountRequest[]
   aiAnalyses      AiAnalysis[]
+  forms           Form[]
+  reports         Report[]
 
   @@index([organizationId])
 }
@@ -345,6 +347,8 @@ model User {
   uploadedAttachments     Attachment[]
   aiAnalyses              AiAnalysis[]
   aiReactions             AiReaction[]
+  formsAuthored           Form[]                 @relation("FormAuthor")
+  reportsAuthored         Report[]               @relation("ReportAuthor")
 
   @@index([organizationId])
   @@index([poolId])
@@ -491,15 +495,24 @@ model FormTemplate {
   id           String             @id @default(cuid())
   categoryId   String
   category     InspectionCategory @relation(fields: [categoryId], references: [id])
-  code         String             @unique
+  code         String
   title        String
+  // Une version publiée n'est jamais modifiée : toute évolution crée la
+  // version suivante (les rapports gardent la ligne exacte qu'ils ont utilisée).
   version      Int                @default(1)
   fieldsSchema Json
   active       Boolean            @default(true)
+  // Fiches officielles (format 2) : module A/C/F/T, « visite » (inspection
+  // d'une école) ou « periode » (A2, A3, A4, A6), document d'origine.
+  module       String?
+  scope        String             @default("visite")
+  source       String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
   forms Form[]
+
+  @@unique([code, version])
 }
 
 model Inspection {
@@ -524,16 +537,37 @@ model Inspection {
 
 model Form {
   id             String       @id @default(cuid())
-  inspection     Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  inspectionId   String
+  // Vide pour une fiche de période (A2, A3, A4, A6), rattachée à l'auteur.
+  inspection     Inspection?  @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId   String?
   formTemplateId String
   formTemplate   FormTemplate @relation(fields: [formTemplateId], references: [id])
   data           Json         @default("{}")
   completed      Boolean      @default(false)
+  // Auteur et POOL (renseignés pour les fiches officielles ; les anciennes
+  // fiches les tiennent de leur inspection).
+  authorId       String?
+  author         User?        @relation("FormAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  poolId         String?
+  pool           Pool?        @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  // Numéro du rapport (module, « Numérotation du rapport »), attribué à la
+  // première soumission et jamais modifié : 61/<POOL>/<initiales>/<code>.<n°>/<n°>/<année>.
+  number         String?
+  numberYear     Int?
+  thematicSeq    Int?
+  universalSeq   Int?
+  // Résultats des calculs figés à la soumission (exploitation, lecture).
+  computed       Json?
+  submittedAt    DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  @@unique([inspectionId, formTemplateId])
+  report Report? @relation("FormReport")
+
+  @@unique([authorId, numberYear, universalSeq])
+  @@index([inspectionId, formTemplateId])
+  @@index([authorId])
+  @@index([poolId])
 }
 
 // ---------------------------------------------------------------------------
@@ -567,8 +601,16 @@ model WorkflowTransition {
 
 model Report {
   id              String         @id @default(cuid())
-  inspection      Inspection     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  inspectionId    String         @unique
+  // Rapport d'inspection global (ancien circuit) : une inspection, un rapport.
+  inspection      Inspection?    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId    String?        @unique
+  // Rapport d'une fiche officielle (circuit par fiche, décision Q3).
+  form            Form?          @relation("FormReport", fields: [formId], references: [id], onDelete: Cascade)
+  formId          String?        @unique
+  poolId          String?
+  pool            Pool?          @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  authorId        String?
+  author          User?          @relation("ReportAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   summary         String?
   recommendations String?
   statusId        String
@@ -583,6 +625,8 @@ model Report {
   attachments   Attachment[]
 
   @@index([statusId])
+  @@index([poolId])
+  @@index([authorId])
 }
 
 model ReportStatusHistory {

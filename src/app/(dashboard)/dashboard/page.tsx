@@ -6,6 +6,7 @@ import { Card, PageHeader, Badge } from "@/components/ui";
 import { School, Users, ClipboardList, FileCheck2, AlertTriangle } from "lucide-react";
 import { PERMISSIONS, ROLE_KEYS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
+import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
 import { PoolActivityChart } from "@/components/pool-activity-chart";
 
 const PENDING_KEYS: string[] = [
@@ -59,21 +60,21 @@ export default async function DashboardPage({
         prisma.user.count({ where: { status: "ACTIVE", organizationId } }),
         prisma.inspection.count({ where: { completedAt: { not: null }, school: { pool: { organizationId } } } }),
         prisma.report.count({
-          where: { status: { key: { in: PENDING_KEYS } }, inspection: { school: { pool: { organizationId } } } },
+          where: { status: { key: { in: PENDING_KEYS } }, AND: [reportsOfOrganization(organizationId)] },
         }),
         prisma.report.count({
           where: {
             status: { key: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION },
-            inspection: { school: { pool: { organizationId } } },
+            AND: [reportsOfOrganization(organizationId)],
           },
         }),
         prisma.report.count({
-          where: { status: { key: { in: VALIDATED_KEYS } }, inspection: { school: { pool: { organizationId } } } },
+          where: { status: { key: { in: VALIDATED_KEYS } }, AND: [reportsOfOrganization(organizationId)] },
         }),
         prisma.report.count({
           where: {
             status: { key: WORKFLOW_STATUS_KEYS.A_CORRIGER },
-            inspection: { school: { pool: { organizationId } } },
+            AND: [reportsOfOrganization(organizationId)],
           },
         }),
         prisma.pool.findMany({ where: { active: true, organizationId }, orderBy: { name: "asc" } }),
@@ -83,9 +84,9 @@ export default async function DashboardPage({
       pools.map(async (pool) => {
         const [schoolCount, reportCount, pendingCount] = await Promise.all([
           prisma.school.count({ where: { poolId: pool.id } }),
-          prisma.report.count({ where: { inspection: { school: { poolId: pool.id } } } }),
+          prisma.report.count({ where: { AND: [reportsOfPool(pool.id)] } }),
           prisma.report.count({
-            where: { inspection: { school: { poolId: pool.id } }, status: { key: { in: PENDING_KEYS } } },
+            where: { AND: [reportsOfPool(pool.id)], status: { key: { in: PENDING_KEYS } } },
           }),
         ]);
         return { pool, schoolCount, reportCount, pendingCount };
@@ -270,22 +271,22 @@ async function PoolExplorer({
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    prisma.report.count({ where: { inspection: { school: { poolId } }, status: { key: { in: PENDING_KEYS } } } }),
-    prisma.report.count({ where: { inspection: { school: { poolId } }, status: { key: { in: VALIDATED_KEYS } } } }),
+    prisma.report.count({ where: { AND: [reportsOfPool(poolId)], status: { key: { in: PENDING_KEYS } } } }),
+    prisma.report.count({ where: { AND: [reportsOfPool(poolId)], status: { key: { in: VALIDATED_KEYS } } } }),
   ]);
 
   const inspectorStats = await Promise.all(
     inspectors.map(async (insp) => ({
       ...insp,
-      reportCount: await prisma.report.count({ where: { inspection: { inspectorId: insp.id } } }),
+      reportCount: await prisma.report.count({ where: reportsOfAuthor(insp.id) }),
     }))
   );
 
   const selectedReports = selectedInspectorId
     ? await prisma.report.findMany({
-        where: { inspection: { inspectorId: selectedInspectorId, school: { poolId } } },
+        where: { AND: [reportsOfAuthor(selectedInspectorId), reportsOfPool(poolId)] },
         orderBy: { updatedAt: "desc" },
-        include: { status: true, inspection: { include: { school: true } } },
+        include: REPORT_SCOPE_INCLUDE,
       })
     : [];
 
@@ -335,7 +336,7 @@ async function PoolExplorer({
             <ul className="divide-y divide-gray-100">
               {selectedReports.map((r) => (
                 <li key={r.id} className="flex items-center justify-between py-3 text-sm">
-                  <span className="font-medium text-gray-900">{r.inspection.school.name}</span>
+                  <span className="font-medium text-gray-900">{reportScope(r).title}</span>
                   <div className="flex items-center gap-3">
                     <Badge color="blue">{r.status.label}</Badge>
                     <Link href={`/rapports/${r.id}`} className="text-xs font-medium text-blue-600 hover:underline">

@@ -54,7 +54,9 @@ const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   [ROLE_KEYS.INSPECTEUR]: [PERMISSIONS.INSPECTIONS_CONDUCT],
   [ROLE_KEYS.EXPLOITANT_POOL]: [PERMISSIONS.REPORTS_REVIEW_POOL],
   [ROLE_KEYS.CHEF_POOL]: [PERMISSIONS.SCHOOLS_MANAGE, PERMISSIONS.ASSIGNMENTS_MANAGE, PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.AI_ANALYZE],
-  [ROLE_KEYS.EXPLOITANT_IPP]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE],
+  // Décision Q8 (2026-10-07) : exploitation au niveau POOL sur tous les POOL
+  // et analyses IA (migration 20261007120000_fiches_officielles).
+  [ROLE_KEYS.EXPLOITANT_IPP]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.AI_ANALYZE],
   [ROLE_KEYS.AGENT_IPP]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE],
   [ROLE_KEYS.AGENT_POOL]: [],
   [ROLE_KEYS.SECRETAIRE_POOL]: [PERMISSIONS.SCHOOLS_MANAGE],
@@ -354,10 +356,12 @@ async function seedFormTemplates() {
   await mapConcurrent(FORM_TEMPLATES, CONCURRENCY, async (t) => {
     const category = categoryByCode.get(t.categoryCode);
     if (!category) return;
+    // Fiches simulées = version 1 de leur code. Une version déjà en base
+    // n'est jamais modifiée (les rapports qui l'utilisent restent lisibles).
     await prisma.formTemplate.upsert({
-      where: { code: t.code },
-      update: { title: t.title, fieldsSchema: t.fieldsSchema, categoryId: category.id },
-      create: { code: t.code, title: t.title, fieldsSchema: t.fieldsSchema, categoryId: category.id },
+      where: { code_version: { code: t.code, version: 1 } },
+      update: {},
+      create: { code: t.code, version: 1, title: t.title, fieldsSchema: t.fieldsSchema, categoryId: category.id },
     });
   });
 }

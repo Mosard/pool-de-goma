@@ -3,6 +3,7 @@ import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { hasPermission, ForbiddenError, requireOfficialActorUnlessDemoTarget, type SessionPermission } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { notify, notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
+import { REPORT_SCOPE_INCLUDE, reportScope } from "@/lib/fiches/report-scope";
 
 export async function getWorkflowStatusByKey(key: string) {
   return prisma.workflowStatus.findUniqueOrThrow({ where: { key } });
@@ -43,14 +44,9 @@ export async function applyTransition(params: {
   actorOrganizationId: string;
   comment?: string;
 }) {
-  const report = await prisma.report.findUnique({
-    where: { id: params.reportId },
-    include: {
-      status: true,
-      inspection: { include: { school: { include: { pool: true } }, inspector: true } },
-    },
-  });
+  const report = await prisma.report.findUnique({ where: { id: params.reportId }, include: REPORT_SCOPE_INCLUDE });
   if (!report) throw new Error("Rapport introuvable.");
+  const scope = reportScope(report);
 
   const toStatus = await prisma.workflowStatus.findUnique({ where: { key: params.toStatusKey } });
   if (!toStatus) throw new Error("Statut cible inconnu.");
@@ -60,9 +56,10 @@ export async function applyTransition(params: {
   });
   if (!transition) throw new Error("Transition non autorisée depuis ce statut.");
 
-  const reportPoolId = report.inspection.school.poolId;
-  const reportOrganizationId = report.inspection.school.pool.organizationId;
+  const reportPoolId = scope.poolId;
+  const reportOrganizationId = scope.organizationId;
   if (
+    !reportOrganizationId ||
     !hasPermission(params.actorPermissions, transition.allowedPermissionKey, {
       poolId: reportPoolId,
       organizationId: reportOrganizationId,
@@ -70,14 +67,20 @@ export async function applyTransition(params: {
   ) {
     throw new ForbiddenError();
   }
+  // Resoumettre (droit de l'inspecteur) : seulement l'auteur du rapport, pas
+  // un autre inspecteur du même POOL.
+  if (transition.allowedPermissionKey === PERMISSIONS.INSPECTIONS_CONDUCT && scope.authorId !== params.actorId) {
+    throw new ForbiddenError("Seul l'auteur du rapport peut le resoumettre.");
+  }
   // Un rapport sur une école réelle ne se fait avancer que par un compte officiel.
-  await requireOfficialActorUnlessDemoTarget(params.actorId, report.inspection.school.isDemo);
+  await requireOfficialActorUnlessDemoTarget(params.actorId, scope.isDemo);
 
   await prisma.report.update({
     where: { id: params.reportId },
     data: {
       statusId: toStatus.id,
       validatedAt: toStatus.key === WORKFLOW_STATUS_KEYS.VALIDE ? new Date() : report.validatedAt,
+      ...(toStatus.key === WORKFLOW_STATUS_KEYS.SOUMIS ? { submittedAt: new Date() } : {}),
     },
   });
 
@@ -91,7 +94,9 @@ export async function applyTransition(params: {
     },
   });
 
-  if (toStatus.key === WORKFLOW_STATUS_KEYS.VALIDE) {
+  if (report.form) {
+    if (report.form.inspectionId) await refreshInspectionStatus(report.form.inspectionId);
+  } else if (toStatus.key === WORKFLOW_STATUS_KEYS.VALIDE && report.inspectionId) {
     await prisma.inspection.update({ where: { id: report.inspectionId }, data: { status: "VALIDEE" } });
   }
 
@@ -106,33 +111,63 @@ export async function applyTransition(params: {
     metadata: params.comment ? { comment: params.comment } : undefined,
   });
 
-  if (toStatus.key === WORKFLOW_STATUS_KEYS.A_CORRIGER) {
-    await notify({
-      userId: report.inspection.inspectorId,
-      event: "report.needs_correction",
-      title: `Correction demandée — ${report.inspection.school.name}`,
-      body: params.comment ?? "Le rapport doit être corrigé et resoumis.",
-    });
-  } else {
-    await notify({
-      userId: report.inspection.inspectorId,
-      event: "report.status_changed",
-      title: `Rapport ${report.inspection.school.name}`,
-      body: `Statut mis à jour : ${toStatus.label}.`,
-    });
-
-    const nextPermission = NEXT_ACTOR_PERMISSION[toStatus.key];
-    if (nextPermission) {
-      await notifyUsersWithPermission({
-        permissionKey: nextPermission,
-        poolId: reportPoolId,
-        organizationId: reportOrganizationId,
-        event: "report.awaiting_action",
-        title: `Rapport à traiter — ${report.inspection.school.name}`,
-        body: `Le rapport est au statut "${toStatus.label}".`,
+  if (scope.authorId && scope.authorId !== params.actorId) {
+    if (toStatus.key === WORKFLOW_STATUS_KEYS.A_CORRIGER) {
+      await notify({
+        userId: scope.authorId,
+        event: "report.needs_correction",
+        title: `Correction demandée — ${scope.title}`,
+        body: params.comment ?? "Le rapport doit être corrigé et resoumis.",
+      });
+    } else {
+      await notify({
+        userId: scope.authorId,
+        event: "report.status_changed",
+        title: `Rapport ${scope.title}`,
+        body: `Statut mis à jour : ${toStatus.label}.`,
       });
     }
   }
 
+  const nextPermission = NEXT_ACTOR_PERMISSION[toStatus.key];
+  if (nextPermission && reportOrganizationId) {
+    await notifyUsersWithPermission({
+      permissionKey: nextPermission,
+      poolId: reportPoolId,
+      organizationId: reportOrganizationId,
+      event: "report.awaiting_action",
+      title: `Rapport à traiter — ${scope.title}`,
+      body: `Le rapport est au statut "${toStatus.label}".`,
+    });
+  }
+
   return toStatus;
+}
+
+/**
+ * Statut d'une inspection dont les fiches suivent chacune leur circuit
+ * (décision Q3) : en cours tant qu'une fiche reste à soumettre ou à
+ * corriger ; « rapport soumis » quand toutes sont soumises ; « validée »
+ * quand toutes sont validées. Les inspections de l'ancien circuit (rapport
+ * global) ne sont pas concernées.
+ */
+export async function refreshInspectionStatus(inspectionId: string) {
+  const inspection = await prisma.inspection.findUnique({
+    where: { id: inspectionId },
+    include: { report: { select: { id: true } }, forms: { include: { report: { include: { status: true } } } } },
+  });
+  if (!inspection || inspection.report || inspection.forms.length === 0) return;
+  const keys = inspection.forms.map((f) => f.report?.status.key ?? null);
+  const done: string[] = [WORKFLOW_STATUS_KEYS.VALIDE, WORKFLOW_STATUS_KEYS.CLOTURE];
+  const open: (string | null)[] = [null, WORKFLOW_STATUS_KEYS.BROUILLON, WORKFLOW_STATUS_KEYS.A_CORRIGER];
+  const status = keys.every((k) => k !== null && done.includes(k))
+    ? "VALIDEE"
+    : keys.some((k) => open.includes(k))
+      ? "EN_COURS"
+      : "RAPPORT_SOUMIS";
+  if (status === inspection.status) return;
+  await prisma.inspection.update({
+    where: { id: inspectionId },
+    data: { status, ...(status === "RAPPORT_SOUMIS" && !inspection.completedAt ? { completedAt: new Date() } : {}) },
+  });
 }
