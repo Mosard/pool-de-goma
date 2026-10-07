@@ -78,6 +78,11 @@ export default async function InspectionDetailPage({ params }: { params: Promise
                     <Link href={`/fiches/${f.id}`} className="text-xs font-medium text-blue-600 hover:underline">
                       Ouvrir
                     </Link>
+                    {f.report && (
+                      <a href={`/rapports/${f.report.id}/pdf`} target="_blank" rel="noopener" className="text-xs font-medium text-blue-600 hover:underline">
+                        PDF
+                      </a>
+                    )}
                   </div>
                 </li>
               );

@@ -10,6 +10,7 @@ import { parseFieldsSchema } from "@/lib/form-schema";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermission } from "@/lib/permissions";
 import { FicheEditor } from "@/components/fiches/fiche-editor";
+import { PdfButtons } from "@/components/pdf-buttons";
 import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope } from "@/lib/fiches/report-scope";
 import { resolveFicheDef } from "@/lib/fiches/defs/index";
 import { ficheData, workflowStatusById } from "@/lib/fiches/server";
@@ -67,7 +68,12 @@ export default async function RapportDetailPage({
       <PageHeader
         title={scope.title}
         description={[`Inspecteur : ${scope.authorName}`, scope.number].filter(Boolean).join(" · ")}
-        actions={<Badge color="blue">{report.status.label}</Badge>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge color="blue">{report.status.label}</Badge>
+            <PdfButtons reportId={report.id} filename={`${scope.code ?? "rapport"}-${(scope.number ?? report.id).replaceAll("/", "-")}.pdf`} />
+          </div>
+        }
       />
 
       <Card>
