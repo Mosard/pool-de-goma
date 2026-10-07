@@ -229,11 +229,13 @@ export function toNumber(v: unknown): number | null {
 }
 
 export type TableResult = {
-  /** Pourcentages calculés par ligne : rowId → colonne → valeur. */
+  /** Colonnes calculées par ligne (sommes `sumOf`, pourcentages `percentOf`) : rowId → colonne → valeur. */
   percents: Record<string, Record<string, number | null>>;
   totals: Record<string, number>;
   /** Sous-totaux par valeur de la colonne `groupBy` (ex. par mois, A2). */
   subtotals: Record<string, Record<string, number>>;
+  /** Ligne « % » : total de chaque colonne rapporté au total de la colonne de référence. */
+  columnPercents: Record<string, number | null>;
 };
 
 export function rowsOf(table: TableDef, values: FicheValues): TableRow[] {
@@ -250,14 +252,22 @@ export function computeTable(table: TableDef, values: FicheValues): TableResult 
   const totals: Record<string, number> = {};
   const subtotals: TableResult["subtotals"] = {};
   for (const row of rows) {
+    const computed = (percents[row._id] ??= {});
+    // Valeur effective d'une cellule : calculée si la colonne l'est, sinon saisie.
+    const cell = (colId: string): number | null => (colId in computed ? computed[colId] : toNumber(row[colId]));
+    for (const col of table.columns) {
+      if (!col.sumOf) continue;
+      const parts = col.sumOf.map((c) => toNumber(row[c]));
+      computed[col.id] = parts.every((n) => n === null) ? null : parts.reduce<number>((s, n) => s + (n ?? 0), 0);
+    }
     for (const col of table.columns) {
       if (!col.percentOf) continue;
-      const num = toNumber(row[col.percentOf.num]);
-      const den = toNumber(row[col.percentOf.den]);
-      (percents[row._id] ??= {})[col.id] = num !== null && den !== null && den > 0 ? roundHalfUp((num * 100) / den) : null;
+      const num = cell(col.percentOf.num);
+      const den = cell(col.percentOf.den);
+      computed[col.id] = num !== null && den !== null && den > 0 ? roundHalfUp((num * 100) / den) : null;
     }
     for (const colId of table.sumColumns ?? []) {
-      const n = toNumber(row[colId]) ?? 0;
+      const n = cell(colId) ?? 0;
       totals[colId] = (totals[colId] ?? 0) + n;
       if (table.groupBy) {
         const g = str(row[table.groupBy]);
@@ -269,7 +279,14 @@ export function computeTable(table: TableDef, values: FicheValues): TableResult 
     }
   }
   for (const colId of table.sumColumns ?? []) totals[colId] ??= 0;
-  return { percents, totals, subtotals };
+  const columnPercents: TableResult["columnPercents"] = {};
+  if (table.percentRow) {
+    const ref = totals[table.percentRow.of] ?? 0;
+    for (const colId of table.sumColumns ?? []) {
+      columnPercents[colId] = ref > 0 ? roundHalfUp((totals[colId] * 100) / ref) : null;
+    }
+  }
+  return { percents, totals, subtotals, columnPercents };
 }
 
 // ---------------------------------------------------------------------------

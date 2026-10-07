@@ -254,3 +254,47 @@ test("année scolaire : septembre à août", () => {
   assert.equal(schoolYearOf(new Date(2026, 8, 1)), "2026-2027");
   assert.equal(schoolYearOf(new Date(2027, 7, 31)), "2026-2027");
 });
+
+test("A4 bilan : somme en ligne des trimestres puis % du bilan (sumOf avant percentOf)", () => {
+  const table: TableDef = {
+    kind: "table",
+    id: "m",
+    label: "",
+    columns: [
+      { id: "t1p", label: "", type: "number" },
+      { id: "t1r", label: "", type: "number" },
+      { id: "t2p", label: "", type: "number" },
+      { id: "t2r", label: "", type: "number" },
+      { id: "bp", label: "", type: "number", sumOf: ["t1p", "t2p"] },
+      { id: "br", label: "", type: "number", sumOf: ["t1r", "t2r"] },
+      { id: "bpct", label: "", type: "number", percentOf: { num: "br", den: "bp" } },
+    ],
+    fixedRows: [{ id: "M1", label: "MODULE 1" }, { id: "M2", label: "MODULE 2" }],
+    sumColumns: ["bp", "br"],
+  };
+  const res = computeTable(table, { m: [{ _id: "M1", t1p: "10", t1r: "8", t2p: "10", t2r: "9" }] });
+  assert.equal(res.percents.M1.bp, 20);
+  assert.equal(res.percents.M1.br, 17);
+  assert.equal(res.percents.M1.bpct, 85);
+  assert.equal(res.percents.M2.bp, null, "ligne vide : pas de total");
+  assert.deepEqual(res.totals, { bp: 20, br: 17 });
+});
+
+test("synoptique de la notation : ligne % = total de colonne × 100 / total général (balance carrée)", () => {
+  const table: TableDef = {
+    kind: "table",
+    id: "n",
+    label: "",
+    columns: [
+      { id: "n4", label: "4", type: "number" },
+      { id: "n3", label: "3", type: "number" },
+      { id: "tot", label: "TOTAUX", type: "number", sumOf: ["n4", "n3"] },
+    ],
+    fixedRows: [{ id: "C2", label: "C2" }, { id: "C3q", label: "C3" }],
+    sumColumns: ["n4", "n3", "tot"],
+    percentRow: { of: "tot" },
+  };
+  const res = computeTable(table, { n: [{ _id: "C2", n4: "1", n3: "2" }, { _id: "C3q", n4: "0", n3: "5" }] });
+  assert.deepEqual(res.totals, { n4: 1, n3: 7, tot: 8 });
+  assert.deepEqual(res.columnPercents, { n4: 13, n3: 88, tot: 100 });
+});

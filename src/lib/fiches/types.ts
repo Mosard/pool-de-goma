@@ -64,7 +64,12 @@ export type FieldDef = {
   notForAuthor?: boolean;
 };
 
-export type RatedItem = { id: string; label: string };
+export type RatedItem = {
+  id: string;
+  label: string;
+  /** Numéro imprimé, s'il diffère de l'identifiant (ex. « 2.8.6 » imprimé deux fois sur C3). */
+  num?: string;
+};
 
 /** Poste noté : rubriques notées + observations, total, conversion, conseils. */
 export type RatedPosteDef = {
@@ -79,14 +84,19 @@ export type RatedPosteDef = {
   /** Rubriques laissées en blanc sur la fiche, que l'inspecteur peut intituler lui-même. */
   freeItems?: string[];
   conseils?: boolean;
+  /** Intitulé imprimé de la rubrique « Conseils » (ex. « 2.3. Conseils »). */
+  conseilsLabel?: string;
   showIf?: Condition;
 };
 
 export type ColumnDef = {
   id: string;
   label: string;
-  type: "text" | "number" | "date" | "choice";
+  /** « signature » : signature tracée à l'écran dans la ligne (ex. participants F1). */
+  type: "text" | "number" | "date" | "choice" | "signature";
   options?: string[];
+  /** Colonne calculée : somme d'autres colonnes de la ligne (ex. bilan A4). */
+  sumOf?: string[];
   /** Colonne calculée : pourcentage arrondi = num × 100 / den [DOC A3]. */
   percentOf?: { num: string; den: string };
 };
@@ -101,6 +111,8 @@ export type TableDef = {
   /** Colonnes additionnées en ligne « Total » (et sous-totaux par `groupBy`). */
   sumColumns?: string[];
   groupBy?: string;
+  /** Ligne « % » : total de chaque colonne × 100 / total de la colonne `of` (synoptique de la notation, A3). */
+  percentRow?: { of: string };
   showIf?: Condition;
 };
 
@@ -154,8 +166,14 @@ export type SyntheseDef = {
   finalLabel: string;
 };
 
-/** Contrôle croisé entre deux champs numériques (ex. présents ≤ inscrits). */
-export type CheckDef = { type: "lte"; a: string; b: string; message: string };
+/** Contrôles croisés. */
+export type CheckDef =
+  /** Champ numérique a ≤ champ numérique b (ex. présents ≤ inscrits). */
+  | { type: "lte"; a: string; b: string; message: string }
+  /** Si `when` est vrai, la liste de cases `field` doit contenir `value` (ex. A5 : CE absent → chef de sous-division). */
+  | { type: "includesIf"; when: Condition; field: string; value: string; message: string }
+  /** Total de la colonne a (tableau) = total de la colonne b (autre tableau) (ex. A3 : jours analytiques = jours des modules). */
+  | { type: "totalsEqual"; a: { table: string; column: string }; b: { table: string; column: string }; message: string };
 
 export type FicheDef = {
   format: typeof FICHE_FORMAT;
@@ -178,6 +196,8 @@ export type FicheDef = {
   /** Tableau de conversion imprimé sur la fiche (affiché pour référence). */
   conversionTable?: ConversionTableId | "PERCENT";
   checks?: CheckDef[];
+  /** Intitulé du numéro dans l'en-tête (« Rapport n° » par défaut ; A6 : « Remise / Envoi n° »). */
+  numberLabel?: string;
   /** Champ qui distingue plusieurs exemplaires d'une visite (ex. nom de l'enseignant). */
   instanceLabel?: string;
 };
