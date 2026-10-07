@@ -25,6 +25,8 @@ import {
   transitionSynthesis,
   updateSynthesis,
 } from "../../src/lib/synthese/server";
+import { resolveDashboardScopes } from "../../src/lib/dashboard/scope";
+import { loadSynthesisCounts } from "../../src/lib/dashboard/data";
 
 const url = process.env.POSTGRES_URL ?? "";
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
@@ -236,7 +238,8 @@ async function main() {
     const id = await createSynthesis(aExploitIpp, { title: "Synthèse provinciale", poolId: null, reportIds: [rA1.id, rB1.id] });
     await updateSynthesis(aExploitIpp, id, { title: "Synthèse provinciale", sections: FULL });
     const r = await transitionSynthesis(aExploitIpp, id, "SOUMIS");
-    assert.equal(r.number, `61/IPP/SYN.001/${new Date().getFullYear()}`);
+    // Séquence « IPP » commune à la base : le numéro dépend des synthèses provinciales déjà numérotées.
+    assert.match(r.number ?? "", new RegExp(`^61/IPP/SYN\\.\\d{3}/${new Date().getFullYear()}$`));
     assert.equal(await getSynthesis(aAgentIpp, id), null);
     assert.equal(await getSynthesis(aChefA, id), null);
     await refused(() => transitionSynthesis(aAgentIpp, id, "A_CORRIGER", "pas habilité"));
@@ -246,6 +249,27 @@ async function main() {
 
   await check("Un même rapport dans plusieurs synthèses (Q8)", async () => {
     assert.equal(await prisma.synthesisSource.count({ where: { reportId: rA1.id } }), 2);
+  });
+
+  await check("Tableaux de bord : compteurs de synthèses limités à ce que chaque fonction peut lire", async () => {
+    const count = async (a: Awaited<ReturnType<typeof act>>) => {
+      const scope = resolveDashboardScopes({ id: a.id, organizationId: a.organizationId, roles: a.roles, permissions: a.permissions })[0];
+      return loadSynthesisCounts(scope, a);
+    };
+    // POOL A : 1 synthèse validée ; la synthèse provinciale n'est pas du POOL.
+    assert.deepEqual(await count(aChefA), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
+    assert.deepEqual(await count(aExploitB), { total: 0, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 0 }, "rien du POOL A");
+    // IPP : la synthèse du POOL A (validée) et la provinciale (à corriger).
+    assert.deepEqual(await count(aIpp), { total: 2, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 1, validated: 1 });
+    // Exploitant IPP : sa synthèse provinciale renvoyée.
+    const e = await count(aExploitIpp);
+    assert.equal(e.myToFix, 1);
+    assert.equal(e.validated, 1);
+    // Agent IPP : ne lit pas la synthèse provinciale.
+    assert.equal((await count(aAgentIpp)).toFix, 0);
+    // Un inspecteur n'a pas de compteur de synthèses.
+    const insp = resolveDashboardScopes({ id: aInspA.id, organizationId: aInspA.organizationId, roles: aInspA.roles, permissions: aInspA.permissions })[0];
+    await assert.rejects(() => loadSynthesisCounts(insp, aInspA));
   });
 
   console.log(`\n${passed} vérifications réussies.`);

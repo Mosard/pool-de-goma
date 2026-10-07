@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { clsx } from "clsx";
 import { auth } from "@/lib/auth";
 import { Card, PageHeader, Badge } from "@/components/ui";
-import { School, Users, ClipboardList, FileCheck2, AlertTriangle, MapPin, Inbox, Newspaper, UserPlus } from "lucide-react";
+import { School, Users, ClipboardList, FileCheck2, AlertTriangle, MapPin, Inbox, Newspaper, UserPlus, FileText } from "lucide-react";
 import { PoolActivityChart } from "@/components/pool-activity-chart";
 import { resolveDashboardScopes, type DashboardScope } from "@/lib/dashboard/scope";
 import { PILOTAGE_BUCKETS, monthLabel } from "@/lib/dashboard/indicators";
@@ -15,7 +15,9 @@ import {
   loadItinerant,
   loadPilotageProvincial,
   loadPoolDetail,
+  loadSynthesisCounts,
 } from "@/lib/dashboard/data";
+import { loadActor, type SynthesisActor } from "@/lib/synthese/server";
 
 // Tableau de bord : une section par fonction du compte connecté, chacune
 // limitée au périmètre décidé par resolveDashboardScopes (session côté
@@ -73,6 +75,8 @@ export default async function DashboardPage({
   const user = session.user;
   const { poolId, inspecteurId } = await searchParams;
 
+  // Acteur relu en base, pour les compteurs de synthèses (mêmes règles de lecture que /syntheses).
+  const actor = await loadActor(user.id);
   const scopes = resolveDashboardScopes({
     id: user.id,
     organizationId: user.organizationId,
@@ -89,23 +93,48 @@ export default async function DashboardPage({
       )}
       {scopes.map((scope) => (
         <section key={`${scope.kind}:${scope.poolId ?? "org"}`} className="space-y-6">
-          <Section scope={scope} poolId={poolId ?? null} inspectorId={inspecteurId ?? null} />
+          <Section scope={scope} actor={actor} poolId={poolId ?? null} inspectorId={inspecteurId ?? null} />
         </section>
       ))}
     </div>
   );
 }
 
-async function Section({ scope, poolId, inspectorId }: { scope: DashboardScope; poolId: string | null; inspectorId: string | null }) {
+async function Section({
+  scope,
+  actor,
+  poolId,
+  inspectorId,
+}: {
+  scope: DashboardScope;
+  actor: SynthesisActor;
+  poolId: string | null;
+  inspectorId: string | null;
+}) {
   switch (scope.kind) {
     case "pilotage_provincial":
-      return <PilotageProvincial scope={scope} poolId={poolId} inspectorId={inspectorId} />;
+      return (
+        <>
+          <PilotageProvincial scope={scope} poolId={poolId} inspectorId={inspectorId} />
+          <SynthesesCard scope={scope} actor={actor} />
+        </>
+      );
     case "suivi_adjoint":
     case "exploitation_provinciale":
     case "exploitation_pool":
-      return <Exploitation scope={scope} />;
+      return (
+        <>
+          <Exploitation scope={scope} />
+          <SynthesesCard scope={scope} actor={actor} />
+        </>
+      );
     case "pilotage_pool":
-      return <PilotagePool scope={scope} inspectorId={inspectorId} />;
+      return (
+        <>
+          <PilotagePool scope={scope} inspectorId={inspectorId} />
+          <SynthesesCard scope={scope} actor={actor} />
+        </>
+      );
     case "ecoles_pool":
       return <EcolesPool scope={scope} />;
     case "itinerant":
@@ -128,6 +157,49 @@ async function Section({ scope, poolId, inspectorId }: { scope: DashboardScope; 
         </>
       );
   }
+}
+
+// ─── Rapports de synthèse ─────────────────────────────────────────────────
+
+// Compteurs adaptés à la fonction : l'IPP et ses adjoints valident, l'exploitant
+// IPP examine et rédige, le POOL rédige. Seules les synthèses lisibles comptent.
+async function SynthesesCard({ scope, actor }: { scope: DashboardScope; actor: SynthesisActor }) {
+  const c = await loadSynthesisCounts(scope, actor);
+  const validator = scope.kind === "pilotage_provincial" || scope.kind === "suivi_adjoint";
+  const cards = validator
+    ? [
+        { label: "Synthèses à valider", value: c.submitted, hint: "Soumises, décision attendue" },
+        { label: "Renvoyées pour correction", value: c.toFix },
+        { label: "Synthèses validées", value: c.validated },
+      ]
+    : scope.kind === "exploitation_provinciale"
+      ? [
+          { label: "Synthèses soumises à examiner", value: c.submitted, hint: "Renvoi pour correction possible" },
+          { label: "Mes brouillons", value: c.myDrafts },
+          { label: "Mes synthèses à corriger", value: c.myToFix },
+          { label: "Synthèses validées", value: c.validated },
+        ]
+      : [
+          { label: "Mes brouillons", value: c.myDrafts },
+          { label: "Mes synthèses à corriger", value: c.myToFix },
+          { label: "Synthèses soumises", value: c.submitted, hint: "En attente du niveau provincial" },
+          { label: "Synthèses validées", value: c.validated },
+        ];
+  return (
+    <Card>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-900">
+          Rapports de synthèse {scope.poolId ? "du POOL" : "de l'Inspection"} ({c.total} soumis au moins une fois)
+        </h2>
+        <ActionLink href="/syntheses">Ouvrir les synthèses</ActionLink>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((k) => (
+          <StatCard key={k.label} icon={FileText} label={k.label} value={k.value} hint={k.hint} />
+        ))}
+      </div>
+    </Card>
+  );
 }
 
 // ─── IPP : pilotage provincial ────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { ROLE_KEYS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
 import { type DashboardKind, type DashboardScope, isProvincialKind, scopeCoversPool } from "@/lib/dashboard/scope";
+import { listSyntheses, type SynthesisActor } from "@/lib/synthese/server";
 import {
   PILOTAGE_BUCKETS,
   POOL_EXPLOITATION_BUCKETS,
@@ -196,6 +197,28 @@ export async function loadExploitation(scope: DashboardScope, now = new Date()) 
       const s = reportScope(r);
       return { id: r.id, title: s.title, author: s.authorName, status: r.status.label, submittedAt: r.submittedAt };
     }),
+  };
+}
+
+// ─── Rapports de synthèse (exploitation et pilotage) ──────────────────────
+
+/**
+ * Compteurs de synthèses de la section : uniquement celles que le compte peut
+ * lire (règle canRead de src/lib/synthese, via listSyntheses), limitées au
+ * POOL de la section pour une vue de POOL.
+ */
+export async function loadSynthesisCounts(scope: DashboardScope, actor: SynthesisActor) {
+  assertKind(scope, "pilotage_provincial", "suivi_adjoint", "exploitation_provinciale", "pilotage_pool", "exploitation_pool");
+  if (actor.id !== scope.userId || actor.organizationId !== scope.organizationId) throw new Error("Acteur différent du périmètre.");
+  const rows = (await listSyntheses(actor)).filter((s) => scope.poolId === null || s.poolId === scope.poolId);
+  const mine = rows.filter((s) => s.authorId === actor.id);
+  return {
+    total: rows.filter((s) => s.status !== "BROUILLON").length,
+    myDrafts: mine.filter((s) => s.status === "BROUILLON").length,
+    myToFix: mine.filter((s) => s.status === "A_CORRIGER").length,
+    submitted: rows.filter((s) => s.status === "SOUMIS").length,
+    toFix: rows.filter((s) => s.status === "A_CORRIGER").length,
+    validated: rows.filter((s) => s.status === "VALIDE").length,
   };
 }
 

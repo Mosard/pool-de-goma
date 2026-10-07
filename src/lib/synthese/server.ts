@@ -259,8 +259,10 @@ export async function transitionSynthesis(actor: SynthesisActor, id: string, toS
           if (!s.number) {
             const scope = numberScopeCode(s.pool?.code ?? null);
             const year = now.getFullYear();
+            // Séquence commune à toutes les organisations pour ce code et cette année :
+            // le numéro est unique dans toute la base (« IPP » est partagé).
             const max = await tx.synthesis.aggregate({
-              where: { organizationId: s.organizationId, numberScope: scope, numberYear: year },
+              where: { numberScope: scope, numberYear: year },
               _max: { numberSeq: true },
             });
             const seq = (max._max.numberSeq ?? 0) + 1;
