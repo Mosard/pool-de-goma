@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireOfficialActor, requirePermission } from "@/lib/permissions";
+import { requireOfficialActor, requirePermission, usersHoldingPermission } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { notify } from "@/lib/notifications/dispatcher";
@@ -121,18 +121,14 @@ function uploadedFile(formData: FormData, name: string): File | null {
 
 /** Prévient les valideurs habilités (hors auteur, comptes démo et comptes inactifs). */
 async function notifyPublishers(organizationId: string, excludeUserId: string, title: string, body: string, contentId: string) {
-  const publishers = await prisma.user.findMany({
-    where: {
-      organizationId,
-      status: "ACTIVE",
-      isDemo: false,
-      id: { not: excludeUserId },
-      roles: { some: { role: { rolePermissions: { some: { permission: { key: PERMISSIONS.CONTENT_PUBLISH } } } } } },
-    },
-    select: { id: true },
+  // Détenteurs effectifs (fonctions et ajustements individuels compris).
+  const publishers = await usersHoldingPermission({
+    permissionKey: PERMISSIONS.CONTENT_PUBLISH,
+    organizationId,
+    where: { isDemo: false, excludeUserId },
   });
-  for (const p of publishers) {
-    await notify({ userId: p.id, event: "content.submitted", title, body, data: { contentId }, channels: ["IN_APP"] });
+  for (const userId of publishers) {
+    await notify({ userId, event: "content.submitted", title, body, data: { contentId }, channels: ["IN_APP"] });
   }
 }
 

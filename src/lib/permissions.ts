@@ -10,6 +10,7 @@ import {
 } from "@/lib/rbac-data";
 import { canGrantRole, hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
+import { applyAdjustments } from "@/lib/access-rules";
 
 // Fonctions pures réexportées (les composants client importent directement
 // permission-checks, ce module-ci lisant la base et les cookies).
@@ -40,18 +41,27 @@ async function loadRealAccess(userId: string) {
   const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, status: true } });
   if (!dbUser || dbUser.status !== "ACTIVE") return null;
 
-  const userRoles = await prisma.userRole.findMany({
-    where: { userId },
-    include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
-  });
+  const [userRoles, adjustments] = await Promise.all([
+    prisma.userRole.findMany({
+      where: { userId },
+      include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
+    }),
+    prisma.userPermission.findMany({ where: { userId }, select: { poolId: true, effect: true, permission: { select: { key: true } } } }),
+  ]);
 
   const roles: SessionRole[] = userRoles.map((ur) => ({ key: ur.role.key, label: ur.role.label, poolId: ur.poolId }));
-  const permissions: SessionPermission[] = [];
+  const fromRoles: SessionPermission[] = [];
   for (const ur of userRoles) {
     for (const rp of ur.role.rolePermissions) {
-      permissions.push({ permissionKey: rp.permission.key, poolId: ur.poolId, organizationId: dbUser.organizationId });
+      fromRoles.push({ permissionKey: rp.permission.key, poolId: ur.poolId, organizationId: dbUser.organizationId });
     }
   }
+  // Ajustements individuels (écran « Gérer les accès ») : retraits puis ajouts.
+  const permissions = applyAdjustments(
+    fromRoles,
+    adjustments.map((a) => ({ permissionKey: a.permission.key, poolId: a.poolId, effect: a.effect })),
+    dbUser.organizationId
+  );
   return { organizationId: dbUser.organizationId, roles, permissions };
 }
 
@@ -268,3 +278,38 @@ export async function getRoleLabels(): Promise<Record<string, string>> {
 }
 
 export { PERMISSIONS };
+
+/**
+ * Comptes qui détiennent EFFECTIVEMENT une permission pour ce POOL (ou pour
+ * l'organisation si poolId est vide) : fonctions, ajustements individuels
+ * (ajouts et retraits) et statut ACTIVE compris, droits réels (sans « Voir
+ * comme »). Sert aux notifications et à la recherche de valideurs.
+ */
+export async function usersHoldingPermission(params: {
+  permissionKey: string;
+  organizationId: string;
+  poolId?: string | null;
+  where?: { isDemo?: boolean; excludeUserId?: string };
+}): Promise<string[]> {
+  const poolFilter = params.poolId ? [{ poolId: null }, { poolId: params.poolId }] : [{ poolId: null }];
+  const candidates = await prisma.user.findMany({
+    where: {
+      organizationId: params.organizationId,
+      status: "ACTIVE",
+      ...(params.where?.isDemo !== undefined ? { isDemo: params.where.isDemo } : {}),
+      ...(params.where?.excludeUserId ? { id: { not: params.where.excludeUserId } } : {}),
+      OR: [
+        { roles: { some: { OR: poolFilter, role: { rolePermissions: { some: { permission: { key: params.permissionKey } } } } } } },
+        { permissionAdjustments: { some: { effect: "GRANT", OR: poolFilter, permission: { key: params.permissionKey } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  const holders: string[] = [];
+  for (const c of candidates) {
+    const { permissions } = await loadUserAccess(c.id, { viewMode: null });
+    const target = params.poolId ? { poolId: params.poolId, organizationId: params.organizationId } : undefined;
+    if (hasPermission(permissions, params.permissionKey, target)) holders.push(c.id);
+  }
+  return holders;
+}

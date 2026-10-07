@@ -226,6 +226,7 @@ model Pool {
   aiAnalyses      AiAnalysis[]
   forms           Form[]
   reports         Report[]
+  userPermissions UserPermission[]
 
   @@index([organizationId])
 }
@@ -256,6 +257,7 @@ model Permission {
   category String
 
   rolePermissions RolePermission[]
+  userPermissions UserPermission[]
 }
 
 model RolePermission {
@@ -279,6 +281,32 @@ model UserRole {
   createdAt DateTime       @default(now())
 
   @@unique([userId, roleId, poolId])
+  @@index([userId])
+}
+
+enum PermissionEffect {
+  GRANT // ajout par-dessus les fonctions
+  REVOKE // retrait d'une permission héritée d'une fonction
+}
+
+// Ajustement individuel des droits d'une personne, par-dessus ses fonctions
+// (écran « Gérer les accès », docs/ecran-gestion-acces.md). poolId vide :
+// valable sur tous les POOL. Sans ligne ici, les droits sont exactement ceux
+// des fonctions. L'historique complet est dans le journal d'audit.
+model UserPermission {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation("UserPermissionTarget", fields: [userId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  poolId       String?
+  pool         Pool?            @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  effect       PermissionEffect
+  grantedById  String?
+  grantedBy    User?            @relation("UserPermissionGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime         @default(now())
+
+  @@unique([userId, permissionId, poolId])
   @@index([userId])
 }
 
@@ -348,6 +376,8 @@ model User {
   aiAnalyses              AiAnalysis[]
   aiReactions             AiReaction[]
   formsAuthored           Form[]                 @relation("FormAuthor")
+  permissionAdjustments   UserPermission[]       @relation("UserPermissionTarget")
+  permissionAdjustmentsBy UserPermission[]       @relation("UserPermissionGrantor")
   reportsAuthored         Report[]               @relation("ReportAuthor")
 
   @@index([organizationId])

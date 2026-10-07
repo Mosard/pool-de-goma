@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { usersHoldingPermission } from "@/lib/permissions";
 import type { NotificationChannel } from "@prisma/client";
 import { inAppChannel } from "./channels/inApp";
 import { emailChannel } from "./channels/email";
@@ -74,26 +75,18 @@ export async function notifyUsersWithPermission(params: {
   body: string;
   data?: Record<string, unknown>;
 }) {
-  const poolFilter = params.poolId ? [{ poolId: null }, { poolId: params.poolId }] : [{ poolId: null }];
-
-  const userRoles = await prisma.userRole.findMany({
-    where: {
-      role: { rolePermissions: { some: { permission: { key: params.permissionKey } } } },
-      // Une permission à portée organisation (poolId: null) ne doit notifier
-      // que les détenteurs de la même organisation que la ressource
-      // concernée — sinon on notifierait le staff provincial de toutes les
-      // organisations à chaque rapport, quelle que soit l'organisation.
-      user: { organizationId: params.organizationId },
-      OR: poolFilter,
-    },
-    select: { userId: true },
-    distinct: ["userId"],
+  // Détenteurs effectifs : fonctions et ajustements individuels compris
+  // (même organisation que la ressource, comptes actifs seulement).
+  const holders = await usersHoldingPermission({
+    permissionKey: params.permissionKey,
+    organizationId: params.organizationId,
+    poolId: params.poolId ?? null,
   });
 
   await Promise.all(
-    userRoles.map((ur) =>
+    holders.map((userId) =>
       notify({
-        userId: ur.userId,
+        userId,
         event: params.event,
         title: params.title,
         body: params.body,
