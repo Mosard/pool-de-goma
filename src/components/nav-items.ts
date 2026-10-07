@@ -13,6 +13,8 @@ import {
   Landmark,
   Newspaper,
   Sparkles,
+  CalendarRange,
+  BarChart3,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
@@ -50,6 +52,15 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/affectations", label: "Affectations", icon: Share2, permission: PERMISSIONS.ASSIGNMENTS_MANAGE },
   { href: "/inspections", label: "Inspections & fiches", icon: ClipboardList },
   { href: "/rapports", label: "Rapports", icon: FileCheck2 },
+  // Plan et relevés d'activités, bordereau de transmission (A2, A3, A4, A6).
+  { href: "/fiches", label: "Fiches de période", icon: CalendarRange, permission: PERMISSIONS.INSPECTIONS_CONDUCT },
+  // Exploitation des fiches officielles : notes et statistiques par POOL, par fiche et par période.
+  {
+    href: "/exploitation",
+    label: "Exploitation",
+    icon: BarChart3,
+    permission: [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE],
+  },
   { href: "/inspecteurs", label: "Inspecteurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
   { href: "/comptes", label: "Demandes de compte", icon: UserPlus, permission: PERMISSIONS.ACCOUNTS_MANAGE },
   { href: "/publication", label: "Publication", icon: BadgeCheck, permission: PERMISSIONS.PUBLICATION_MANAGE },

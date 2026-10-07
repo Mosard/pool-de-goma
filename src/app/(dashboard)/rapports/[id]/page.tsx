@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +9,10 @@ import { getAvailableTransitions } from "@/lib/workflow";
 import { parseFieldsSchema } from "@/lib/form-schema";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermission } from "@/lib/permissions";
+import { FicheEditor } from "@/components/fiches/fiche-editor";
+import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope } from "@/lib/fiches/report-scope";
+import { resolveFicheDef } from "@/lib/fiches/defs/index";
+import { ficheData, workflowStatusById } from "@/lib/fiches/server";
 
 export default async function RapportDetailPage({
   params,
@@ -21,7 +26,7 @@ export default async function RapportDetailPage({
   const report = await prisma.report.findUnique({
     where: { id },
     include: {
-      status: true,
+      ...REPORT_SCOPE_INCLUDE,
       inspection: {
         include: {
           school: { include: { pool: true } },
@@ -37,46 +42,77 @@ export default async function RapportDetailPage({
   if (!report) notFound();
 
   const user = session.user;
-  const poolId = report.inspection.school.poolId;
-  const organizationId = report.inspection.school.pool.organizationId;
-  const canComment =
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId, organizationId }) ||
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId, organizationId }) ||
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId, organizationId });
+  const scope = reportScope(report);
+  const statuses = await workflowStatusById();
+  if (!canReadScope(user, scope)) notFound();
 
-  const transitions = await getAvailableTransitions(report.id, user.permissions, poolId, organizationId);
+  const target = { poolId: scope.poolId, organizationId: scope.organizationId };
+  const canComment =
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, target) ||
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, target) ||
+    hasPermission(user.permissions, PERMISSIONS.REPORTS_VALIDATE, target);
+
+  const allTransitions = await getAvailableTransitions(report.id, user.permissions, scope.poolId, scope.organizationId);
+  // « Resoumettre » appartient à l'auteur, depuis sa fiche.
+  const transitions = allTransitions.filter((t) => t.allowedPermissionKey !== PERMISSIONS.INSPECTIONS_CONDUCT || scope.authorId === user.id);
+
+  const form = report.form;
+  const def = form ? resolveFicheDef(form.formTemplate) : null;
+  const hasReservedPart = Boolean(def?.sections.some((s) => s.blocks.some((b) => (b.kind === "field" || b.kind === "signature") && b.notForAuthor)));
+  const editorMode = hasReservedPart && canComment && scope.authorId !== user.id ? "reserved" : "view";
+  const legacyForms = form ? (def ? [] : [form]) : (report.inspection?.forms ?? []);
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={report.inspection.school.name}
-        description={`Inspecteur : ${report.inspection.inspector.name}`}
+        title={scope.title}
+        description={[`Inspecteur : ${scope.authorName}`, scope.number].filter(Boolean).join(" · ")}
         actions={<Badge color="blue">{report.status.label}</Badge>}
       />
 
       <Card>
-        <h3 className="mb-2 text-sm font-semibold text-gray-900">Résumé</h3>
-        <p className="text-sm text-gray-700">{report.summary}</p>
-        {report.recommendations && (
+        {form ? (
+          <p className="text-sm text-gray-700">
+            Fiche {form.formTemplate.code} (version {form.formTemplate.version})
+            {form.inspectionId && (
+              <>
+                {" · "}
+                <Link href={`/inspections/${form.inspectionId}`} className="font-medium text-blue-600 hover:underline">
+                  Visite de l&apos;école
+                </Link>
+              </>
+            )}
+          </p>
+        ) : (
           <>
-            <h3 className="mb-2 mt-4 text-sm font-semibold text-gray-900">Recommandations</h3>
-            <p className="text-sm text-gray-700">{report.recommendations}</p>
+            <h3 className="mb-2 text-sm font-semibold text-gray-900">Résumé</h3>
+            <p className="text-sm text-gray-700">{report.summary}</p>
+            {report.recommendations && (
+              <>
+                <h3 className="mb-2 mt-4 text-sm font-semibold text-gray-900">Recommandations</h3>
+                <p className="text-sm text-gray-700">{report.recommendations}</p>
+              </>
+            )}
           </>
         )}
         {transitions.length > 0 && <TransitionActions reportId={report.id} transitions={transitions} />}
       </Card>
 
-      {report.inspection.forms.map((form) => {
-        const fields = parseFieldsSchema(form.formTemplate.fieldsSchema);
-        const data = form.data as Record<string, string>;
+      {form && def && (
+        <FicheEditor formId={form.id} userId={user.id} def={def} initial={ficheData(form)} serverUpdatedAt={form.updatedAt.toISOString()} mode={editorMode} />
+      )}
+
+      {legacyForms.map((f) => {
+        const fields = parseFieldsSchema(f.formTemplate.fieldsSchema);
+        const data = f.data as Record<string, string>;
         return (
-          <Card key={form.id}>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">{form.formTemplate.title}</h3>
+          <Card key={f.id}>
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">{f.formTemplate.title}</h3>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-              {fields.map((f) => (
-                <div key={f.name}>
-                  <dt className="text-gray-500">{f.label}</dt>
-                  <dd className="font-medium text-gray-900">{data[f.name] || "—"}</dd>
+              {fields.map((field) => (
+                <div key={field.name}>
+                  <dt className="text-gray-500">{field.label}</dt>
+                  <dd className="font-medium text-gray-900">{data[field.name] || "—"}</dd>
                 </div>
               ))}
             </dl>
@@ -92,7 +128,7 @@ export default async function RapportDetailPage({
           <ul className="space-y-2 text-sm text-gray-600">
             {report.statusHistory.map((h) => (
               <li key={h.id}>
-                {h.changedBy.name} — {new Date(h.createdAt).toLocaleString("fr-FR")}
+                {h.changedBy.name} — {statuses.get(h.toStatusId)?.label} — {new Date(h.createdAt).toLocaleString("fr-FR")}
                 {h.comment && <span className="text-gray-400"> — {h.comment}</span>}
               </li>
             ))}

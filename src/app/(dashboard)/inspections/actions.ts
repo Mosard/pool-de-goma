@@ -4,12 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { inspectionSchema, reportSchema } from "@/lib/validations";
-import { demoRefusal, hasPermission, isSuperAdmin, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
-import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
-import { logAudit } from "@/lib/audit";
-import { getWorkflowStatusByKey } from "@/lib/workflow";
-import { notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
+import { inspectionSchema } from "@/lib/validations";
+import { demoRefusal, hasPermission, isSuperAdmin, requirePermission } from "@/lib/permissions";
+import { PERMISSIONS } from "@/lib/rbac-data";
 
 export type ActionState = {
   errors?: Record<string, string>;
@@ -74,117 +71,4 @@ export async function createInspectionAction(
 
   revalidatePath("/inspections");
   redirect(`/inspections/${inspection.id}`);
-}
-
-export async function saveFicheAction(inspectionId: string, formTemplateId: string, formData: FormData) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-
-  const inspection = await prisma.inspection.findUnique({
-    where: { id: inspectionId },
-    include: { school: { include: { pool: true } } },
-  });
-  if (!inspection) return;
-  await requireOfficialActorUnlessDemoTarget(session.user.id, inspection.school.isDemo);
-
-  if (inspection.inspectorId !== session.user.id) {
-    await requirePermission(session.user.id, PERMISSIONS.ASSIGNMENTS_MANAGE, {
-      poolId: inspection.school.poolId,
-      organizationId: inspection.school.pool.organizationId,
-    });
-  }
-
-  const template = await prisma.formTemplate.findUnique({ where: { id: formTemplateId } });
-  if (!template) return;
-
-  const fields = Array.isArray(template.fieldsSchema) ? (template.fieldsSchema as { name: string }[]) : [];
-  const data: Record<string, string> = {};
-  for (const field of fields) {
-    data[field.name] = String(formData.get(field.name) ?? "");
-  }
-
-  await prisma.form.upsert({
-    where: { inspectionId_formTemplateId: { inspectionId, formTemplateId } },
-    update: { data, completed: true },
-    create: { inspectionId, formTemplateId, data, completed: true },
-  });
-
-  if (inspection.status === "PLANIFIEE") {
-    await prisma.inspection.update({ where: { id: inspectionId }, data: { status: "EN_COURS" } });
-  }
-
-  revalidatePath(`/inspections/${inspectionId}`);
-}
-
-export async function submitReportAction(
-  inspectionId: string,
-  _prevState: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-
-  const inspection = await prisma.inspection.findUnique({
-    where: { id: inspectionId },
-    include: { school: { include: { pool: true } } },
-  });
-  if (!inspection || inspection.inspectorId !== session.user.id) {
-    return { formError: "Action non autorisée." };
-  }
-  const refusal = await demoRefusal(session.user.id, inspection.school.isDemo);
-  if (refusal) return { formError: refusal };
-
-  const parsed = reportSchema.safeParse({
-    summary: formData.get("summary"),
-    recommendations: formData.get("recommendations"),
-  });
-  if (!parsed.success) {
-    return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
-  }
-
-  const soumisStatus = await getWorkflowStatusByKey(WORKFLOW_STATUS_KEYS.SOUMIS);
-
-  await prisma.report.upsert({
-    where: { inspectionId },
-    update: {
-      summary: parsed.data.summary,
-      recommendations: parsed.data.recommendations || null,
-      statusId: soumisStatus.id,
-      submittedAt: new Date(),
-    },
-    create: {
-      inspectionId,
-      summary: parsed.data.summary,
-      recommendations: parsed.data.recommendations || null,
-      statusId: soumisStatus.id,
-      submittedAt: new Date(),
-    },
-  });
-
-  await prisma.inspection.update({
-    where: { id: inspectionId },
-    data: { status: "RAPPORT_SOUMIS", completedAt: new Date() },
-  });
-
-  await logAudit({
-    actorId: session.user.id,
-    organizationId: inspection.school.pool.organizationId,
-    action: "report.submit",
-    entityType: "Report",
-    entityId: inspectionId,
-    newValue: { status: WORKFLOW_STATUS_KEYS.SOUMIS },
-  });
-
-  await notifyUsersWithPermission({
-    permissionKey: PERMISSIONS.REPORTS_REVIEW_POOL,
-    poolId: inspection.school.poolId,
-    organizationId: inspection.school.pool.organizationId,
-    event: "report.submitted",
-    title: `Nouveau rapport — ${inspection.school.name}`,
-    body: "Un rapport d'inspection a été soumis et attend d'être exploité.",
-  });
-
-  revalidatePath(`/inspections/${inspectionId}`);
-  revalidatePath("/rapports");
-  redirect(`/inspections/${inspectionId}`);
 }

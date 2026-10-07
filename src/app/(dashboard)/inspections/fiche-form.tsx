@@ -2,7 +2,6 @@
 
 import { Button, Card, Input, Label, Select, Textarea, Badge } from "@/components/ui";
 import { parseFieldsSchema } from "@/lib/form-schema";
-import { saveFicheAction } from "./actions";
 
 type TemplateProp = {
   id: string;
@@ -12,20 +11,20 @@ type TemplateProp = {
 };
 
 export function FicheForm({
-  inspectionId,
+  action,
   template,
   existingData,
   completed,
   readOnly,
 }: {
-  inspectionId: string;
+  /** Action d'enregistrement (fiches simulées : saveLegacyFicheAction liée à la fiche). */
+  action: (formData: FormData) => void | Promise<void>;
   template: TemplateProp;
   existingData?: Record<string, string>;
   completed: boolean;
   readOnly: boolean;
 }) {
   const fields = parseFieldsSchema(template.fieldsSchema);
-  const action = saveFicheAction.bind(null, inspectionId, template.id);
 
   return (
     <Card>
