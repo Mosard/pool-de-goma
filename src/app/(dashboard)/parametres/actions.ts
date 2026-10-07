@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { poolSchema, functionSchema } from "@/lib/validations";
-import { demoRefusal, requireOfficialActor, requirePermission } from "@/lib/permissions";
+import { demoRefusal, hasPermissionAnyPool, loadUserAccess, requireOfficialActor, requirePermission } from "@/lib/permissions";
 import { PERMISSIONS, PERMISSION_CATALOG, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
@@ -127,6 +127,12 @@ export async function createFunctionAction(
 
   const validKeys = new Set<string>(PERMISSION_CATALOG.map((p) => p.key));
   const permissionKeys = formData.getAll("permissionKeys").filter((k): k is string => typeof k === "string" && validKeys.has(k));
+  // Jamais au-dessus de soi : une fonction ne porte que des permissions que
+  // son créateur détient lui-même (sinon elle servirait à en distribuer plus).
+  const { permissions: actorPermissions } = await loadUserAccess(session.user.id);
+  if (permissionKeys.some((k) => !hasPermissionAnyPool(actorPermissions, k))) {
+    return { formError: "Vous ne pouvez inclure dans une fonction que des permissions que vous détenez vous-même." };
+  }
 
   const key = slugifyRoleKey(parsed.data.label);
   if (!key) return { errors: { label: "Nom invalide." } };

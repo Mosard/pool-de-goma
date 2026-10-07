@@ -11,6 +11,7 @@ import {
   requireOfficialActorUnlessDemoTarget,
   requirePermission,
   requirePublicationAuthority,
+  requireRoleGrant,
   ForbiddenError,
   hasPermission,
   isChiefOf,
@@ -129,6 +130,17 @@ export async function updatePoolProfileAction(
   return { success: true };
 }
 
+/** Refus d'attribution (requireRoleGrant) sous forme de message de formulaire, sinon null. */
+async function grantRefusal(actorId: string, params: Parameters<typeof requireRoleGrant>[1]): Promise<string | null> {
+  try {
+    await requireRoleGrant(actorId, params);
+    return null;
+  } catch (e) {
+    if (e instanceof ForbiddenError) return e.message;
+    throw e;
+  }
+}
+
 export async function designateChiefAction(
   poolId: string,
   _prevState: PoolAdminFormState,
@@ -157,6 +169,14 @@ export async function designateChiefAction(
   if (!candidate) {
     return { errors: { userId: "Choisissez un inspecteur actif affecté à ce POOL." } };
   }
+
+  const refusal = await grantRefusal(actor.id, {
+    roleKey: ROLE_KEYS.CHEF_POOL,
+    poolId: pool.id,
+    organizationId: actor.organizationId,
+    targetUserId: candidate.id,
+  });
+  if (refusal) return { formError: refusal };
 
   const chiefRole = await prisma.roleDefinition.findUnique({ where: { key: ROLE_KEYS.CHEF_POOL } });
   if (!chiefRole) return { formError: "La fonction « Chef de pool » n'existe pas dans le référentiel." };
@@ -195,6 +215,7 @@ export async function removeChiefAction(poolId: string) {
 
   const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return;
+  await requireRoleGrant(actor.id, { roleKey: ROLE_KEYS.CHEF_POOL, poolId: pool.id, organizationId: actor.organizationId });
 
   const chiefRole = await prisma.roleDefinition.findUnique({ where: { key: ROLE_KEYS.CHEF_POOL } });
   if (!chiefRole) return;
@@ -230,8 +251,8 @@ export async function addPoolRoleAction(
   const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return { formError: "POOL introuvable." };
 
-  // Gestion des comptes : toute fonction de POOL. Chef de CE POOL : rattache
-  // seulement des inspecteurs (comptes déjà validés).
+  // Gestion des comptes, ou chef de CE POOL ; la fonction précise est
+  // ensuite contrôlée par requireRoleGrant (le chef : fonctions d'appui).
   const access = await loadUserAccess(actor.id);
   const canManage = hasPermission(access.permissions, PERMISSIONS.USERS_MANAGE);
   if (!canManage && !isChiefOf(access.roles, pool.id)) throw new ForbiddenError();
@@ -241,14 +262,18 @@ export async function addPoolRoleAction(
   if (!role || role.scope !== "POOL" || role.key === ROLE_KEYS.CHEF_POOL) {
     return { errors: { roleId: "Choisissez une fonction de POOL (le chef se nomme séparément)." } };
   }
-  if (!canManage && role.key !== ROLE_KEYS.INSPECTEUR) {
-    return { errors: { roleId: "Le chef de POOL rattache uniquement des inspecteurs à son POOL." } };
-  }
   const user = await prisma.user.findFirst({
     where: { id: String(formData.get("userId") ?? ""), organizationId: actor.organizationId, status: "ACTIVE", isDemo: false },
     select: { id: true },
   });
   if (!user) return { errors: { userId: "Choisissez un compte actif." } };
+  const refusal = await grantRefusal(actor.id, {
+    roleKey: role.key,
+    poolId: pool.id,
+    organizationId: actor.organizationId,
+    targetUserId: user.id,
+  });
+  if (refusal) return { formError: refusal };
 
   const exists = await prisma.userRole.findFirst({ where: { userId: user.id, roleId: role.id, poolId: pool.id } });
   if (exists) return { formError: "Ce compte détient déjà cette fonction dans ce POOL." };
@@ -276,10 +301,13 @@ export async function addPoolRoleAction(
  */
 export async function removePoolRoleAction(poolId: string, userRoleId: string) {
   const actor = await currentActor();
-  await requirePermission(actor.id, PERMISSIONS.USERS_MANAGE);
-
   const pool = await findPool(poolId, actor.organizationId);
   if (!pool) return;
+
+  const access = await loadUserAccess(actor.id);
+  if (!hasPermission(access.permissions, PERMISSIONS.USERS_MANAGE) && !isChiefOf(access.roles, pool.id)) {
+    throw new ForbiddenError();
+  }
 
   const userRole = await prisma.userRole.findFirst({
     where: { id: userRoleId, poolId: pool.id },
@@ -287,6 +315,12 @@ export async function removePoolRoleAction(poolId: string, userRoleId: string) {
   });
   if (!userRole || userRole.user.organizationId !== actor.organizationId) return;
   await requireOfficialActorUnlessDemoTarget(actor.id, userRole.user.isDemo);
+  await requireRoleGrant(actor.id, {
+    roleKey: userRole.role.key,
+    poolId: pool.id,
+    organizationId: actor.organizationId,
+    targetUserId: userRole.user.id,
+  });
 
   const userId = userRole.user.id;
   let endedAssignments = 0;

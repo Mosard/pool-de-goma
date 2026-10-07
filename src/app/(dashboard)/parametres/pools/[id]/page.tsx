@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Alert, Avatar, Badge, Card, PageHeader } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Globe, Undo2 } from "lucide-react";
-import { hasPermissionAnyPool, isChiefOf } from "@/lib/permissions";
+import { canGrantRole, hasPermissionAnyPool, isChiefOf } from "@/lib/permissions";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { LEGACY_POOL_PAGES } from "@/components/homepage/homepage-data";
 import { AddRoleForm, ChiefForm, PoolProfileForm } from "./pool-admin-forms";
@@ -150,7 +150,10 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
     else publicChiefStatus = `${chief.name}, avec un visuel neutre (photo non publiée).`;
   }
   const fmt = (d: Date) => d.toLocaleString("fr-FR", { timeZone: "Africa/Lubumbashi" });
-  const addableRoles = canManageStaff ? poolRoles : poolRoles.filter((r) => r.key === ROLE_KEYS.INSPECTEUR);
+  // Fonctions que ce compte peut donner ou retirer ici (ROLE_GRANTORS) ; jamais les siennes.
+  const canGrantHere = (roleKey: string) => canGrantRole(user.roles, roleKey, pool.id);
+  const addableRoles = poolRoles.filter((r) => canGrantHere(r.key));
+  const canNameChief = canManageStaff && canGrantHere(ROLE_KEYS.CHEF_POOL);
   const hasDemo = Boolean(pool.slug && DEMO_POOL_SHOWCASES[pool.slug]);
 
   return (
@@ -287,7 +290,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
             « Chef de POOL » de la page publique, sous réserve de son accord et de l&apos;autorisation de publication.
           </p>
         </div>
-        {canManageStaff && isOfficial ? (
+        {canNameChief && isOfficial ? (
           <div className="space-y-3">
             <ChiefForm poolId={pool.id} candidates={candidates} currentChiefId={chief?.id ?? null} />
             {holders.length > 0 && (
@@ -345,7 +348,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
                       {roles.map((r) => (
                         <li key={r.userRoleId} className="flex items-center gap-2 text-gray-700">
                           {r.label}
-                          {canManageStaff && (isOfficial || u.isDemo) && r.key !== ROLE_KEYS.CHEF_POOL && (
+                          {canGrantHere(r.key) && u.id !== user.id && (isOfficial || u.isDemo) && r.key !== ROLE_KEYS.CHEF_POOL && (
                             <ConfirmButton
                               label="Retirer"
                               confirmLabel="Retirer la fonction"
@@ -389,12 +392,13 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
             </tbody>
           </table>
         )}
-        {(canManageStaff || isChief) && isOfficial && (
+        {addableRoles.length > 0 && isOfficial && (
           <div className="border-t border-gray-100 pt-4">
             {!canManageStaff && (
               <p className="mb-2 text-xs text-gray-500">
-                Rattachez à votre POOL un inspecteur dont le compte a déjà été validé par l&apos;IPP ou
-                l&apos;informaticien.
+                En tant que chef de POOL, vous attribuez les fonctions d&apos;appui (exploitant, secrétaire, agent) à
+                des comptes déjà validés. Les inspecteurs sont rattachés par l&apos;IPP, l&apos;informaticien ou le
+                Super Admin.
               </p>
             )}
             <AddRoleForm poolId={pool.id} users={activeUsers} roles={addableRoles} />

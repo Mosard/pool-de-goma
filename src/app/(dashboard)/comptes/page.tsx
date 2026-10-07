@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Alert, Card, PageHeader, Badge, EmptyState } from "@/components/ui";
 import { PERMISSIONS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
-import { hasPermissionAnyPool, isDemoActor } from "@/lib/permissions";
+import { canGrantRole, hasPermissionAnyPool, isDemoActor } from "@/lib/permissions";
 import { isDemoEmail } from "@/lib/accounts";
 import { RequestReview } from "./request-review";
 
@@ -13,7 +13,7 @@ export default async function ComptesPage() {
     redirect("/dashboard");
   }
 
-  const [requests, roles, pools, actorIsDemo] = await Promise.all([
+  const [requests, allRoles, pools, actorIsDemo] = await Promise.all([
     prisma.accountRequest.findMany({
       where: { organizationId: session.user.organizationId },
       orderBy: { createdAt: "desc" },
@@ -32,6 +32,9 @@ export default async function ComptesPage() {
     }),
     isDemoActor(session.user.id),
   ]);
+
+  // Seules les fonctions que ce compte peut attribuer (ROLE_GRANTORS).
+  const roles = allRoles.filter((r) => canGrantRole(session.user.roles, r.key, null));
 
   const pending = requests.filter((r) => r.status === "PENDING");
   const history = requests.filter((r) => r.status !== "PENDING");

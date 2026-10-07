@@ -1,7 +1,7 @@
 // Vérifications PURES sur des permissions déjà chargées (session) : sans base
 // ni cookies, donc importables par les composants client (menus).
 
-import type { PermissionKey } from "@/lib/rbac-data";
+import { CUSTOM_ROLE_GRANTORS, ROLE_GRANTORS, ROLE_KEYS, type PermissionKey, type RoleKey } from "@/lib/rbac-data";
 
 export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string };
 export type SessionRole = { key: string; label: string; poolId: string | null };
@@ -39,6 +39,20 @@ export function hasPermission(
 /** Détient la fonction de chef de CE POOL (rôles effectifs, mode « voir comme » compris). */
 export function isChiefOf(roles: SessionRole[], poolId: string): boolean {
   return roles.some((r) => r.key === "chef_pool" && r.poolId === poolId);
+}
+
+/**
+ * Peut attribuer ou retirer la fonction `roleKey` (dans `poolId` pour une
+ * fonction de POOL), d'après ROLE_GRANTORS et les rôles effectifs de
+ * l'acteur. Le chef de POOL n'agit que dans son propre POOL.
+ */
+export function canGrantRole(actorRoles: SessionRole[], roleKey: string, poolId: string | null): boolean {
+  const grantors = Object.hasOwn(ROLE_GRANTORS, roleKey) ? ROLE_GRANTORS[roleKey as RoleKey] : CUSTOM_ROLE_GRANTORS;
+  return actorRoles.some((r) => {
+    if (!grantors.includes(r.key as RoleKey)) return false;
+    if (r.key === ROLE_KEYS.CHEF_POOL) return poolId !== null && r.poolId === poolId;
+    return true;
+  });
 }
 
 /** Portée organisation : vrai si l'utilisateur détient la permission pour au moins un pool, quel qu'il soit (toujours dans sa propre organisation). */

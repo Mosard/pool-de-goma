@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, Badge, Select } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
-import { hasPermissionAnyPool } from "@/lib/permissions";
+import { canGrantRole, hasPermissionAnyPool } from "@/lib/permissions";
 import { toggleUserStatusAction } from "./actions";
 import { ReissueActivation } from "./reissue-activation";
 
@@ -109,10 +109,14 @@ export default async function InspecteursPage({
                   </Badge>
                 </td>
                 <td className="px-6 py-3 text-right align-top">
-                  {u.status === "PENDING" ? (
+                  {/* Au-dessus de son niveau (ROLE_GRANTORS) : ni suspension ni lien d'accès. */}
+                  {u.id !== user.id && !u.roles.every((r) => canGrantRole(user.roles, r.role.key, r.poolId)) ? (
+                    <span className="text-xs text-gray-400">Hors de votre niveau</span>
+                  ) : u.status === "PENDING" ? (
                     <ReissueActivation userId={u.id} status={u.status} />
                   ) : (
                   <div className="flex flex-col items-end gap-2">
+                  {u.id !== user.id && (
                   <ConfirmButton
                     label={u.status === "ACTIVE" ? "Suspendre" : "Activer"}
                     confirmLabel={u.status === "ACTIVE" ? "Suspendre" : "Activer"}
@@ -120,6 +124,7 @@ export default async function InspecteursPage({
                     className="!min-h-0 px-3 py-1.5 text-xs"
                     formAction={toggleUserStatusAction.bind(null, u.id)}
                   />
+                  )}
                   {u.status === "ACTIVE" && <ReissueActivation userId={u.id} status={u.status} />}
                   </div>
                   )}

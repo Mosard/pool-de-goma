@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { userSchema } from "@/lib/validations";
-import { requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
+import { requireAuthorityOverAccount, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
 import { ASSIGNMENT_END_REASONS, PERMISSIONS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
@@ -110,6 +110,7 @@ export async function toggleUserStatusAction(userId: string) {
   if (!user || user.organizationId !== session.user.organizationId) return;
 
   await requireOfficialActorUnlessDemoTarget(session.user.id, user.isDemo);
+  await requireAuthorityOverAccount(session.user.id, { targetUserId: user.id, organizationId: user.organizationId });
   // Un compte en attente s'active uniquement par son titulaire (lien
   // d'activation), jamais par un basculement administratif.
   if (user.status === "PENDING") return;

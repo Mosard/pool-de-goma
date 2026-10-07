@@ -1,7 +1,14 @@
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ForbiddenError, isDemoActor, requireOfficialActorUnlessDemoTarget, requirePermission } from "@/lib/permissions";
+import {
+  ForbiddenError,
+  isDemoActor,
+  requireOfficialActorUnlessDemoTarget,
+  requireAuthorityOverAccount,
+  requirePermission,
+  requireRoleGrant,
+} from "@/lib/permissions";
 import { PERMISSIONS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { emailChannel } from "@/lib/notifications/channels/email";
@@ -195,7 +202,7 @@ async function requireOfficialForRealAccount(actorId: string, targetIsDemo: bool
  * La fonction de chef de POOL ne s'attribue que par nomination (un seul chef
  * par POOL, inspecteur du POOL) : jamais à la création d'un compte.
  */
-async function resolveRoleAndPool(roleId: string, poolId: string | null, organizationId: string) {
+async function resolveRoleAndPool(actorId: string, roleId: string, poolId: string | null, organizationId: string) {
   const role = roleId ? await prisma.roleDefinition.findUnique({ where: { id: roleId } }) : null;
   if (!role) throw new AccountError("Choisissez une fonction valide pour ce compte.");
   if (RESTRICTED_ROLE_KEYS.includes(role.key)) {
@@ -214,6 +221,12 @@ async function resolveRoleAndPool(roleId: string, poolId: string | null, organiz
   if (role.scope === "POOL" && !pool) {
     throw new AccountError(`La fonction « ${role.label} » exige un rattachement à un POOL.`);
   }
+  // Qui peut donner cette fonction (ROLE_GRANTORS).
+  await requireRoleGrant(actorId, {
+    roleKey: role.key,
+    poolId: role.scope === "POOL" ? pool!.id : null,
+    organizationId,
+  });
   return { role, pool };
 }
 
@@ -305,7 +318,7 @@ export async function approveAccountRequest(params: {
   const isDemo = isDemoEmail(email);
   await requireOfficialForRealAccount(params.actorId, isDemo);
 
-  const { role, pool } = await resolveRoleAndPool(params.roleId, params.poolId, params.organizationId);
+  const { role, pool } = await resolveRoleAndPool(params.actorId, params.roleId, params.poolId, params.organizationId);
 
   // Chef de POOL (décision de l'Inspection) : un inspecteur du POOL nommé à
   // cette fonction, un seul chef à la fois. On ne remplace jamais un chef
@@ -318,8 +331,9 @@ export async function approveAccountRequest(params: {
     }
     try {
       await requirePermission(params.actorId, PERMISSIONS.USERS_MANAGE);
+      await requireRoleGrant(params.actorId, { roleKey: ROLE_KEYS.CHEF_POOL, poolId: pool.id, organizationId: params.organizationId });
     } catch (e) {
-      if (e instanceof ForbiddenError) throw new AccountError("Nommer un chef de POOL demande le droit de gérer les comptes.");
+      if (e instanceof ForbiddenError) throw new AccountError("Nommer un chef de POOL est réservé à l'IPP, à l'informaticien et au Super Admin.");
       throw e;
     }
     const chiefRole = await prisma.roleDefinition.findUnique({ where: { key: ROLE_KEYS.CHEF_POOL } });
@@ -484,7 +498,7 @@ export async function createAccount(params: {
   if (actorIsDemo && !isDemoEmail(email)) throw new AccountError(DEMO_ACCOUNT_REFUSAL);
   const isDemo = actorIsDemo || isDemoEmail(email);
 
-  const { role, pool } = await resolveRoleAndPool(params.roleId, params.poolId, params.organizationId);
+  const { role, pool } = await resolveRoleAndPool(params.actorId, params.roleId, params.poolId, params.organizationId);
 
   if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
     throw new AccountError("Cette adresse e-mail est déjà utilisée.");
@@ -549,6 +563,11 @@ export async function issueAccessLink(params: {
   const user = await prisma.user.findUnique({ where: { id: params.userId } });
   if (!user || user.organizationId !== params.organizationId) throw new AccountError("Compte introuvable.");
   await requireOfficialForRealAccount(params.actorId, user.isDemo);
+  await requireAuthorityOverAccount(params.actorId, {
+    targetUserId: user.id,
+    organizationId: params.organizationId,
+    allowSelf: true,
+  });
   if (user.status === "SUSPENDED" || user.status === "DISABLED") {
     throw new AccountError("Ce compte est suspendu : réactivez-le d'abord.");
   }

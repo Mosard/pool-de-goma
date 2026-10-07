@@ -8,12 +8,12 @@ import {
   VIEW_MODE_HOLDER_ROLE_KEYS,
   type PermissionKey,
 } from "@/lib/rbac-data";
-import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
+import { canGrantRole, hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
 
 // Fonctions pures réexportées (les composants client importent directement
 // permission-checks, ce module-ci lisant la base et les cookies).
-export { hasPermission, hasPermissionAnyPool, isChiefOf, poolsWithPermission } from "@/lib/permission-checks";
+export { canGrantRole, hasPermission, hasPermissionAnyPool, isChiefOf, poolsWithPermission } from "@/lib/permission-checks";
 export type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 
 export class ForbiddenError extends Error {
@@ -191,6 +191,64 @@ export async function requirePublicationAuthority(userId: string): Promise<void>
     !roles.some((r) => PUBLICATION_AUTHORITY_ROLE_KEYS.includes(r.key))
   ) {
     throw new ForbiddenError("Seuls l'IPP, l'informaticien et le Super Admin peuvent autoriser une publication.");
+  }
+}
+
+/**
+ * Attribuer ou retirer une fonction (décision du 2026-10-07) : selon
+ * ROLE_GRANTORS et les rôles effectifs de l'acteur, jamais sur ses propres
+ * fonctions, jamais une fonction réservée. Une fonction créée depuis
+ * Paramètres ne s'attribue que si l'acteur détient chacune de ses
+ * permissions : on ne donne jamais plus de droits qu'on n'en a.
+ */
+export async function requireRoleGrant(
+  actorId: string,
+  params: { roleKey: string; poolId: string | null; organizationId: string; targetUserId?: string | null }
+): Promise<void> {
+  if (params.targetUserId && params.targetUserId === actorId) {
+    throw new ForbiddenError("Vous ne pouvez pas modifier vos propres fonctions : demandez-le à un autre responsable habilité.");
+  }
+  const role = await prisma.roleDefinition.findUnique({
+    where: { key: params.roleKey },
+    include: { rolePermissions: { include: { permission: true } } },
+  });
+  const label = role?.label ?? params.roleKey;
+  const refusal = new ForbiddenError(`Vous n'êtes pas habilité à attribuer ou retirer la fonction « ${label} ».`);
+  if (!role || RESTRICTED_ROLE_KEYS.includes(role.key)) throw refusal;
+
+  const { roles, permissions } = await loadUserAccess(actorId);
+  if (!canGrantRole(roles, role.key, params.poolId)) throw refusal;
+  if (!role.isSystem) {
+    const scope = { poolId: params.poolId, organizationId: params.organizationId };
+    if (!role.rolePermissions.every((rp) => hasPermission(permissions, rp.permission.key, scope))) throw refusal;
+  }
+}
+
+/**
+ * Agir sur l'accès d'un compte (suspendre, remettre un lien de mot de passe) :
+ * seulement si l'acteur pourrait attribuer CHACUNE de ses fonctions — sans
+ * quoi l'informaticien pourrait, par exemple, prendre la main sur le compte
+ * de l'IPP. `allowSelf` : action permise sur son propre compte.
+ */
+export async function requireAuthorityOverAccount(
+  actorId: string,
+  params: { targetUserId: string; organizationId: string; allowSelf?: boolean }
+): Promise<void> {
+  if (params.targetUserId === actorId) {
+    if (params.allowSelf) return;
+    throw new ForbiddenError("Vous ne pouvez pas faire cette action sur votre propre compte.");
+  }
+  const targetRoles = await prisma.userRole.findMany({
+    where: { userId: params.targetUserId },
+    select: { poolId: true, role: { select: { key: true, label: true } } },
+  });
+  for (const tr of targetRoles) {
+    try {
+      await requireRoleGrant(actorId, { roleKey: tr.role.key, poolId: tr.poolId, organizationId: params.organizationId });
+    } catch (e) {
+      if (!(e instanceof ForbiddenError)) throw e;
+      throw new ForbiddenError(`Ce compte exerce la fonction « ${tr.role.label} », qui dépasse votre niveau d'habilitation.`);
+    }
   }
 }
 

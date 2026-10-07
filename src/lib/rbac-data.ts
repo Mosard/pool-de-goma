@@ -110,6 +110,32 @@ export const PUBLICATION_AUTHORITY_ROLE_KEYS: readonly string[] = [
   ROLE_KEYS.SUPER_ADMIN,
 ];
 
+// Qui peut attribuer (et retirer) chaque fonction — décision du 2026-10-07 :
+// seuls l'IPP, l'informaticien, le Super Admin et, selon le cas, le chef du
+// POOL concerné donnent des accès. Les fonctions provinciales sensibles (IPA,
+// informaticien) relèvent de l'IPP ; la fonction d'IPP, du seul Super Admin.
+// Le chef de POOL n'attribue que les fonctions d'appui, et seulement dans son
+// propre POOL (voir canGrantRole). Liste vide : jamais depuis l'application.
+const PROVINCIAL_GRANTORS: readonly RoleKey[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN];
+const POOL_SUPPORT_GRANTORS: readonly RoleKey[] = [...PROVINCIAL_GRANTORS, ROLE_KEYS.CHEF_POOL];
+export const ROLE_GRANTORS: Readonly<Record<RoleKey, readonly RoleKey[]>> = {
+  [ROLE_KEYS.SUPER_ADMIN]: [],
+  [ROLE_KEYS.IPP]: [ROLE_KEYS.SUPER_ADMIN],
+  [ROLE_KEYS.IPA]: [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN],
+  [ROLE_KEYS.INFORMATICIEN]: [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN],
+  [ROLE_KEYS.EXPLOITANT_IPP]: PROVINCIAL_GRANTORS,
+  [ROLE_KEYS.AGENT_IPP]: PROVINCIAL_GRANTORS,
+  [ROLE_KEYS.CHARGE_MEDIAS]: PROVINCIAL_GRANTORS,
+  [ROLE_KEYS.INSPECTEUR]: PROVINCIAL_GRANTORS,
+  [ROLE_KEYS.CHEF_POOL]: PROVINCIAL_GRANTORS,
+  [ROLE_KEYS.EXPLOITANT_POOL]: POOL_SUPPORT_GRANTORS,
+  [ROLE_KEYS.SECRETAIRE_POOL]: POOL_SUPPORT_GRANTORS,
+  [ROLE_KEYS.AGENT_POOL]: POOL_SUPPORT_GRANTORS,
+};
+// Fonctions créées depuis Paramètres : niveau provincial, et l'acteur doit
+// lui-même détenir chacune de leurs permissions (requireRoleGrant).
+export const CUSTOM_ROLE_GRANTORS: readonly RoleKey[] = PROVINCIAL_GRANTORS;
+
 export const WORKFLOW_STATUS_KEYS = {
   BROUILLON: "BROUILLON",
   SOUMIS: "SOUMIS",
