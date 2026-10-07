@@ -7,6 +7,7 @@
     "build": "prisma generate && ( [ -z \"$POSTGRES_URL\" ] && echo 'POSTGRES_URL not set, skipping migration' || prisma migrate deploy ) && next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate:deploy": "prisma migrate deploy",
