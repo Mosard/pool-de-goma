@@ -1,6 +1,6 @@
 # Écran « Gérer les accès » — Phase 1 (analyse)
 
-> **Statut : analyse seule, aucun code applicatif modifié.** En attente de validation et des réponses aux questions du § 6.
+> **Statut : validé le 2026-10-07, réalisé sur la branche `feat/gestion-acces` (§ 7).**
 > Rédigé le 2026-10-07 d'après `master` (`bd12115`).
 
 ## 1. Ce qui existe
@@ -151,3 +151,36 @@ Les permissions que la personne connectée ne peut pas cocher restent visibles m
 ---
 
 *Remarque : une autre session travaille actuellement sur la branche `feat/tableaux-de-bord-perimetre`, avec des modifications non commitées (`dashboard/page.tsx`, `demo-seed.ts`). La phase 2 devra partir d'un dépôt propre, ou d'une copie séparée.*
+
+## 7. Décisions et réalisation (2026-10-07)
+
+Décisions :
+- **Q1** : le chef de POOL ouvre l'écran par un bouton « Gérer les accès » sur sa page « Mon POOL ».
+- **Q2** : pour un acteur provincial, l'ajout individuel vaut au choix pour « tous les POOL » ou pour un POOL.
+- **Q3** : une permission héritée d'une fonction provinciale ne se retire que sur tous les POOL.
+- **Q4**, décision prudente faute de proposition ferme : pas d'**ajout** individuel de `accounts.manage`, `users.manage`, `publication.manage` ni `direction.manage`. Leur **retrait** reste possible.
+- **Q5** : un compte sans fonction se gère par l'IPP, l'informaticien ou le Super Admin, ou par le chef du POOL auquel il est rattaché.
+
+Réalisation :
+
+| Élément | Fichiers |
+|---|---|
+| Table `UserPermission` (migration additive `20261008120000_ajustements_individuels`) | `prisma/` |
+| Règles pures : droits effectifs, comptes gérables, permissions ajustables | `src/lib/access-rules.ts` (+ tests) |
+| Calcul des droits avec ajustements ; destinataires des notifications et valideurs de contenus | `src/lib/permissions.ts` (`usersHoldingPermission`), `notifications/dispatcher.ts`, `contenus/actions.ts` |
+| Contrôles serveur et audit de chaque changement | `src/lib/access-admin.ts` (`applyAccessChanges`) |
+| Écran : liste filtrable, détail, ajustements, récapitulatif | `src/app/(dashboard)/parametres/acces/*` |
+| Boutons « Gérer les accès » | `parametres/page.tsx`, `parametres/pools/[id]/page.tsx` |
+| Vérification de bout en bout sur base locale | `prisma/scripts/verify-access-flow.ts` |
+
+Actions écrites au journal d'audit, avec l'acteur, le compte, la permission ou la fonction, la portée, l'avant et l'après, et la date :
+- `user.role_add` ;
+- `user.role_remove` ;
+- `user.permission_grant` ;
+- `user.permission_revoke` ;
+- `user.permission_adjustment_remove`.
+
+Points restant ouverts :
+- Le chef de POOL se nomme et se retire toujours depuis la fiche du POOL, pas depuis cet écran. C'est voulu, car ces opérations ont leurs propres règles : un chef par POOL, et le chef doit être inspecteur du POOL.
+- Le retrait de la fonction d'inspecteur reproduit, dans `access-admin.ts`, la règle de la fiche du POOL (fin des affectations, de la fonction de chef). Ces deux codes devront évoluer ensemble.
+- Mode « Voir comme » : l'écran s'appuie sur les droits effectifs, donc ceux de la fonction simulée.
