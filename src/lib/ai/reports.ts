@@ -36,6 +36,8 @@ export type AiReportQuery = {
   organizationId: string;
   /** null : toute l'inspection. */
   poolId: string | null;
+  /** Cellule de l'IPA : seulement les rapports que le secrétariat lui a affectés. */
+  cellId?: string | null;
   from: Date;
   /** Borne exclue. */
   to: Date;
@@ -54,6 +56,7 @@ export async function loadAiReports(q: AiReportQuery): Promise<AiReport[]> {
   const rows = await prisma.report.findMany({
     where: {
       status: { key: { not: WORKFLOW_STATUS_KEYS.BROUILLON } },
+      ...(q.cellId ? { ippTrack: { is: { cellId: q.cellId, stage: { in: ["AFFECTE" as const, "EXPLOITE" as const, "SIGNE" as const] } } } } : {}),
       OR: [
         // Rapport d'inspection global (ancien circuit).
         {

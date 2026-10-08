@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { ForbiddenError, loadUserAccess, requireOfficialActorUnlessDemoTarget, usersHoldingPermission } from "@/lib/permissions";
 import { notify } from "@/lib/notifications/dispatcher";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfOrganization, reportsOfPool, type ReportWithScope } from "@/lib/fiches/report-scope";
 import type { ViewMode } from "@/lib/view-mode";
 import { CURRENT_FORMAT_VERSION, missingSections, readContent, sanitizeContent } from "@/lib/synthese/format";
@@ -18,6 +18,7 @@ import {
   SYNTHESIS_VALIDATOR_ROLE_KEYS,
   auditActionFor,
   canAuthorIn,
+  canAuthorInCell,
   canEdit,
   canIncludeReport,
   canRead,
@@ -40,8 +41,22 @@ export async function loadActor(userId: string, opts?: { viewMode?: ViewMode | n
   return { id: userId, organizationId: user.organizationId, isDemo: user.isDemo, roles, permissions };
 }
 
-function meta(s: { authorId: string; organizationId: string; poolId: string | null; status: SynthesisStatus }): SynthesisMeta {
-  return { authorId: s.authorId, organizationId: s.organizationId, poolId: s.poolId, status: s.status as SynthesisStatusKey };
+function meta(s: { authorId: string; organizationId: string; poolId: string | null; cellId: string | null; status: SynthesisStatus }): SynthesisMeta {
+  return { authorId: s.authorId, organizationId: s.organizationId, poolId: s.poolId, cellId: s.cellId, status: s.status as SynthesisStatusKey };
+}
+
+/** Périmètre d'une synthèse : un POOL, une cellule de l'IPP, ou (ancien circuit) toute l'organisation. */
+export type SynthesisTarget = { poolId: string | null; cellId: string | null };
+
+/** Périmètre choisi dans le formulaire : « province », « cellule:<id> » ou l'identifiant d'un POOL (contrôlé ensuite côté serveur). */
+export function synthesisTargetOf(perimetre: string): SynthesisTarget {
+  if (perimetre === "province") return { poolId: null, cellId: null };
+  if (perimetre.startsWith("cellule:")) return { poolId: null, cellId: perimetre.slice("cellule:".length) || null };
+  return { poolId: perimetre, cellId: null };
+}
+
+function canAuthorTarget(actor: SynthesisActor, target: SynthesisTarget): boolean {
+  return target.cellId ? canAuthorInCell(actor, target.cellId, actor.organizationId) : canAuthorIn(actor, target.poolId, actor.organizationId);
 }
 
 // ─── Informations reprises des rapports d'origine ─────────────────────────
@@ -80,28 +95,35 @@ export function snapshotOf(r: ReportWithScope): SourceSnapshot {
   };
 }
 
-function includeCheck(actor: SynthesisActor, s: { organizationId: string; poolId: string | null; isDemo: boolean }, r: ReportWithScope) {
+type IncludeScope = { organizationId: string; poolId: string | null; cellId: string | null; isDemo: boolean };
+
+function includeCheck(actor: SynthesisActor, s: IncludeScope, r: ReportWithScope) {
   const sc = reportScope(r);
-  return canIncludeReport(actor, s, { poolId: sc.poolId, organizationId: sc.organizationId, statusKey: r.status.key, isDemo: sc.isDemo });
+  return canIncludeReport(actor, s, {
+    poolId: sc.poolId,
+    organizationId: sc.organizationId,
+    statusKey: r.status.key,
+    isDemo: sc.isDemo,
+    track: r.ippTrack ? { stage: r.ippTrack.stage, cellId: r.ippTrack.cellId } : null,
+  });
 }
 
-/** Rapports que l'acteur peut inclure dans une synthèse de ce périmètre. */
-export async function eligibleReports(actor: SynthesisActor, target: { poolId: string | null }) {
-  if (!canAuthorIn(actor, target.poolId, actor.organizationId)) throw new ForbiddenError();
-  const reports = await prisma.report.findMany({
-    where: {
-      AND: [target.poolId ? reportsOfPool(target.poolId) : reportsOfOrganization(actor.organizationId)],
-      status: { key: { in: [...EXPLOITED_REPORT_STATUSES] } },
-    },
-    include: REPORT_SCOPE_INCLUDE,
-    orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }],
-  });
-  const s = { organizationId: actor.organizationId, poolId: target.poolId, isDemo: actor.isDemo };
+/** Rapports que l'acteur peut inclure dans une synthèse de ce périmètre (cellule : rapports affectés à elle et exploités). */
+export async function eligibleReports(actor: SynthesisActor, target: SynthesisTarget) {
+  if (!canAuthorTarget(actor, target)) throw new ForbiddenError();
+  const where: Prisma.ReportWhereInput = target.cellId
+    ? { ippTrack: { is: { organizationId: actor.organizationId, cellId: target.cellId, stage: { in: ["EXPLOITE", "SIGNE"] } } } }
+    : {
+        AND: [target.poolId ? reportsOfPool(target.poolId) : reportsOfOrganization(actor.organizationId)],
+        status: { key: { in: [...EXPLOITED_REPORT_STATUSES] } },
+      };
+  const reports = await prisma.report.findMany({ where, include: REPORT_SCOPE_INCLUDE, orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }] });
+  const s = { organizationId: actor.organizationId, poolId: target.cellId ? null : target.poolId, cellId: target.cellId, isDemo: actor.isDemo };
   return reports.filter((r) => includeCheck(actor, s, r));
 }
 
 /** Charge et contrôle les rapports demandés : tous doivent être admissibles, sinon rien n'est écrit. */
-async function checkedReports(actor: SynthesisActor, s: { organizationId: string; poolId: string | null; isDemo: boolean }, reportIds: string[]) {
+async function checkedReports(actor: SynthesisActor, s: IncludeScope, reportIds: string[]) {
   const ids = [...new Set(reportIds.filter((id) => typeof id === "string" && id.length > 0))];
   if (ids.length === 0) throw new ForbiddenError("Choisissez au moins un rapport d'inspection.");
   if (ids.length > 200) throw new ForbiddenError("Trop de rapports pour une seule synthèse (200 au plus).");
@@ -116,23 +138,30 @@ async function checkedReports(actor: SynthesisActor, s: { organizationId: string
 
 export async function createSynthesis(
   actor: SynthesisActor,
-  input: { title: string; poolId: string | null; reportIds: string[]; periodFrom?: Date | null; periodTo?: Date | null }
+  input: { title: string; poolId: string | null; cellId?: string | null; reportIds: string[]; periodFrom?: Date | null; periodTo?: Date | null }
 ): Promise<string> {
   const title = input.title.trim().slice(0, 200);
   if (title.length < 3) throw new ForbiddenError("Donnez un titre à la synthèse (3 caractères au moins).");
-  if (!canAuthorIn(actor, input.poolId, actor.organizationId)) throw new ForbiddenError("Vous ne pouvez pas rédiger de synthèse pour ce périmètre.");
-  if (input.poolId) {
-    const pool = await prisma.pool.findFirst({ where: { id: input.poolId, organizationId: actor.organizationId, active: true } });
+  // Une synthèse de cellule n'a pas de POOL : elle porte sur les rapports affectés à la cellule.
+  const target: SynthesisTarget = input.cellId ? { poolId: null, cellId: input.cellId } : { poolId: input.poolId, cellId: null };
+  if (!canAuthorTarget(actor, target)) throw new ForbiddenError("Vous ne pouvez pas rédiger de synthèse pour ce périmètre.");
+  if (target.poolId) {
+    const pool = await prisma.pool.findFirst({ where: { id: target.poolId, organizationId: actor.organizationId, active: true } });
     if (!pool) throw new ForbiddenError("POOL introuvable.");
   }
-  const scope = { organizationId: actor.organizationId, poolId: input.poolId, isDemo: actor.isDemo };
+  if (target.cellId) {
+    const cell = await prisma.cell.findFirst({ where: { id: target.cellId, organizationId: actor.organizationId, active: true } });
+    if (!cell) throw new ForbiddenError("Cellule introuvable ou archivée.");
+  }
+  const scope = { organizationId: actor.organizationId, poolId: target.poolId, cellId: target.cellId, isDemo: actor.isDemo };
   const reports = await checkedReports(actor, scope, input.reportIds);
 
   const synthesis = await prisma.$transaction(async (tx) => {
     const created = await tx.synthesis.create({
       data: {
         organizationId: actor.organizationId,
-        poolId: input.poolId,
+        poolId: target.poolId,
+        cellId: target.cellId,
         authorId: actor.id,
         isDemo: actor.isDemo,
         title,
@@ -153,7 +182,7 @@ export async function createSynthesis(
     action: "synthesis.create",
     entityType: "Synthesis",
     entityId: synthesis.id,
-    newValue: { title, poolId: input.poolId, reportIds: reports.map((r) => r.id) },
+    newValue: { title, poolId: target.poolId, cellId: target.cellId, reportIds: reports.map((r) => r.id) },
   });
   return synthesis.id;
 }
@@ -223,7 +252,7 @@ function isUniqueViolation(e: unknown) {
 }
 
 export async function transitionSynthesis(actor: SynthesisActor, id: string, toStatus: SynthesisStatusKey, comment?: string | null) {
-  const s = await prisma.synthesis.findUnique({ where: { id }, include: { pool: true } });
+  const s = await prisma.synthesis.findUnique({ where: { id }, include: { pool: true, cell: true } });
   if (!s || !canRead(actor, meta(s))) throw new ForbiddenError("Synthèse introuvable.");
   const from = s.status as SynthesisStatusKey;
   const transition = findTransition(from, toStatus);
@@ -257,7 +286,7 @@ export async function transitionSynthesis(actor: SynthesisActor, id: string, toS
           let numbering = {};
           let assigned = s.number;
           if (!s.number) {
-            const scope = numberScopeCode(s.pool?.code ?? null);
+            const scope = numberScopeCode(s.pool?.code ?? null, s.cell?.code ?? null);
             const year = now.getFullYear();
             // Séquence commune à toutes les organisations pour ce code et cette année :
             // le numéro est unique dans toute la base (« IPP » est partagé).
@@ -302,7 +331,7 @@ export async function transitionSynthesis(actor: SynthesisActor, id: string, toS
     await prisma.$transaction([
       prisma.synthesis.update({
         where: { id },
-        data: { status: toStatus, ...(toStatus === "VALIDE" ? { validatedAt: now } : {}) },
+        data: { status: toStatus, ...(toStatus === "VALIDE" || toStatus === "SIGNE" ? { validatedAt: now } : {}) },
       }),
       prisma.synthesisStatusHistory.create({
         data: { synthesisId: id, fromStatus: from, toStatus, changedById: actor.id, comment: note, version },
@@ -337,20 +366,48 @@ export async function transitionSynthesis(actor: SynthesisActor, id: string, toS
         })
       )
     );
-  } else if (s.authorId !== actor.id) {
-    await notify({
-      userId: s.authorId,
-      event: toStatus === "A_CORRIGER" ? "synthesis.needs_correction" : "synthesis.status_changed",
-      title: toStatus === "A_CORRIGER" ? `Correction demandée — ${label}` : `Synthèse validée — ${label}`,
-      body: note ?? `Statut : ${SYNTHESIS_STATUS_LABELS[toStatus]}.`,
-      data: { synthesisId: id },
-    });
+  } else {
+    if (s.authorId !== actor.id) {
+      await notify({
+        userId: s.authorId,
+        event: toStatus === "A_CORRIGER" ? "synthesis.needs_correction" : "synthesis.status_changed",
+        title:
+          toStatus === "A_CORRIGER"
+            ? `Correction demandée — ${label}`
+            : toStatus === "SIGNE"
+              ? `Synthèse signée et transmise à l'IPP — ${label}`
+              : `Synthèse validée — ${label}`,
+        body: note ?? `Statut : ${SYNTHESIS_STATUS_LABELS[toStatus]}.`,
+        data: { synthesisId: id },
+      });
+    }
+    // D3 : une synthèse de cellule signée remonte à l'IPP principal.
+    if (toStatus === "SIGNE") {
+      const ipps = await prisma.user.findMany({
+        where: { organizationId: s.organizationId, status: "ACTIVE", isDemo: s.isDemo, id: { not: actor.id }, roles: { some: { role: { key: ROLE_KEYS.IPP } } } },
+        select: { id: true },
+      });
+      await Promise.all(
+        ipps.map((u) =>
+          notify({ userId: u.id, event: "synthesis.signed", title: `Synthèse signée par la cellule ${s.cell?.code ?? ""} — ${label}`, body: "Synthèse de cellule signée par l'IPA et transmise à l'IPP.", data: { synthesisId: id } })
+        )
+      );
+    }
   }
   return { status: toStatus, number, version };
 }
 
-/** Qui reçoit une synthèse soumise : niveau provincial (POOL) ou IPP, IPA et Super Admin (provinciale). Jamais l'auteur. */
-async function provincialReviewers(s: { organizationId: string; poolId: string | null; isDemo: boolean }, authorId: string) {
+/**
+ * Qui reçoit une synthèse soumise (jamais l'auteur) : synthèse de cellule →
+ * son IPA (signataire) ; de POOL → niveau provincial ; provinciale → IPP et
+ * Super Admin.
+ */
+async function provincialReviewers(s: { organizationId: string; poolId: string | null; cellId: string | null; isDemo: boolean }, authorId: string) {
+  if (s.cellId) {
+    const cell = await prisma.cell.findUnique({ where: { id: s.cellId }, select: { ipa: { select: { id: true, status: true, isDemo: true } } } });
+    const ipa = cell?.ipa;
+    return ipa && ipa.status === "ACTIVE" && ipa.isDemo === s.isDemo && ipa.id !== authorId ? [ipa.id] : [];
+  }
   const validators = await prisma.user.findMany({
     where: {
       organizationId: s.organizationId,
@@ -380,7 +437,7 @@ async function provincialReviewers(s: { organizationId: string; poolId: string |
 export async function listSyntheses(actor: SynthesisActor) {
   const rows = await prisma.synthesis.findMany({
     where: { organizationId: actor.organizationId, OR: [{ authorId: actor.id }, { status: { not: "BROUILLON" } }] },
-    include: { pool: { select: { name: true } }, author: { select: { name: true } }, _count: { select: { sources: true } } },
+    include: { pool: { select: { name: true } }, cell: { select: { code: true, name: true } }, author: { select: { name: true } }, _count: { select: { sources: true } } },
     orderBy: { updatedAt: "desc" },
   });
   return rows.filter((s) => canRead(actor, meta(s))).map((s) => ({ ...s, reference: synthesisReference(s.number, s.version) }));
@@ -391,6 +448,7 @@ export async function getSynthesis(actor: SynthesisActor, id: string) {
     where: { id },
     include: {
       pool: { select: { id: true, name: true, code: true } },
+      cell: { select: { id: true, name: true, code: true } },
       author: { select: { id: true, name: true } },
       sources: { orderBy: { addedAt: "asc" }, include: { report: { select: { id: true, status: { select: { key: true, label: true } } } } } },
       statusHistory: { orderBy: { createdAt: "asc" }, include: { changedBy: { select: { name: true } } } },

@@ -73,9 +73,10 @@ export default async function IaPage({ searchParams }: { searchParams: SearchPar
   const label = scopeName(scope, poolId);
 
   const [reports, analyses, access, attributions] = await Promise.all([
-    loadAiReports({ organizationId: scope.organizationId, poolId, from: period.from, to: period.to, isDemo: scope.isDemo }),
+    loadAiReports({ organizationId: scope.organizationId, poolId, cellId: scope.cellId, from: period.from, to: period.to, isDemo: scope.isDemo }),
     prisma.aiAnalysis.findMany({
-      where: { organizationId: scope.organizationId, poolId, isDemo: scope.isDemo },
+      // Analyses de SA cellule pour un IPA ; jamais celles d'une cellule pour les autres.
+      where: { organizationId: scope.organizationId, poolId, cellId: scope.cellId, isDemo: scope.isDemo },
       orderBy: { createdAt: "desc" },
       take: 12,
       select: {

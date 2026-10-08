@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { ForbiddenError } from "@/lib/permissions";
-import { createSynthesis, loadActor, setSynthesisSources, transitionSynthesis, updateSynthesis } from "@/lib/synthese/server";
+import { createSynthesis, loadActor, setSynthesisSources, synthesisTargetOf, transitionSynthesis, updateSynthesis } from "@/lib/synthese/server";
 import { formatOf } from "@/lib/synthese/format";
 import type { SynthesisStatusKey } from "@/lib/synthese/rules";
 
@@ -39,7 +39,7 @@ export async function createSynthesisAction(_prev: SynthesisFormState, formData:
   try {
     id = await createSynthesis(actor, {
       title: String(formData.get("title") ?? ""),
-      poolId: perimetre === "province" ? null : perimetre,
+      ...synthesisTargetOf(perimetre),
       reportIds: formData.getAll("reportIds").map(String),
       periodFrom: parseDate(formData.get("periodFrom")),
       periodTo: parseDate(formData.get("periodTo")),

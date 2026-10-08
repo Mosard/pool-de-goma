@@ -86,11 +86,22 @@ async function main() {
   const exploitA = await user("Exploitant A", [{ role: ROLE_KEYS.EXPLOITANT_POOL, poolId: pA.id }]);
   const chefA = await user("Chef A", [{ role: ROLE_KEYS.CHEF_POOL, poolId: pA.id }]);
   const exploitB = await user("Exploitant B", [{ role: ROLE_KEYS.EXPLOITANT_POOL, poolId: pB.id }]);
-  const exploitIpp = await user("Exploitant IPP", [{ role: ROLE_KEYS.EXPLOITANT_IPP }]);
   const agentIpp = await user("Agent IPP", [{ role: ROLE_KEYS.AGENT_IPP }]);
   const ipp = await user("IPP", [{ role: ROLE_KEYS.IPP }]);
   const ipa = await user("IPA", [{ role: ROLE_KEYS.IPA }]);
   const inspA = await user("Inspecteur A", [{ role: ROLE_KEYS.INSPECTEUR, poolId: pA.id }]);
+  // Cellule de test (décisions du 2026-10-08) : son IPA, et un exploitant de l'IPP rattaché à elle.
+  const cell = await prisma.cell.create({ data: { organizationId: org.id, code: `C${RUN}`.toUpperCase(), name: "Cellule de test", ipaId: ipa.id } });
+  const exploitIpp = await prisma.user.create({
+    data: {
+      name: "Exploitant IPP",
+      email: `exploitant.ipp.${RUN}@verif.test`,
+      passwordHash: "x",
+      status: "ACTIVE",
+      organizationId: org.id,
+      roles: { create: [{ roleId: roles.get(ROLE_KEYS.EXPLOITANT_IPP)!.id, cellId: cell.id }] },
+    },
+  });
 
   async function legacyReport(schoolId: string, statusKey: string) {
     const inspection = await prisma.inspection.create({ data: { schoolId, inspectorId: inspA.id, status: "RAPPORT_SOUMIS", completedAt: new Date() } });
@@ -100,6 +111,12 @@ async function main() {
   const rA2 = await legacyReport(sA.id, S.VALIDE);
   const rA3 = await legacyReport(sA.id, S.SOUMIS); // exploitation non commencée
   const rB1 = await legacyReport(sB.id, S.TRANSMIS);
+  // Branche IPP : rA1 et rB1 (deux POOL) exploités par la cellule ; rA3 seulement affecté.
+  const track = (reportId: string, stage: "AFFECTE" | "EXPLOITE") =>
+    prisma.reportIppTrack.create({ data: { reportId, organizationId: org.id, stage, cellId: cell.id, assignedAt: new Date() } });
+  await track(rA1.id, "EXPLOITE");
+  await track(rB1.id, "EXPLOITE");
+  await track(rA3.id, "AFFECTE");
 
   const act = (id: string) => loadActor(id, { viewMode: null });
   // Chargés l'un après l'autre : la base locale de test n'a qu'une connexion.
@@ -111,10 +128,11 @@ async function main() {
 
   // ── Vérifications ───────────────────────────────────────────────────────
   await check("Rapports proposés à l'exploitant de A : exploités et de son POOL seulement", async () => {
-    const ids = (await eligibleReports(aExploitA, { poolId: pA.id })).map((r) => r.id).sort();
+    const ids = (await eligibleReports(aExploitA, { poolId: pA.id, cellId: null })).map((r) => r.id).sort();
     assert.deepEqual(ids, [rA1.id, rA2.id].sort());
-    await refused(() => eligibleReports(aExploitA, { poolId: pB.id }), "périmètre d'un autre POOL");
-    await refused(() => eligibleReports(aInspA, { poolId: pA.id }), "un inspecteur ne rédige pas");
+    await refused(() => eligibleReports(aExploitA, { poolId: pB.id, cellId: null }), "périmètre d'un autre POOL");
+    await refused(() => eligibleReports(aInspA, { poolId: pA.id, cellId: null }), "un inspecteur ne rédige pas");
+    await refused(() => eligibleReports(aExploitIpp, { poolId: pA.id, cellId: null }), "Q8 retiré : l'exploitant de l'IPP n'exploite plus le POOL");
   });
 
   await check("Création dans son périmètre : informations reprises des rapports d'origine, audit", async () => {
@@ -155,7 +173,7 @@ async function main() {
     await setSynthesisSources(aExploitA, synthId, [rA1.id, rA2.id]);
   });
 
-  await check("Soumission : numéro officiel, version 1, copie, notification du niveau provincial", async () => {
+  await check("Soumission : numéro officiel, version 1, copie, notification du niveau provincial (plus l'IPA ni l'exploitant de l'IPP)", async () => {
     const r = await transitionSynthesis(aExploitA, synthId, "SOUMIS");
     const year = new Date().getFullYear();
     assert.equal(r.number, `61/${pA.code}/SYN.001/${year}`);
@@ -163,13 +181,15 @@ async function main() {
     const versions = await prisma.synthesisVersion.findMany({ where: { synthesisId: synthId } });
     assert.equal(versions.length, 1);
     assert.equal((versions[0].sources as unknown[]).length, 2);
-    for (const u of [exploitIpp, agentIpp, ipp, ipa]) assert.equal(await notificationsOf(u.id, "synthesis.submitted"), 1, u.name);
+    for (const u of [agentIpp, ipp]) assert.equal(await notificationsOf(u.id, "synthesis.submitted"), 1, u.name);
+    for (const u of [exploitIpp, ipa]) assert.equal(await notificationsOf(u.id, "synthesis.submitted"), 0, `${u.name} : hors de son périmètre`);
     assert.equal(await notificationsOf(exploitA.id, "synthesis.submitted"), 0, "l'auteur n'est pas notifié de sa propre soumission");
     await refused(() => updateSynthesis(aExploitA, synthId, { title: "Modifiée après soumission", sections: FULL }), "soumise : plus modifiable");
   });
 
   await check("Lecture après soumission : POOL A et niveau provincial ; pas le POOL B", async () => {
-    for (const a of [aChefA, aExploitIpp, aAgentIpp, aIpp, aIpa]) assert.ok(await getSynthesis(a, synthId), a.id);
+    for (const a of [aChefA, aAgentIpp, aIpp]) assert.ok(await getSynthesis(a, synthId), a.id);
+    for (const a of [aExploitIpp, aIpa]) assert.equal(await getSynthesis(a, synthId), null, `${a.id} : seulement sa cellule`);
     assert.equal(await getSynthesis(aExploitB, synthId), null);
     assert.equal(await getSynthesis(aInspA, synthId), null);
     assert.ok(!(await listSyntheses(aExploitB)).some((s) => s.id === synthId));
@@ -203,10 +223,11 @@ async function main() {
     );
   });
 
-  await check("Validation : ni l'exploitant IPP ni l'agent IPP ; l'IPP adjoint valide ; fin du circuit", async () => {
+  await check("Validation : ni l'exploitant de l'IPP, ni l'agent IPP, ni l'IPA (D4) ; l'IPP valide ; fin du circuit", async () => {
     await refused(() => transitionSynthesis(aExploitIpp, synthId, "VALIDE"));
     await refused(() => transitionSynthesis(aAgentIpp, synthId, "VALIDE"));
-    await transitionSynthesis(aIpa, synthId, "VALIDE");
+    await refused(() => transitionSynthesis(aIpa, synthId, "VALIDE"));
+    await transitionSynthesis(aIpp, synthId, "VALIDE");
     const s = await prisma.synthesis.findUniqueOrThrow({ where: { id: synthId } });
     assert.equal(s.status, "VALIDE");
     assert.ok(s.validatedAt);
@@ -234,17 +255,36 @@ async function main() {
     assert.equal(await prisma.comment.count({ where: { reportId: { in: [rA1.id, rA2.id] } } }), 0);
   });
 
-  await check("Synthèse provinciale de l'exploitant IPP : tous les POOL ; lue et examinée par IPP et IPA seulement", async () => {
-    const id = await createSynthesis(aExploitIpp, { title: "Synthèse provinciale", poolId: null, reportIds: [rA1.id, rB1.id] });
-    await updateSynthesis(aExploitIpp, id, { title: "Synthèse provinciale", sections: FULL });
+  await check("Synthèse de cellule : rapports affectés et exploités de plusieurs POOL ; jamais de synthèse provinciale", async () => {
+    const ids = (await eligibleReports(aExploitIpp, { poolId: null, cellId: cell.id })).map((r) => r.id).sort();
+    assert.deepEqual(ids, [rA1.id, rB1.id].sort(), "rA3 seulement affecté : pas encore exploité");
+    await refused(() => createSynthesis(aExploitIpp, { title: "Forgée", poolId: null, reportIds: [rA1.id] }), "synthèse provinciale (Q8 retiré)");
+    await refused(() => createSynthesis(aExploitIpp, { title: "Forgée", poolId: null, cellId: cell.id, reportIds: [rA3.id] }), "rapport pas exploité");
+    await refused(() => createSynthesis(aIpa, { title: "Forgée", poolId: null, cellId: cell.id, reportIds: [rA1.id] }), "l'IPA signe, il ne rédige pas");
+    await refused(() => createSynthesis(aExploitA, { title: "Forgée", poolId: null, cellId: cell.id, reportIds: [rA1.id] }), "pas de sa cellule");
+  });
+
+  await check("Synthèse de cellule : soumise à SON IPA (numéro au sigle de la cellule), signée par lui, puis lue par l'IPP", async () => {
+    const id = await createSynthesis(aExploitIpp, { title: "Synthèse de la cellule", poolId: null, cellId: cell.id, reportIds: [rA1.id, rB1.id] });
+    await updateSynthesis(aExploitIpp, id, { title: "Synthèse de la cellule", sections: FULL });
+    const ippBefore = await notificationsOf(ipp.id, "synthesis.submitted");
     const r = await transitionSynthesis(aExploitIpp, id, "SOUMIS");
-    // Séquence « IPP » commune à la base : le numéro dépend des synthèses provinciales déjà numérotées.
-    assert.match(r.number ?? "", new RegExp(`^61/IPP/SYN\\.\\d{3}/${new Date().getFullYear()}$`));
-    assert.equal(await getSynthesis(aAgentIpp, id), null);
-    assert.equal(await getSynthesis(aChefA, id), null);
-    await refused(() => transitionSynthesis(aAgentIpp, id, "A_CORRIGER", "pas habilité"));
-    await transitionSynthesis(aIpp, id, "A_CORRIGER", "Ajouter le POOL B.");
-    assert.equal((await prisma.synthesis.findUniqueOrThrow({ where: { id } })).status, "A_CORRIGER");
+    assert.equal(r.number, `61/${cell.code}/SYN.001/${new Date().getFullYear()}`);
+    assert.equal(await notificationsOf(ipa.id, "synthesis.submitted"), 1, "l'IPA de la cellule est prévenu");
+    assert.equal(await notificationsOf(ipp.id, "synthesis.submitted"), ippBefore, "l'IPP n'est pas prévenu avant la signature");
+    assert.ok(await getSynthesis(aIpa, id));
+    for (const a of [aIpp, aAgentIpp, aChefA]) assert.equal(await getSynthesis(a, id), null, `${a.id} : pas avant la signature`);
+    for (const a of [aIpp, aAgentIpp, aExploitA]) await refused(() => transitionSynthesis(a, id, "SIGNE"), a.id);
+    await refused(() => transitionSynthesis(aExploitIpp, id, "SIGNE"), "jamais l'auteur");
+    await refused(() => transitionSynthesis(aIpp, id, "VALIDE"), "une synthèse de cellule se signe");
+    await transitionSynthesis(aIpa, id, "SIGNE");
+    const s = await prisma.synthesis.findUniqueOrThrow({ where: { id } });
+    assert.equal(s.status, "SIGNE");
+    assert.ok(s.validatedAt);
+    assert.ok(await getSynthesis(aIpp, id), "D3 : l'IPP lit la synthèse signée");
+    assert.equal(await notificationsOf(ipp.id, "synthesis.signed"), 1);
+    const actions = (await auditActions(id)).filter((a) => a !== "synthesis.update");
+    assert.deepEqual(actions, ["synthesis.create", "synthesis.submit", "synthesis.sign"]);
   });
 
   await check("Un même rapport dans plusieurs synthèses (Q8)", async () => {
@@ -256,17 +296,16 @@ async function main() {
       const scope = resolveDashboardScopes({ id: a.id, organizationId: a.organizationId, isDemo: a.isDemo, roles: a.roles, permissions: a.permissions })[0];
       return loadSynthesisCounts(scope, a);
     };
-    // POOL A : 1 synthèse validée ; la synthèse provinciale n'est pas du POOL.
+    // POOL A : 1 synthèse validée ; la synthèse de cellule n'est pas du POOL.
     assert.deepEqual(await count(aChefA), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
     assert.deepEqual(await count(aExploitB), { total: 0, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 0 }, "rien du POOL A");
-    // IPP : la synthèse du POOL A (validée) et la provinciale (à corriger).
-    assert.deepEqual(await count(aIpp), { total: 2, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 1, validated: 1 });
-    // Exploitant IPP : sa synthèse provinciale renvoyée.
-    const e = await count(aExploitIpp);
-    assert.equal(e.myToFix, 1);
-    assert.equal(e.validated, 1);
-    // Agent IPP : ne lit pas la synthèse provinciale.
-    assert.equal((await count(aAgentIpp)).toFix, 0);
+    // IPP : la synthèse du POOL A (validée) et celle de la cellule (signée).
+    assert.deepEqual(await count(aIpp), { total: 2, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 2 });
+    // Cellule : sa seule synthèse (signée), jamais celle du POOL.
+    assert.deepEqual(await count(aExploitIpp), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
+    assert.deepEqual(await count(aIpa), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
+    // Agent IPP : ne lit pas la synthèse de cellule.
+    assert.equal((await count(aAgentIpp)).total, 1);
     // Un inspecteur n'a pas de compteur de synthèses.
     const insp = resolveDashboardScopes({ id: aInspA.id, organizationId: aInspA.organizationId, isDemo: aInspA.isDemo, roles: aInspA.roles, permissions: aInspA.permissions })[0];
     await assert.rejects(() => loadSynthesisCounts(insp, aInspA));

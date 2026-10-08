@@ -62,7 +62,7 @@ async function loadActionable(userId: string, problemId: string) {
   const problem = await prisma.aiProblem.findUnique({
     where: { id: problemId },
     include: {
-      analysis: { select: { id: true, organizationId: true, poolId: true, isDemo: true } },
+      analysis: { select: { id: true, organizationId: true, poolId: true, cellId: true, isDemo: true } },
       attribution: { select: { id: true, label: true, holderId: true } },
     },
   });

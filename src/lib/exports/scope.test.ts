@@ -4,7 +4,7 @@ import { checkFilters, filtersQuery, parseFilters, reviewPools } from "@/lib/exp
 
 const ORG = "org1";
 const perm = (permissionKey: string, poolId: string | null = null) => ({ permissionKey, poolId, organizationId: ORG });
-const subject = (permissions: ReturnType<typeof perm>[]) => ({ id: "me", organizationId: ORG, isDemo: false, permissions });
+const subject = (permissions: ReturnType<typeof perm>[]) => ({ id: "me", organizationId: ORG, isDemo: false, roles: [], permissions });
 
 const inspecteur = subject([perm("inspections.conduct", "p1")]);
 const chef = subject([perm("reports.review_pool", "p1"), perm("schools.manage", "p1")]);

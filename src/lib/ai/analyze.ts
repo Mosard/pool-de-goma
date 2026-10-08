@@ -107,6 +107,8 @@ async function previousDecisions(scope: AiScope, poolId: string | null) {
       analysis: {
         organizationId: scope.organizationId,
         isDemo: scope.isDemo,
+        // Une cellule ne reprend que les décisions de sa cellule (et jamais l'inverse).
+        cellId: scope.cellId,
         ...(poolId ? { OR: [{ poolId }, { poolId: null }] } : {}),
       },
     },
@@ -164,7 +166,7 @@ export async function runAnalysis(params: {
 }): Promise<RunAnalysisResult> {
   const { scope, poolId, from, to } = params;
 
-  const reports = await loadAiReports({ organizationId: scope.organizationId, poolId, from, to, isDemo: scope.isDemo });
+  const reports = await loadAiReports({ organizationId: scope.organizationId, poolId, cellId: scope.cellId, from, to, isDemo: scope.isDemo });
   // Sans rapport, aucune analyse : jamais de constat fictif.
   if (reports.length === 0) return { ok: false, error: "Aucun rapport soumis sur cette période et ce périmètre : rien à analyser." };
   if (reports.length > AI_LIMITS.maxReports) {
@@ -190,7 +192,7 @@ export async function runAnalysis(params: {
   ]);
 
   const payload = {
-    perimetre: pool ? `POOL ${pool.name}` : "Toute l'inspection (tous les POOL)",
+    perimetre: `${pool ? `POOL ${pool.name}` : "Toute l'inspection (tous les POOL)"}${scope.cellId ? " — rapports affectés à la cellule" : ""}`,
     periode: { du: gomaDay(from), au: gomaDay(new Date(to.getTime() - 1)) },
     nombre_de_rapports: reports.length,
     services: attributions.map((a) => ({ service: a.label, competences: a.label })),
@@ -202,6 +204,7 @@ export async function runAnalysis(params: {
   const base = {
     organizationId: scope.organizationId,
     poolId,
+    cellId: scope.cellId,
     periodFrom: from,
     periodTo: to,
     authorId: scope.userId,

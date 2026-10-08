@@ -632,6 +632,15 @@ async function seedDemoAssignmentsAndInspections(
       },
     });
 
+    // Branche IPP (décisions du 2026-10-08) : le rapport arrive au secrétariat,
+    // sans cellule (aucune cellule de démonstration n'est créée, décision D5).
+    const { pool } = await prisma.school.findUniqueOrThrow({ where: { id: school.id }, select: { pool: { select: { organizationId: true } } } });
+    await prisma.reportIppTrack.upsert({
+      where: { reportId: report.id },
+      update: {},
+      create: { reportId: report.id, organizationId: pool.organizationId, arrivedAt: scheduledDate ?? new Date() },
+    });
+
     const historyCount = await prisma.reportStatusHistory.count({ where: { reportId: report.id } });
     if (historyCount === 0) {
       await prisma.reportStatusHistory.create({

@@ -88,7 +88,9 @@ async function main() {
     });
   }
   const ipp = await user("IPP", org.id, [{ role: ROLE_KEYS.IPP }]);
-  const exploitIpp = await user("Exploitant IPP", org.id, [{ role: ROLE_KEYS.EXPLOITANT_IPP }]);
+  // Fonction provinciale d'exploitation hors cellule (Agent IPP, inchangé) : l'exploitant de
+  // l'IPP est désormais rattaché à une cellule (prisma/scripts/verify-cellules.ts).
+  const exploitIpp = await user("Agent IPP", org.id, [{ role: ROLE_KEYS.AGENT_IPP }]);
   const ipa = await user("IPA", org.id, [{ role: ROLE_KEYS.IPA }]);
   const info = await user("Informaticien", org.id, [{ role: ROLE_KEYS.INFORMATICIEN }]);
   const media = await user("Medias", org.id, [{ role: ROLE_KEYS.CHARGE_MEDIAS }]);
@@ -170,7 +172,7 @@ async function main() {
     );
   });
 
-  await check("Exploitant IPP : ses activités d'exploitation sur tous les POOL, pas le pilotage", async () => {
+  await check("Agent IPP : ses activités d'exploitation sur tous les POOL, pas le pilotage", async () => {
     const s = await single(exploitIpp.id, "exploitation_provinciale");
     const d = await loadExploitation(s);
     assert.equal(d.received, 5);
@@ -187,9 +189,9 @@ async function main() {
     await assert.rejects(() => loadPilotageProvincial(s), "la vue de pilotage lui est refusée côté serveur");
   });
 
-  await check("IPP adjoint : suivi provincial (pas de pilotage)", async () => {
-    const s = await single(ipa.id, "suivi_adjoint");
-    assert.equal((await loadExploitation(s)).received, 5);
+  await check("IPP adjoint sans cellule : aucune vue (D4 : il ne voit que sa cellule)", async () => {
+    const s = await single(ipa.id, "aucun");
+    await assert.rejects(() => loadExploitation(s));
     await assert.rejects(() => loadPilotageProvincial(s));
   });
 

@@ -30,7 +30,7 @@ export default async function SyntheseDetailPage({ params }: { params: Promise<{
   const lastReturn = [...s.statusHistory].reverse().find((h) => h.toStatus === "A_CORRIGER");
 
   // Rapports proposables pour modifier la sélection : admissibles + déjà retenus.
-  const eligible = editable ? await eligibleReports(actor, { poolId: s.poolId }) : [];
+  const eligible = editable ? await eligibleReports(actor, { poolId: s.poolId, cellId: s.cellId }) : [];
   const options = [...eligible.map((r) => snapshotOf(r)), ...snapshots.filter((x) => !eligible.some((r) => r.id === x.reportId))].map(
     (x) => ({
       id: x.reportId,
@@ -48,7 +48,7 @@ export default async function SyntheseDetailPage({ params }: { params: Promise<{
       <PageHeader
         title={s.title}
         description={[
-          s.pool ? `POOL ${s.pool.name}` : "Synthèse provinciale",
+          s.cell ? `Cellule ${s.cell.code} — ${s.cell.name}` : s.pool ? `POOL ${s.pool.name}` : "Synthèse provinciale",
           `Rédigée par ${s.author.name}`,
           s.reference,
           s.periodFrom || s.periodTo ? `Période : ${fmtDate(s.periodFrom)} – ${fmtDate(s.periodTo)}` : null,

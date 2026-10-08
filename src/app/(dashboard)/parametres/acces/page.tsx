@@ -97,7 +97,17 @@ export default async function GererLesAccesPage({
                       {u.username ?? u.email} · {u.pool?.name ?? "Sans POOL"}
                     </p>
                     <p className="mt-1 text-xs text-gray-600">
-                      {u.roles.length ? u.roles.map((r) => (r.pool ? `${r.role.label} (${r.pool.name})` : r.role.label)).join(" · ") : "Aucune fonction"}
+                      {u.roles.length
+                        ? u.roles
+                            .map((r) =>
+                              r.pool
+                                ? `${r.role.label} (${r.pool.name})`
+                                : r.role.scope === "CELL"
+                                  ? `${r.role.label} — ${r.cell ? `cellule ${r.cell.code}` : "cellule à choisir"}`
+                                  : r.role.label
+                            )
+                            .join(" · ")
+                        : "Aucune fonction"}
                     </p>
                   </div>
                   <Badge color={STATUS[u.status]?.color ?? "gray"}>{STATUS[u.status]?.label ?? u.status}</Badge>

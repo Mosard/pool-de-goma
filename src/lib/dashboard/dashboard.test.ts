@@ -1,6 +1,6 @@
 // Périmètre des tableaux de bord : un test par fonction. Les droits de chaque
 // fonction sont ceux de la configuration réelle (ROLE_PERMISSIONS du seed,
-// ajout Q8 de l'exploitant IPP compris). La vérification sur base (données
+// cellules de l'IPP du 2026-10-08 comprises). La vérification sur base (données
 // vues / non vues) est dans prisma/scripts/verify-dashboard-scopes.ts.
 
 import { test } from "node:test";
@@ -9,6 +9,7 @@ import { ROLE_PERMISSIONS } from "@/lib/demo-seed";
 import { ROLE_KEYS, WORKFLOW_STATUS_KEYS as S, type RoleKey } from "@/lib/rbac-data";
 import type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 import { resolveDashboardScopes, scopeCoversPool, type DashboardScope } from "@/lib/dashboard/scope";
+import { bindRolePermissions } from "@/lib/cells/rules";
 import {
   POOL_EXPLOITATION_BUCKETS,
   PROVINCIAL_EXPLOITATION_BUCKETS,
@@ -22,14 +23,17 @@ const ORG = "org-nk1";
 const POOL_A = "pool-a";
 const POOL_B = "pool-b";
 
-function subject(...grants: { role: RoleKey | string; poolId?: string | null; permissions?: string[] }[]) {
+// Droits rattachés comme en base (bindRolePermissions) : une permission de
+// cellule n'existe qu'avec la cellule de la fonction (ou de l'IPA).
+function subject(...grants: { role: RoleKey | string; poolId?: string | null; cellId?: string | null; permissions?: string[] }[]) {
   const roles: SessionRole[] = [];
   const permissions: SessionPermission[] = [];
   for (const g of grants) {
     const poolId = g.poolId ?? null;
-    roles.push({ key: g.role, label: g.role, poolId });
+    const cellId = g.cellId ?? null;
+    roles.push({ key: g.role, label: g.role, poolId, cellId });
     const keys = g.permissions ?? ROLE_PERMISSIONS[g.role as RoleKey] ?? [];
-    for (const k of keys) permissions.push({ permissionKey: k, poolId, organizationId: ORG });
+    permissions.push(...bindRolePermissions({ roleKey: g.role, permissionKeys: keys, poolId, cellId, ipaCellId: cellId, organizationId: ORG }));
   }
   return { id: "user-1", organizationId: ORG, isDemo: false, roles, permissions };
 }
@@ -55,16 +59,30 @@ test("Super Admin hors simulation : pilotage provincial", () => {
   assert.equal(only(resolveDashboardScopes(subject({ role: ROLE_KEYS.SUPER_ADMIN }))).kind, "pilotage_provincial");
 });
 
-test("Exploitant IPP : exploitation provinciale, jamais le pilotage de l'IPP", () => {
-  const s = only(resolveDashboardScopes(subject({ role: ROLE_KEYS.EXPLOITANT_IPP })));
-  assert.equal(s.kind, "exploitation_provinciale");
+test("Exploitant de l'IPP rattaché à une cellule : vue de SA cellule, aucun POOL entier, jamais le pilotage", () => {
+  const s = only(resolveDashboardScopes(subject({ role: ROLE_KEYS.EXPLOITANT_IPP, cellId: "cell-a" })));
+  assert.equal(s.kind, "exploitation_cellule");
+  assert.equal(s.cellId, "cell-a");
   assert.equal(s.poolId, null);
-  assert.ok(scopeCoversPool(s, poolA) && scopeCoversPool(s, poolB));
-  assert.equal(scopeCoversPool(s, foreignPool), false);
+  assert.equal(scopeCoversPool(s, poolA), false);
 });
 
-test("IPP adjoint : suivi provincial, pas le pilotage de l'IPP", () => {
-  assert.equal(only(resolveDashboardScopes(subject({ role: ROLE_KEYS.IPA }))).kind, "suivi_adjoint");
+test("Exploitant de l'IPP sans cellule : aucun tableau, aucun repli provincial", () => {
+  const s = only(resolveDashboardScopes(subject({ role: ROLE_KEYS.EXPLOITANT_IPP })));
+  assert.equal(s.kind, "aucun");
+});
+
+test("IPA : vue de SA cellule (signature) ; sans cellule, rien", () => {
+  const s = only(resolveDashboardScopes(subject({ role: ROLE_KEYS.IPA, cellId: "cell-b" })));
+  assert.equal(s.kind, "exploitation_cellule");
+  assert.equal(s.cellId, "cell-b");
+  assert.equal(only(resolveDashboardScopes(subject({ role: ROLE_KEYS.IPA }))).kind, "aucun");
+});
+
+test("Secrétaire de l'IPP : vue du secrétariat, aucun POOL entier", () => {
+  const s = only(resolveDashboardScopes(subject({ role: ROLE_KEYS.SECRETAIRE_IPP })));
+  assert.equal(s.kind, "secretariat_ipp");
+  assert.equal(scopeCoversPool(s, poolA), false);
 });
 
 test("Agent IPP (sans vue dédiée) : classé par ses permissions, jamais en pilotage", () => {

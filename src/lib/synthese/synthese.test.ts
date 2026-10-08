@@ -1,6 +1,8 @@
-// Règles du rapport de synthèse : périmètre, sélection des rapports, circuit
-// (renvoi pour correction et resoumission par l'auteur seul), numérotation et
-// format. Droits repris de la configuration réelle (ROLE_PERMISSIONS du seed).
+// Règles du rapport de synthèse : périmètre (POOL, cellule de l'IPP), sélection
+// des rapports, circuit (renvoi pour correction et resoumission par l'auteur
+// seul, validation au POOL, signature de l'IPA pour une cellule), numérotation
+// et format. Droits repris de la configuration réelle (ROLE_PERMISSIONS du
+// seed), rattachés comme en base (bindRolePermissions).
 // Vérification sur base (écritures, audit) : prisma/scripts/verify-synthese-flow.ts.
 
 import { test } from "node:test";
@@ -8,18 +10,22 @@ import assert from "node:assert/strict";
 import { ROLE_PERMISSIONS } from "@/lib/demo-seed";
 import { ROLE_KEYS, WORKFLOW_STATUS_KEYS as W, type RoleKey } from "@/lib/rbac-data";
 import type { SessionPermission, SessionRole } from "@/lib/permission-checks";
+import { bindRolePermissions } from "@/lib/cells/rules";
 import {
   auditActionFor,
   authorScopes,
   availableTransitions,
   canAuthorIn,
+  canAuthorInCell,
   canEdit,
   canIncludeReport,
   canRead,
   canReturn,
+  canSign,
   canValidate,
   findTransition,
   formatSynthesisNumber,
+  numberScopeCode,
   synthesisReference,
   type Actor,
   type SynthesisMeta,
@@ -29,14 +35,17 @@ import { missingSections, sanitizeContent } from "@/lib/synthese/format";
 const ORG = "org";
 const A = "pool-a";
 const B = "pool-b";
+const C1 = "cell-1";
+const C2 = "cell-2";
 
-function actor(id: string, ...grants: { role: RoleKey; poolId?: string | null }[]): Actor {
+function actor(id: string, ...grants: { role: RoleKey; poolId?: string | null; cellId?: string | null }[]): Actor {
   const roles: SessionRole[] = [];
   const permissions: SessionPermission[] = [];
   for (const g of grants) {
     const poolId = g.poolId ?? null;
-    roles.push({ key: g.role, label: g.role, poolId });
-    for (const k of ROLE_PERMISSIONS[g.role]) permissions.push({ permissionKey: k, poolId, organizationId: ORG });
+    const cellId = g.cellId ?? null;
+    roles.push({ key: g.role, label: g.role, poolId, cellId });
+    permissions.push(...bindRolePermissions({ roleKey: g.role, permissionKeys: ROLE_PERMISSIONS[g.role], poolId, cellId, ipaCellId: cellId, organizationId: ORG }));
   }
   return { id, organizationId: ORG, roles, permissions };
 }
@@ -44,33 +53,49 @@ function actor(id: string, ...grants: { role: RoleKey; poolId?: string | null }[
 const exploitA = actor("exploitA", { role: ROLE_KEYS.EXPLOITANT_POOL, poolId: A });
 const chefA = actor("chefA", { role: ROLE_KEYS.CHEF_POOL, poolId: A });
 const exploitB = actor("exploitB", { role: ROLE_KEYS.EXPLOITANT_POOL, poolId: B });
-const exploitIpp = actor("exploitIpp", { role: ROLE_KEYS.EXPLOITANT_IPP });
-const exploitIpp2 = actor("exploitIpp2", { role: ROLE_KEYS.EXPLOITANT_IPP });
+const exploitC1 = actor("exploitC1", { role: ROLE_KEYS.EXPLOITANT_IPP, cellId: C1 });
+const exploitC1b = actor("exploitC1b", { role: ROLE_KEYS.EXPLOITANT_IPP, cellId: C1 });
+const exploitC2 = actor("exploitC2", { role: ROLE_KEYS.EXPLOITANT_IPP, cellId: C2 });
+const exploitSansCellule = actor("exploitSans", { role: ROLE_KEYS.EXPLOITANT_IPP });
+const ipaC1 = actor("ipaC1", { role: ROLE_KEYS.IPA, cellId: C1 });
+const ipaC2 = actor("ipaC2", { role: ROLE_KEYS.IPA, cellId: C2 });
 const agentIpp = actor("agentIpp", { role: ROLE_KEYS.AGENT_IPP });
 const ipp = actor("ipp", { role: ROLE_KEYS.IPP });
-const ipa = actor("ipa", { role: ROLE_KEYS.IPA });
 const superAdmin = actor("sa", { role: ROLE_KEYS.SUPER_ADMIN });
 const inspA = actor("inspA", { role: ROLE_KEYS.INSPECTEUR, poolId: A });
 const informaticien = actor("info", { role: ROLE_KEYS.INFORMATICIEN });
 
-const poolSynth = (status: SynthesisMeta["status"]): SynthesisMeta => ({ authorId: "exploitA", organizationId: ORG, poolId: A, status });
-const provSynth = (status: SynthesisMeta["status"]): SynthesisMeta => ({ authorId: "exploitIpp", organizationId: ORG, poolId: null, status });
-const report = (poolId: string, statusKey: string, isDemo = false) => ({ poolId, organizationId: ORG, statusKey, isDemo });
+const poolSynth = (status: SynthesisMeta["status"]): SynthesisMeta => ({ authorId: "exploitA", organizationId: ORG, poolId: A, cellId: null, status });
+const cellSynth = (status: SynthesisMeta["status"]): SynthesisMeta => ({ authorId: "exploitC1", organizationId: ORG, poolId: null, cellId: C1, status });
+// Synthèse provinciale de l'ancien circuit (avant les cellules), conservée.
+const provSynth = (status: SynthesisMeta["status"]): SynthesisMeta => ({ authorId: "ancien", organizationId: ORG, poolId: null, cellId: null, status });
+const report = (poolId: string, statusKey: string, isDemo = false, track: { stage: string; cellId: string | null } | null = null) => ({
+  poolId,
+  organizationId: ORG,
+  statusKey,
+  isDemo,
+  track,
+});
 
-test("Rédaction : exploitant et chef de POOL dans leur POOL, exploitant IPP partout ; pas l'inspecteur ni l'informaticien", () => {
+test("Rédaction : POOL pour l'exploitant et le chef de POOL ; cellule pour son exploitant ; ni l'IPA, ni l'IPP, ni l'inspecteur", () => {
   assert.ok(canAuthorIn(exploitA, A, ORG));
   assert.equal(canAuthorIn(exploitA, B, ORG), false);
   assert.equal(canAuthorIn(exploitA, null, ORG), false, "pas de synthèse provinciale pour un exploitant de POOL");
   assert.ok(canAuthorIn(chefA, A, ORG), "Q6 : le chef de POOL rédige");
-  assert.ok(canAuthorIn(exploitIpp, null, ORG) && canAuthorIn(exploitIpp, B, ORG));
-  assert.deepEqual(authorScopes(exploitIpp), { provincial: true, poolIds: [] });
+  assert.ok(canAuthorInCell(exploitC1, C1, ORG));
+  assert.equal(canAuthorInCell(exploitC1, C2, ORG), false, "pas la cellule d'à côté");
+  assert.equal(canAuthorIn(exploitC1, null, ORG), false, "plus de synthèse provinciale (Q8 retiré)");
+  assert.equal(canAuthorIn(exploitC1, A, ORG), false, "plus d'exploitation de POOL (Q8 retiré)");
+  assert.deepEqual(authorScopes(exploitC1), { provincial: false, poolIds: [], cellIds: [C1] });
+  assert.deepEqual(authorScopes(exploitSansCellule), { provincial: false, poolIds: [], cellIds: [] }, "sans cellule : rien");
+  assert.equal(canAuthorInCell(ipaC1, C1, ORG), false, "l'IPA signe, il ne rédige pas");
   assert.equal(canAuthorIn(inspA, A, ORG), false);
   assert.equal(canAuthorIn(informaticien, null, ORG), false);
   assert.equal(canAuthorIn(ipp, null, ORG), false, "l'IPP valide, il ne rédige pas");
   assert.equal(canAuthorIn(exploitA, A, "autre-org"), false);
 });
 
-test("Sélection : rapports exploités de son périmètre seulement", () => {
+test("Sélection POOL : rapports exploités de son POOL seulement", () => {
   const s = { organizationId: ORG, poolId: A, isDemo: false };
   assert.ok(canIncludeReport(exploitA, s, report(A, W.EN_EXPLOITATION)));
   assert.ok(canIncludeReport(exploitA, s, report(A, W.VALIDE)));
@@ -80,69 +105,99 @@ test("Sélection : rapports exploités de son périmètre seulement", () => {
   }
   assert.equal(canIncludeReport(exploitA, s, report(A, W.TRANSMIS, true)), false, "rapport de démonstration dans une synthèse officielle");
   assert.equal(canIncludeReport(exploitA, s, { ...report(A, W.TRANSMIS), organizationId: "autre-org" }), false);
-  // Synthèse provinciale : tous les POOL pour l'exploitant IPP ; jamais pour un exploitant de POOL (synthèse forgée).
-  const prov = { organizationId: ORG, poolId: null, isDemo: false };
-  assert.ok(canIncludeReport(exploitIpp, prov, report(B, W.TRANSMIS)));
-  assert.equal(canIncludeReport(exploitA, prov, report(B, W.TRANSMIS)), false);
+  assert.equal(canIncludeReport(exploitC1, s, report(A, W.EN_EXPLOITATION)), false, "un exploitant de cellule n'exploite pas le POOL");
 });
 
-test("Lecture : brouillon privé à l'auteur ; synthèse de POOL lue par le POOL et la province ; provinciale par IPP, IPA, Super Admin", () => {
+test("Sélection cellule : seulement les rapports AFFECTÉS à sa cellule et dont la cellule a terminé l'exploitation", () => {
+  const s = { organizationId: ORG, poolId: null, cellId: C1, isDemo: false };
+  assert.ok(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "EXPLOITE", cellId: C1 })), "rapport de n'importe quel POOL");
+  assert.ok(canIncludeReport(exploitC1, s, report(B, W.SOUMIS, false, { stage: "SIGNE", cellId: C1 })));
+  assert.equal(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "EXPLOITE", cellId: C2 })), false, "rapport d'une autre cellule");
+  assert.equal(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "AFFECTE", cellId: C1 })), false, "exploitation pas terminée");
+  assert.equal(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "AU_SECRETARIAT", cellId: null })), false, "pas encore affecté");
+  assert.equal(canIncludeReport(exploitC1, s, report(A, W.VALIDE)), false, "sans branche IPP");
+  assert.equal(canIncludeReport(exploitC2, s, report(A, W.SOUMIS, false, { stage: "EXPLOITE", cellId: C1 })), false, "synthèse forgée sur une autre cellule");
+});
+
+test("Lecture : POOL par le POOL et la province (plus l'IPA) ; cellule par sa cellule ; l'IPP seulement une fois signée", () => {
   assert.ok(canRead(exploitA, poolSynth("BROUILLON")));
   assert.equal(canRead(chefA, poolSynth("BROUILLON")), false);
   assert.equal(canRead(ipp, poolSynth("BROUILLON")), false);
-  for (const a of [chefA, exploitIpp, agentIpp, ipp, ipa, superAdmin]) assert.ok(canRead(a, poolSynth("SOUMIS")), a.id);
-  for (const a of [exploitB, inspA, informaticien]) assert.equal(canRead(a, poolSynth("SOUMIS")), false, a.id);
-  for (const a of [ipp, ipa, superAdmin, exploitIpp]) assert.ok(canRead(a, provSynth("SOUMIS")), a.id);
-  for (const a of [exploitIpp2, agentIpp, chefA, exploitA]) assert.equal(canRead(a, provSynth("SOUMIS")), false, a.id);
+  for (const a of [chefA, agentIpp, ipp, superAdmin]) assert.ok(canRead(a, poolSynth("SOUMIS")), a.id);
+  for (const a of [exploitB, inspA, informaticien, ipaC1, exploitC1]) assert.equal(canRead(a, poolSynth("SOUMIS")), false, a.id);
+
+  assert.equal(canRead(exploitC1b, cellSynth("BROUILLON")), false, "brouillon privé à l'auteur");
+  for (const a of [exploitC1b, ipaC1, superAdmin]) assert.ok(canRead(a, cellSynth("SOUMIS")), a.id);
+  for (const a of [exploitC2, ipaC2, ipp, agentIpp, chefA, exploitSansCellule]) assert.equal(canRead(a, cellSynth("SOUMIS")), false, a.id);
+  assert.ok(canRead(ipp, cellSynth("SIGNE")), "D3 : l'IPP lit la synthèse signée");
+  assert.equal(canRead(ipaC2, cellSynth("SIGNE")), false, "jamais une autre cellule");
+
+  for (const a of [ipp, superAdmin]) assert.ok(canRead(a, provSynth("SOUMIS")), a.id);
+  for (const a of [ipaC1, exploitC1, agentIpp, chefA]) assert.equal(canRead(a, provSynth("SOUMIS")), false, a.id);
 });
 
-test("Modification : l'auteur seul, en brouillon ou à corriger", () => {
+test("Modification : l'auteur seul, en brouillon ou à corriger, tant qu'il garde le droit de rédiger ici", () => {
   assert.ok(canEdit(exploitA, poolSynth("BROUILLON")));
   assert.ok(canEdit(exploitA, poolSynth("A_CORRIGER")));
   assert.equal(canEdit(exploitA, poolSynth("SOUMIS")), false);
   assert.equal(canEdit(exploitA, poolSynth("VALIDE")), false);
   assert.equal(canEdit(chefA, poolSynth("BROUILLON")), false, "un autre rédacteur du même POOL");
-  assert.equal(canEdit(ipp, poolSynth("A_CORRIGER")), false);
+  assert.ok(canEdit(exploitC1, cellSynth("BROUILLON")));
+  assert.equal(canEdit(exploitC1b, cellSynth("BROUILLON")), false, "un autre exploitant de la cellule");
+  assert.equal(canEdit(ipaC1, cellSynth("A_CORRIGER")), false);
+  // Auteur passé dans une autre cellule : il ne modifie plus.
+  const exAuteur = { ...exploitC2, id: "exploitC1" };
+  assert.equal(canEdit(exAuteur, cellSynth("BROUILLON")), false);
 });
 
-test("Circuit complet : soumettre, renvoyer avec motif, resoumettre par l'auteur seul, valider par IPP ou IPA", () => {
+test("Circuit POOL : renvoi par le niveau provincial, validation par l'IPP ; plus par l'IPA", () => {
   assert.deepEqual(
     availableTransitions(exploitA, poolSynth("BROUILLON")).map((t) => t.to),
     ["SOUMIS"]
   );
-  assert.deepEqual(
-    availableTransitions(chefA, poolSynth("BROUILLON")).map((t) => t.to),
-    []
-  );
-
-  // Renvoi : tout reports.review_province (Q2), jamais l'auteur.
-  for (const a of [exploitIpp, agentIpp, ipp, ipa, superAdmin]) assert.ok(canReturn(a, poolSynth("SOUMIS")), a.id);
-  for (const a of [exploitA, chefA, exploitB]) assert.equal(canReturn(a, poolSynth("SOUMIS")), false, a.id);
+  for (const a of [agentIpp, ipp, superAdmin]) assert.ok(canReturn(a, poolSynth("SOUMIS")), a.id);
+  for (const a of [exploitA, chefA, exploitB, ipaC1]) assert.equal(canReturn(a, poolSynth("SOUMIS")), false, a.id);
   assert.equal(findTransition("SOUMIS", "A_CORRIGER")?.commentRequired, true);
-
-  // Resoumission : l'auteur seul.
   assert.deepEqual(
     availableTransitions(exploitA, poolSynth("A_CORRIGER")).map((t) => [t.to, t.label]),
     [["SOUMIS", "Resoumettre"]]
   );
-  for (const a of [chefA, ipp, exploitIpp]) assert.equal(availableTransitions(a, poolSynth("A_CORRIGER")).length, 0, a.id);
-
-  // Validation : IPP, IPA, Super Admin (Q3) ; pas l'exploitant IPP ni l'agent IPP.
-  for (const a of [ipp, ipa, superAdmin]) assert.ok(canValidate(a, poolSynth("SOUMIS")), a.id);
-  for (const a of [exploitIpp, agentIpp, exploitA]) assert.equal(canValidate(a, poolSynth("SOUMIS")), false, a.id);
-  assert.equal(canValidate(ipp, poolSynth("BROUILLON")), false);
+  for (const a of [ipp, superAdmin]) assert.ok(canValidate(a, poolSynth("SOUMIS")), a.id);
+  for (const a of [ipaC1, agentIpp, exploitA]) assert.equal(canValidate(a, poolSynth("SOUMIS")), false, a.id);
+  assert.equal(canSign(ipaC1, poolSynth("SOUMIS")), false, "une synthèse de POOL ne se signe pas");
   assert.equal(availableTransitions(ipp, poolSynth("VALIDE")).length, 0, "validée : fin du circuit");
-
   assert.equal(findTransition("BROUILLON", "VALIDE"), null);
-  assert.equal(findTransition("VALIDE", "A_CORRIGER"), null);
 });
 
-test("Synthèse provinciale (exploitant IPP) : renvoi et validation par IPP, IPA, Super Admin seulement (Q4)", () => {
-  for (const a of [ipp, ipa, superAdmin]) {
+test("Circuit cellule (D3, D6) : soumise par la cellule, renvoyée ou signée par SON IPA, puis lue par l'IPP", () => {
+  assert.deepEqual(
+    availableTransitions(exploitC1, cellSynth("BROUILLON")).map((t) => t.to),
+    ["SOUMIS"]
+  );
+  assert.deepEqual(
+    availableTransitions(ipaC1, cellSynth("SOUMIS")).map((t) => t.to),
+    ["A_CORRIGER", "SIGNE"]
+  );
+  for (const a of [ipaC2, ipp, agentIpp, exploitC1b, exploitC1]) {
+    assert.equal(canSign(a, cellSynth("SOUMIS")), false, a.id);
+    assert.equal(canReturn(a, cellSynth("SOUMIS")), false, a.id);
+  }
+  assert.equal(canValidate(ipp, cellSynth("SOUMIS")), false, "une synthèse de cellule ne se « valide » pas, elle se signe");
+  assert.ok(canSign(superAdmin, cellSynth("SOUMIS")), "assistance technique");
+  assert.deepEqual(
+    availableTransitions(exploitC1, cellSynth("A_CORRIGER")).map((t) => t.to),
+    ["SOUMIS"],
+    "resoumission par l'auteur"
+  );
+  assert.equal(availableTransitions(ipaC1, cellSynth("SIGNE")).length, 0, "signée : fin du circuit");
+});
+
+test("Synthèse provinciale de l'ancien circuit : renvoi et validation par l'IPP et le Super Admin seulement", () => {
+  for (const a of [ipp, superAdmin]) {
     assert.ok(canReturn(a, provSynth("SOUMIS")), a.id);
     assert.ok(canValidate(a, provSynth("SOUMIS")), a.id);
   }
-  for (const a of [exploitIpp, exploitIpp2, agentIpp]) assert.equal(canReturn(a, provSynth("SOUMIS")), false, a.id);
+  for (const a of [ipaC1, exploitC1, agentIpp]) assert.equal(canReturn(a, provSynth("SOUMIS")), false, a.id);
 });
 
 test("Audit : une action par étape", () => {
@@ -150,11 +205,14 @@ test("Audit : une action par étape", () => {
   assert.equal(auditActionFor("SOUMIS", "A_CORRIGER"), "synthesis.return");
   assert.equal(auditActionFor("A_CORRIGER", "SOUMIS"), "synthesis.resubmit");
   assert.equal(auditActionFor("SOUMIS", "VALIDE"), "synthesis.validate");
+  assert.equal(auditActionFor("SOUMIS", "SIGNE"), "synthesis.sign");
 });
 
-test("Numéro officiel et versions (Q7)", () => {
+test("Numéro officiel et versions (Q7) : POOL, cellule ou IPP", () => {
   assert.equal(formatSynthesisNumber({ scope: "GOMA", seq: 4, year: 2026 }), "61/GOMA/SYN.004/2026");
-  assert.equal(formatSynthesisNumber({ scope: "IPP", seq: 12, year: 2026 }), "61/IPP/SYN.012/2026");
+  assert.equal(formatSynthesisNumber({ scope: numberScopeCode(null, "IPAF"), seq: 1, year: 2026 }), "61/IPAF/SYN.001/2026");
+  assert.equal(numberScopeCode("GOMA"), "GOMA");
+  assert.equal(numberScopeCode(null), "IPP");
   assert.equal(synthesisReference("61/GOMA/SYN.004/2026", 2), "61/GOMA/SYN.004/2026-V2");
   assert.equal(synthesisReference(null, 0), null);
 });

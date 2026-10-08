@@ -4,7 +4,7 @@ import { clsx } from "clsx";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, PageHeader } from "@/components/ui";
-import { eligibleReports, loadActor, snapshotOf } from "@/lib/synthese/server";
+import { eligibleReports, loadActor, snapshotOf, synthesisTargetOf } from "@/lib/synthese/server";
 import { authorScopes } from "@/lib/synthese/rules";
 import { CreateSynthesisForm } from "../forms";
 
@@ -16,14 +16,21 @@ export default async function NouvelleSynthesePage({ searchParams }: { searchPar
   if (!session?.user) redirect("/login");
   const actor = await loadActor(session.user.id);
   const scopes = authorScopes(actor);
-  if (!scopes.provincial && scopes.poolIds.length === 0) redirect("/syntheses");
+  if (!scopes.provincial && scopes.poolIds.length === 0 && scopes.cellIds.length === 0) redirect("/syntheses");
 
-  const pools = await prisma.pool.findMany({
-    where: { organizationId: actor.organizationId, active: true, ...(scopes.provincial ? {} : { id: { in: scopes.poolIds } }) },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
+  const [pools, cells] = await Promise.all([
+    scopes.provincial || scopes.poolIds.length > 0
+      ? prisma.pool.findMany({
+          where: { organizationId: actor.organizationId, active: true, ...(scopes.provincial ? {} : { id: { in: scopes.poolIds } }) },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    // Cellule de l'exploitant (droits relus en base) : synthèse préparée par la cellule, signée par son IPA.
+    prisma.cell.findMany({ where: { id: { in: scopes.cellIds }, organizationId: actor.organizationId, active: true }, select: { id: true, code: true } }),
+  ]);
   const options = [
+    ...cells.map((c) => ({ value: `cellule:${c.id}`, label: `Cellule ${c.code}` })),
     ...(scopes.provincial ? [{ value: "province", label: "Toute la province" }] : []),
     ...pools.map((p) => ({ value: p.id, label: `POOL ${p.name}` })),
   ];
@@ -31,7 +38,7 @@ export default async function NouvelleSynthesePage({ searchParams }: { searchPar
   const selected = options.find((o) => o.value === requested) ?? options[0];
   if (!selected) redirect("/syntheses");
 
-  const reports = await eligibleReports(actor, { poolId: selected.value === "province" ? null : selected.value });
+  const reports = await eligibleReports(actor, synthesisTargetOf(selected.value));
   const reportOptions = reports.map((r) => {
     const s = snapshotOf(r);
     return { id: r.id, title: s.title, number: s.number, poolName: s.poolName, authorName: s.authorName, statusLabel: s.statusLabel, submittedAt: s.submittedAt };

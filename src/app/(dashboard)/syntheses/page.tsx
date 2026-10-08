@@ -13,8 +13,11 @@ export default async function SynthesesPage() {
   if (!session?.user) redirect("/login");
   const actor = await loadActor(session.user.id);
   const scopes = authorScopes(actor);
-  const canWrite = scopes.provincial || scopes.poolIds.length > 0;
-  const canReview = actor.permissions.some((p) => p.permissionKey === PERMISSIONS.REPORTS_REVIEW_PROVINCE);
+  const canWrite = scopes.provincial || scopes.poolIds.length > 0 || scopes.cellIds.length > 0;
+  // Examen : niveau provincial, ou IPA de sa cellule (signature).
+  const canReview = actor.permissions.some(
+    (p) => (p.permissionKey === PERMISSIONS.REPORTS_REVIEW_PROVINCE && !p.cellId) || (p.permissionKey === PERMISSIONS.REPORTS_SIGN_CELL && p.cellId)
+  );
   if (!canWrite && !canReview) redirect("/dashboard");
   const rows = await listSyntheses(actor);
 
@@ -57,7 +60,7 @@ export default async function SynthesesPage() {
                   <tr key={s.id} className="hover:bg-blue-50/40">
                     <td className="px-6 py-3 font-medium text-gray-900">{s.title}</td>
                     <td className="px-6 py-3 text-xs text-gray-500">{s.reference ?? "—"}</td>
-                    <td className="px-6 py-3 text-gray-600">{s.pool ? `POOL ${s.pool.name}` : "Provinciale"}</td>
+                    <td className="px-6 py-3 text-gray-600">{s.cell ? `Cellule ${s.cell.code}` : s.pool ? `POOL ${s.pool.name}` : "Provinciale"}</td>
                     <td className="px-6 py-3 text-gray-600">{s.author.name}</td>
                     <td className="px-6 py-3 text-gray-600">{s._count.sources}</td>
                     <td className="px-6 py-3">
