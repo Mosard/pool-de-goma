@@ -16,6 +16,7 @@ import {
   CalendarRange,
   BarChart3,
   FileText,
+  Inbox,
 } from "lucide-react";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
@@ -60,14 +61,22 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/exploitation",
     label: "Exploitation",
     icon: BarChart3,
-    permission: [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE],
+    permission: [
+      PERMISSIONS.REPORTS_REVIEW_POOL,
+      PERMISSIONS.REPORTS_REVIEW_PROVINCE,
+      PERMISSIONS.REPORTS_VALIDATE,
+      PERMISSIONS.REPORTS_REVIEW_CELL,
+      PERMISSIONS.REPORTS_SIGN_CELL,
+    ],
   },
-  // Rapports de synthèse des exploitants (rédaction : review_pool ; examen : review_province).
+  // Secrétariat de l'IPP : rapports arrivés, à envoyer à une cellule.
+  { href: "/secretariat", label: "Secrétariat", icon: Inbox, permission: PERMISSIONS.REPORTS_ROUTE_IPP },
+  // Rapports de synthèse (POOL : review_pool ; cellule : review_cell, signature sign_cell ; examen : review_province).
   {
     href: "/syntheses",
     label: "Synthèses",
     icon: FileText,
-    permission: [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE],
+    permission: [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_REVIEW_CELL, PERMISSIONS.REPORTS_SIGN_CELL],
   },
   { href: "/inspecteurs", label: "Inspecteurs", icon: Users, permission: PERMISSIONS.USERS_MANAGE },
   { href: "/comptes", label: "Demandes de compte", icon: UserPlus, permission: PERMISSIONS.ACCOUNTS_MANAGE },

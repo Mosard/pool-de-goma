@@ -14,6 +14,7 @@ import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfAuthor, reportsOfOrganizati
 import { type DashboardKind, type DashboardScope, isProvincialKind, scopeCoversPool } from "@/lib/dashboard/scope";
 import { listSyntheses, type SynthesisActor } from "@/lib/synthese/server";
 import { demoWhere } from "@/lib/exports/scope";
+import { CELL_VISIBLE_STAGES } from "@/lib/cells/rules";
 import {
   PILOTAGE_BUCKETS,
   POOL_EXPLOITATION_BUCKETS,
@@ -38,7 +39,16 @@ function assertKind(scope: DashboardScope, ...kinds: DashboardKind[]) {
  */
 export function reportsInScope(scope: DashboardScope): Prisma.ReportWhereInput {
   if (!scope.poolId && !isProvincialKind(scope.kind)) throw new Error("Section de POOL sans POOL.");
-  const area = scope.poolId ? reportsOfPool(scope.poolId) : reportsOfOrganization(scope.organizationId);
+  let area: Prisma.ReportWhereInput;
+  if (scope.kind === "exploitation_cellule") {
+    // Cellule : uniquement les rapports que le secrétariat lui a affectés (jamais un autre périmètre).
+    if (!scope.cellId) throw new Error("Section de cellule sans cellule.");
+    area = { ippTrack: { is: { organizationId: scope.organizationId, cellId: scope.cellId, stage: { in: [...CELL_VISIBLE_STAGES] } } } };
+  } else if (scope.kind === "secretariat_ipp") {
+    area = { AND: [reportsOfOrganization(scope.organizationId), { ippTrack: { isNot: null } }] };
+  } else {
+    area = scope.poolId ? reportsOfPool(scope.poolId) : reportsOfOrganization(scope.organizationId);
+  }
   return { AND: [area, demoWhere(scope.isDemo)] };
 }
 
@@ -76,7 +86,7 @@ async function receivedReports(scope: DashboardScope): Promise<LightReport[]> {
 export async function loadPilotageProvincial(scope: DashboardScope, now = new Date()) {
   assertKind(scope, "pilotage_provincial");
   const org = scope.organizationId;
-  const [pools, reports, schools, realizedInspections, activeUsers, schoolsByPool] = await Promise.all([
+  const [pools, reports, schools, realizedInspections, activeUsers, schoolsByPool, signedFromCells] = await Promise.all([
     poolsInScope(scope),
     receivedReports(scope),
     prisma.school.count({ where: { active: true, pool: { organizationId: org } } }),
@@ -85,8 +95,11 @@ export async function loadPilotageProvincial(scope: DashboardScope, now = new Da
     }),
     prisma.user.count({ where: { status: "ACTIVE", organizationId: org } }),
     prisma.school.groupBy({ by: ["poolId"], where: { active: true, pool: { organizationId: org } }, _count: { _all: true } }),
+    // Branche IPP (D3) : rapports signés par l'IPA d'une cellule et transmis à l'IPP.
+    prisma.reportIppTrack.count({ where: { organizationId: org, stage: "SIGNE", report: demoWhere(scope.isDemo) } }),
   ]);
   return {
+    signedFromCells,
     schools,
     activeUsers,
     realizedInspections,
@@ -165,7 +178,7 @@ export async function loadPoolDetail(scope: DashboardScope, requestedPoolId: str
 // ─── Exploitation (exploitant de POOL, exploitant IPP, IPP adjoint) ────────
 
 export async function loadExploitation(scope: DashboardScope, now = new Date()) {
-  assertKind(scope, "exploitation_pool", "exploitation_provinciale", "suivi_adjoint");
+  assertKind(scope, "exploitation_pool", "exploitation_provinciale");
   const buckets = scope.poolId ? POOL_EXPLOITATION_BUCKETS : PROVINCIAL_EXPLOITATION_BUCKETS;
   const since = new Date(now.getTime() - 30 * 86_400_000);
   const [pools, reports, myActions, oldestPending] = await Promise.all([
@@ -213,9 +226,12 @@ export async function loadExploitation(scope: DashboardScope, now = new Date()) 
  * POOL de la section pour une vue de POOL.
  */
 export async function loadSynthesisCounts(scope: DashboardScope, actor: SynthesisActor) {
-  assertKind(scope, "pilotage_provincial", "suivi_adjoint", "exploitation_provinciale", "pilotage_pool", "exploitation_pool");
+  assertKind(scope, "pilotage_provincial", "exploitation_cellule", "exploitation_provinciale", "pilotage_pool", "exploitation_pool");
   if (actor.id !== scope.userId || actor.organizationId !== scope.organizationId) throw new Error("Acteur différent du périmètre.");
-  const rows = (await listSyntheses(actor)).filter((s) => scope.poolId === null || s.poolId === scope.poolId);
+  // Vue de cellule : les synthèses de SA cellule ; vue de POOL : celles de SON POOL.
+  const rows = (await listSyntheses(actor)).filter((s) =>
+    scope.kind === "exploitation_cellule" ? s.cellId === scope.cellId : scope.poolId === null || s.poolId === scope.poolId
+  );
   const mine = rows.filter((s) => s.authorId === actor.id);
   return {
     total: rows.filter((s) => s.status !== "BROUILLON").length,
@@ -223,7 +239,69 @@ export async function loadSynthesisCounts(scope: DashboardScope, actor: Synthesi
     myToFix: mine.filter((s) => s.status === "A_CORRIGER").length,
     submitted: rows.filter((s) => s.status === "SOUMIS").length,
     toFix: rows.filter((s) => s.status === "A_CORRIGER").length,
-    validated: rows.filter((s) => s.status === "VALIDE").length,
+    // Abouties : validées (POOL) ou signées par l'IPA et transmises à l'IPP (cellule).
+    validated: rows.filter((s) => s.status === "VALIDE" || s.status === "SIGNE").length,
+  };
+}
+
+// ─── Cellule de l'IPP : exploitants et IPA (décisions du 2026-10-08) ──────
+
+/**
+ * Activité de SA cellule : rapports affectés par le secrétariat, en cours,
+ * exploités (à signer par l'IPA), signés et transmis à l'IPP. Aucun indicateur
+ * de l'IPP principal, aucun autre périmètre.
+ */
+export async function loadCellule(scope: DashboardScope, now = new Date()) {
+  assertKind(scope, "exploitation_cellule");
+  const since = new Date(now.getTime() - 30 * 86_400_000);
+  const where = reportsInScope(scope);
+  const [cell, byStage, toSign, latest, myActions] = await Promise.all([
+    prisma.cell.findFirst({ where: { id: scope.cellId!, organizationId: scope.organizationId }, select: { code: true, name: true, ipa: { select: { name: true } } } }),
+    prisma.reportIppTrack.groupBy({ by: ["stage"], where: { report: where }, _count: { _all: true } }),
+    prisma.report.findMany({
+      where: { AND: [where, { ippTrack: { is: { stage: "EXPLOITE" } } }] },
+      orderBy: { updatedAt: "asc" },
+      take: 5,
+      include: REPORT_SCOPE_INCLUDE,
+    }),
+    prisma.report.findMany({
+      where: { AND: [where, { ippTrack: { is: { stage: "AFFECTE" } } }] },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+      include: REPORT_SCOPE_INCLUDE,
+    }),
+    // Étapes de la branche IPP faites par ce compte dans sa cellule sur 30 jours.
+    prisma.reportIppEvent.count({ where: { actorId: scope.userId, createdAt: { gte: since }, cellId: scope.cellId } }),
+  ]);
+  const stage = (k: string) => byStage.find((s) => s.stage === k)?._count._all ?? 0;
+  const brief = (r: (typeof latest)[number]) => ({ id: r.id, title: reportScope(r).title, author: reportScope(r).authorName });
+  return {
+    cell,
+    affected: stage("AFFECTE"),
+    toSign: stage("EXPLOITE"),
+    signed: stage("SIGNE"),
+    myActions,
+    toSignList: toSign.map(brief),
+    latestAffected: latest.map(brief),
+  };
+}
+
+// ─── Secrétaire de l'IPP : rapports arrivés, envois aux cellules ──────────
+
+export async function loadSecretariat(scope: DashboardScope) {
+  assertKind(scope, "secretariat_ipp");
+  const where = reportsInScope(scope);
+  const [waiting, legacy, byCell, cells] = await Promise.all([
+    prisma.reportIppTrack.count({ where: { stage: "AU_SECRETARIAT", report: where } }),
+    prisma.reportIppTrack.count({ where: { stage: "AU_SECRETARIAT", legacy: true, report: where } }),
+    prisma.reportIppTrack.groupBy({ by: ["cellId"], where: { cellId: { not: null }, stage: { not: "SIGNE" }, report: where }, _count: { _all: true } }),
+    prisma.cell.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),
+  ]);
+  return {
+    waiting,
+    legacy,
+    activeCells: cells.length,
+    byCell: cells.map((c) => ({ ...c, inProgress: byCell.find((b) => b.cellId === c.id)?._count._all ?? 0 })),
   };
 }
 

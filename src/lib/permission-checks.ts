@@ -3,8 +3,13 @@
 
 import { CUSTOM_ROLE_GRANTORS, ROLE_GRANTORS, ROLE_KEYS, type PermissionKey, type RoleKey } from "@/lib/rbac-data";
 
-export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string };
-export type SessionRole = { key: string; label: string; poolId: string | null };
+/**
+ * `cellId` : permission de cellule (CELL_PERMISSION_KEYS), valable pour
+ * cette seule cellule ; jamais confondue avec une portée POOL ou organisation.
+ */
+export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string; cellId?: string | null };
+/** `cellId` : cellule de la fonction (exploitant de l'IPP), ou dont la personne est l'IPA responsable. */
+export type SessionRole = { key: string; label: string; poolId: string | null; cellId?: string | null; cellCode?: string | null };
 
 /**
  * `poolId: null` sur une permission signifie une portée organisation (accès
@@ -24,10 +29,13 @@ export type SessionRole = { key: string; label: string; poolId: string | null };
 export function hasPermission(
   permissions: SessionPermission[],
   key: PermissionKey | string,
-  opts?: { poolId?: string | null; organizationId?: string | null }
+  opts?: { poolId?: string | null; organizationId?: string | null; cellId?: string | null }
 ): boolean {
   return permissions.some((p) => {
     if (p.permissionKey !== key) return false;
+    // Permission de cellule : seulement pour SA cellule (ou un contrôle « quelque part »).
+    if (p.cellId) return opts?.poolId == null && (opts?.cellId == null || opts.cellId === p.cellId);
+    if (opts?.cellId != null) return false;
     if (p.poolId === null) {
       if (opts?.poolId == null) return true;
       return opts.organizationId != null && opts.organizationId === p.organizationId;
@@ -53,6 +61,16 @@ export function canGrantRole(actorRoles: SessionRole[], roleKey: string, poolId:
     if (r.key === ROLE_KEYS.CHEF_POOL) return poolId !== null && r.poolId === poolId;
     return true;
   });
+}
+
+/** Cellules pour lesquelles la personne détient cette permission de cellule. */
+export function cellsWithPermission(permissions: SessionPermission[], key: PermissionKey | string): string[] {
+  return [...new Set(permissions.flatMap((p) => (p.permissionKey === key && p.cellId ? [p.cellId] : [])))];
+}
+
+/** Cellules dont la personne lit les rapports affectés (exploitant ou IPA). */
+export function readableCells(permissions: SessionPermission[]): string[] {
+  return [...new Set(permissions.flatMap((p) => (p.cellId && (p.permissionKey === "reports.review_cell" || p.permissionKey === "reports.sign_cell") ? [p.cellId] : [])))];
 }
 
 /** Portée organisation : vrai si l'utilisateur détient la permission pour au moins un pool, quel qu'il soit (toujours dans sa propre organisation). */

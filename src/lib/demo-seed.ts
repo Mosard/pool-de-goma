@@ -25,7 +25,9 @@ const ROLE_DEFINITIONS: { key: RoleKey; label: string; description: string; scop
   { key: ROLE_KEYS.INSPECTEUR, label: "Inspecteur itinérant", description: "Réalise les inspections sur le terrain.", scope: "POOL" },
   { key: ROLE_KEYS.EXPLOITANT_POOL, label: "Exploitant de pool", description: "Exploite les rapports reçus au niveau du pool.", scope: "POOL" },
   { key: ROLE_KEYS.CHEF_POOL, label: "Chef de pool", description: "Responsable d'un pool : écoles, affectations, exploitation.", scope: "POOL" },
-  { key: ROLE_KEYS.EXPLOITANT_IPP, label: "Exploitant IPP (Bureau d'exploitation)", description: "Exploite les rapports transmis au niveau provincial.", scope: "PROVINCE" },
+  // Rattachement obligatoire à une cellule (UserRole.cellId), décisions du 2026-10-08.
+  { key: ROLE_KEYS.EXPLOITANT_IPP, label: "Exploitant de l'IPP", description: "Exploite les rapports que le secrétariat a envoyés à sa cellule et prépare ses synthèses.", scope: "CELL" },
+  { key: ROLE_KEYS.SECRETAIRE_IPP, label: "Secrétaire de l'IPP", description: "Reçoit les rapports soumis et les envoie à la cellule correspondante, au nom de l'IPP.", scope: "PROVINCE" },
   { key: ROLE_KEYS.AGENT_IPP, label: "Agent IPP", description: "Agent administratif du bureau provincial.", scope: "PROVINCE" },
   { key: ROLE_KEYS.AGENT_POOL, label: "Agent de pool", description: "Agent administratif (caisse, secrétariat, ...) au sein d'un pool.", scope: "POOL" },
   { key: ROLE_KEYS.SECRETAIRE_POOL, label: "Secrétaire de pool", description: "Gestion administrative des écoles au sein d'un pool.", scope: "POOL" },
@@ -50,13 +52,14 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.CONTENT_PUBLISH,
     PERMISSIONS.AI_ANALYZE,
   ],
-  [ROLE_KEYS.IPA]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.AUDIT_VIEW, PERMISSIONS.CONTENT_PUBLISH, PERMISSIONS.AI_ANALYZE],
+  // D4 (2026-10-08) : l'IPA ne voit que sa cellule ; il en signe les rapports et synthèses (D6).
+  [ROLE_KEYS.IPA]: [PERMISSIONS.REPORTS_SIGN_CELL, PERMISSIONS.AUDIT_VIEW, PERMISSIONS.CONTENT_PUBLISH, PERMISSIONS.AI_ANALYZE],
   [ROLE_KEYS.INSPECTEUR]: [PERMISSIONS.INSPECTIONS_CONDUCT],
   [ROLE_KEYS.EXPLOITANT_POOL]: [PERMISSIONS.REPORTS_REVIEW_POOL],
   [ROLE_KEYS.CHEF_POOL]: [PERMISSIONS.SCHOOLS_MANAGE, PERMISSIONS.ASSIGNMENTS_MANAGE, PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.AI_ANALYZE],
-  // Décision Q8 (2026-10-07) : exploitation au niveau POOL sur tous les POOL
-  // et analyses IA (migration 20261007120000_fiches_officielles).
-  [ROLE_KEYS.EXPLOITANT_IPP]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.AI_ANALYZE],
+  // Décisions du 2026-10-08 (remplacent Q8) : uniquement les rapports affectés à sa cellule.
+  [ROLE_KEYS.EXPLOITANT_IPP]: [PERMISSIONS.REPORTS_REVIEW_CELL],
+  [ROLE_KEYS.SECRETAIRE_IPP]: [PERMISSIONS.REPORTS_ROUTE_IPP],
   [ROLE_KEYS.AGENT_IPP]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE],
   [ROLE_KEYS.AGENT_POOL]: [],
   [ROLE_KEYS.SECRETAIRE_POOL]: [PERMISSIONS.SCHOOLS_MANAGE],

@@ -26,6 +26,9 @@ enum Sex {
 enum RoleScope {
   PROVINCE
   POOL
+  // Fonction rattachée obligatoirement à une cellule de l'IPP (UserRole.cellId),
+  // décision du 2026-10-08 (docs/exploitants-ipp-cellules.md).
+  CELL
 }
 
 enum AccountRequestStatus {
@@ -79,6 +82,8 @@ model Organization {
   contents              Content[]
   aiAnalyses            AiAnalysis[]
   syntheses             Synthesis[]
+  cells                 Cell[]
+  ippTracks             ReportIppTrack[]
 }
 
 // Contenus éditoriaux du site public (actualités, articles, communiqués).
@@ -280,10 +285,15 @@ model UserRole {
   role      RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
   poolId    String?
   pool      Pool?          @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  // Cellule de l'IPP (fonction de portée CELL : exploitant de l'IPP). Vide
+  // pour une telle fonction : fonction incomplète, aucun accès de cellule.
+  cellId    String?
+  cell      Cell?          @relation(fields: [cellId], references: [id], onDelete: Restrict)
   createdAt DateTime       @default(now())
 
-  @@unique([userId, roleId, poolId])
+  @@unique([userId, roleId, poolId, cellId])
   @@index([userId])
+  @@index([cellId])
 }
 
 enum PermissionEffect {
@@ -384,6 +394,10 @@ model User {
   synthesesAuthored       Synthesis[]              @relation("SynthesisAuthor")
   synthesisTransitions    SynthesisStatusHistory[]
   synthesisVersions       SynthesisVersion[]
+  // Cellule dont ce compte (IPA) est responsable : une seule (décision D2).
+  cellLed                 Cell?                    @relation("CellIpa")
+  ippEvents               ReportIppEvent[]         @relation("IppEventActor")
+  ippTracksSigned         ReportIppTrack[]         @relation("IppSignedBy")
 
   @@index([organizationId])
   @@index([poolId])
@@ -669,10 +683,98 @@ model Report {
   statusHistory    ReportStatusHistory[]
   attachments      Attachment[]
   synthesisSources SynthesisSource[]
+  // Branche IPP (secrétariat, cellule, signature de l'IPA), indépendante du statut du POOL.
+  ippTrack         ReportIppTrack?
+  ippEvents        ReportIppEvent[]
 
   @@index([statusId])
   @@index([poolId])
   @@index([authorId])
+}
+
+// ─── Cellules de l'IPP et branche IPP des rapports (2026-10-08) ─────────────
+// docs/exploitants-ipp-cellules.md. Aucune cellule n'est créée par une
+// migration ni par le seed : l'équipe métier les saisit (Paramètres).
+
+model Cell {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  // Sigle saisi par l'équipe métier (ex. « IPAF ») et intitulé affiché.
+  code           String
+  name           String
+  // IPA responsable, chef de cellule et signataire (décisions D2 et D6) :
+  // un IPA n'est responsable que d'une cellule.
+  ipaId          String?      @unique
+  ipa            User?        @relation("CellIpa", fields: [ipaId], references: [id], onDelete: SetNull)
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  userRoles     UserRole[]
+  ippTracks     ReportIppTrack[]
+  ippEventsTo   ReportIppEvent[] @relation("IppEventCell")
+  ippEventsFrom ReportIppEvent[] @relation("IppEventFromCell")
+  syntheses     Synthesis[]
+  aiAnalyses    AiAnalysis[]
+
+  @@unique([organizationId, code])
+}
+
+enum IppStage {
+  // Arrivé au secrétariat de l'IPP (dès la soumission, décision D1).
+  AU_SECRETARIAT
+  // Envoyé par le secrétariat à une cellule.
+  AFFECTE
+  // Exploitation terminée par la cellule, en attente de la signature de l'IPA.
+  EXPLOITE
+  // Signé par l'IPA et transmis à l'IPP (décision D3).
+  SIGNE
+}
+
+model ReportIppTrack {
+  id             String       @id @default(cuid())
+  reportId       String       @unique
+  report         Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  stage          IppStage     @default(AU_SECRETARIAT)
+  cellId         String?
+  cell           Cell?        @relation(fields: [cellId], references: [id], onDelete: Restrict)
+  // Rapport antérieur à la branche IPP (migration) : cellule indéterminable,
+  // à orienter par le secrétariat ; consultable par l'IPP comme historique.
+  legacy         Boolean      @default(false)
+  arrivedAt      DateTime     @default(now())
+  assignedAt     DateTime?
+  exploitedAt    DateTime?
+  signedAt       DateTime?
+  signedById     String?
+  signedBy       User?        @relation("IppSignedBy", fields: [signedById], references: [id])
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, stage])
+  @@index([cellId, stage])
+}
+
+// Traçabilité de chaque étape de la branche IPP (jamais modifiée ni supprimée) :
+// arrivée, affectation, réaffectation, exploitation, renvoi, signature.
+model ReportIppEvent {
+  id         String    @id @default(cuid())
+  reportId   String
+  report     Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  fromStage  IppStage?
+  toStage    IppStage
+  fromCellId String?
+  fromCell   Cell?     @relation("IppEventFromCell", fields: [fromCellId], references: [id], onDelete: Restrict)
+  // Cellule destinataire (affectation, réaffectation) ou cellule concernée.
+  cellId     String?
+  cell       Cell?     @relation("IppEventCell", fields: [cellId], references: [id], onDelete: Restrict)
+  actorId    String
+  actor      User      @relation("IppEventActor", fields: [actorId], references: [id])
+  comment    String?
+  createdAt  DateTime  @default(now())
+
+  @@index([reportId])
 }
 
 model ReportStatusHistory {
@@ -801,6 +903,9 @@ model AiAnalysis {
   // Vide : toute l'inspection.
   poolId         String?
   pool           Pool?            @relation(fields: [poolId], references: [id], onDelete: Restrict)
+  // Analyse limitée aux rapports d'une cellule (IPA, décision D4).
+  cellId         String?
+  cell           Cell?            @relation(fields: [cellId], references: [id], onDelete: Restrict)
   periodFrom     DateTime
   periodTo       DateTime
   authorId       String
@@ -892,15 +997,20 @@ enum SynthesisStatus {
   SOUMIS
   A_CORRIGER
   VALIDE
+  // Synthèse de cellule signée par l'IPA et transmise à l'IPP (décision D3).
+  SIGNE
 }
 
 model Synthesis {
   id             String          @id @default(cuid())
   organizationId String
   organization   Organization    @relation(fields: [organizationId], references: [id])
-  // POOL de la synthèse ; vide = synthèse provinciale (exploitant IPP).
+  // POOL de la synthèse ; vide = synthèse provinciale (ancien circuit) ou de cellule.
   poolId         String?
   pool           Pool?           @relation(fields: [poolId], references: [id])
+  // Cellule de l'IPP : synthèse préparée par la cellule, signée par son IPA.
+  cellId         String?
+  cell           Cell?           @relation(fields: [cellId], references: [id], onDelete: Restrict)
   authorId       String
   author         User            @relation("SynthesisAuthor", fields: [authorId], references: [id])
   // Compte de démonstration auteur : synthèse de démonstration (rapports de démonstration seulement).

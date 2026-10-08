@@ -21,12 +21,15 @@ export async function setViewModeAction(formData: FormData) {
   const { user, auditAction } = await requireViewModeHolder();
   const role = String(formData.get("role") ?? "");
   const poolId = String(formData.get("poolId") ?? "") || null;
+  const cellId = String(formData.get("cellId") ?? "") || null;
   if (!role) return clearViewModeAction();
 
-  const access = await loadUserAccess(user.id, { viewMode: { role, poolId } });
+  // Cellule vérifiée en base (active, même organisation) par loadUserAccess.
+  const access = await loadUserAccess(user.id, { viewMode: { role, poolId, cellId } });
   if (!access.viewMode) redirect("/dashboard?vue=invalide");
 
-  (await cookies()).set(VIEW_MODE_COOKIE, JSON.stringify({ role: access.viewMode.role, poolId: access.viewMode.poolId }), {
+  const mode = { role: access.viewMode.role, poolId: access.viewMode.poolId, cellId: access.viewMode.cellId ?? null };
+  (await cookies()).set(VIEW_MODE_COOKIE, JSON.stringify(mode), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -39,7 +42,7 @@ export async function setViewModeAction(formData: FormData) {
     action: auditAction,
     entityType: "User",
     entityId: user.id,
-    newValue: { role: access.viewMode.role, poolId: access.viewMode.poolId },
+    newValue: mode,
   });
   redirect("/dashboard");
 }

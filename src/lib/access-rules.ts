@@ -5,7 +5,8 @@
 // Les actions serveur appliquent les mêmes règles sur les droits relus en base.
 
 import { canGrantRole, hasPermission, isChiefOf, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
-import { PERMISSIONS, ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
+import { CELL_PERMISSION_KEYS, PERMISSIONS, ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
+import { provincialGrantRefusal } from "@/lib/cells/rules";
 
 export type AdjustmentEffect = "GRANT" | "REVOKE";
 export type Adjustment = { permissionKey: string; poolId: string | null; effect: AdjustmentEffect };
@@ -31,15 +32,16 @@ const PROVINCIAL_MANAGERS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMA
  * individuels (même permission, même portée), plus les ajouts individuels.
  */
 export function applyAdjustments(base: SessionPermission[], adjustments: Adjustment[], organizationId: string): SessionPermission[] {
-  const revoked = new Set(adjustments.filter((a) => a.effect === "REVOKE").map((a) => `${a.permissionKey}|${a.poolId ?? ""}`));
+  const revoked = new Set(adjustments.filter((a) => a.effect === "REVOKE").map((a) => `${a.permissionKey}|${a.poolId ?? ""}|`));
   const out = new Map<string, SessionPermission>();
   for (const p of base) {
-    const k = `${p.permissionKey}|${p.poolId ?? ""}`;
+    // Une permission de cellule (cellId) n'est jamais touchée par un ajustement : elle suit le rattachement.
+    const k = `${p.permissionKey}|${p.poolId ?? ""}|${p.cellId ?? ""}`;
     if (!revoked.has(k)) out.set(k, p);
   }
   for (const a of adjustments) {
-    if (a.effect !== "GRANT") continue;
-    out.set(`${a.permissionKey}|${a.poolId ?? ""}`, { permissionKey: a.permissionKey, poolId: a.poolId, organizationId });
+    if (a.effect !== "GRANT" || CELL_PERMISSION_KEYS.includes(a.permissionKey)) continue;
+    out.set(`${a.permissionKey}|${a.poolId ?? ""}|`, { permissionKey: a.permissionKey, poolId: a.poolId, organizationId });
   }
   return [...out.values()];
 }
@@ -93,11 +95,18 @@ export function canAdjustPermission(
   actor: Pick<Actor, "organizationId" | "roles" | "permissions">,
   permissionKey: string,
   poolId: string | null,
-  effect: AdjustmentEffect
+  effect: AdjustmentEffect,
+  target?: { roles: { key: string }[] }
 ): Verdict {
+  if (CELL_PERMISSION_KEYS.includes(permissionKey)) {
+    return no("Permission de cellule : elle suit le rattachement de la fonction à une cellule, pas un ajustement individuel.");
+  }
   if (effect === "GRANT" && (NOT_INDIVIDUALLY_GRANTABLE as readonly string[]).includes(permissionKey)) {
     return no("Permission sensible : elle ne s'ajoute pas individuellement, seulement par une fonction.");
   }
+  // Décisions du 2026-10-08 : jamais d'accès provincial de repli pour un exploitant de cellule ou un IPA.
+  const refusal = target ? provincialGrantRefusal(target.roles, permissionKey, poolId, effect) : null;
+  if (refusal) return no(refusal);
   const provincial = isProvincialManager(actor.roles);
   if (poolId === null) {
     if (!provincial) return no("Seuls l'IPP, l'informaticien et le Super Admin agissent sur tous les POOL.");

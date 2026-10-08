@@ -12,6 +12,10 @@ export const PERMISSIONS = {
   REPORTS_REVIEW_POOL: "reports.review_pool",
   REPORTS_REVIEW_PROVINCE: "reports.review_province",
   REPORTS_VALIDATE: "reports.validate",
+  // Branche IPP des rapports (2026-10-08, docs/exploitants-ipp-cellules.md).
+  REPORTS_ROUTE_IPP: "reports.route_ipp",
+  REPORTS_REVIEW_CELL: "reports.review_cell",
+  REPORTS_SIGN_CELL: "reports.sign_cell",
   AUDIT_VIEW: "audit.view",
   FORM_TEMPLATES_MANAGE: "form_templates.manage",
   PUBLICATION_MANAGE: "publication.manage",
@@ -33,6 +37,9 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.REPORTS_REVIEW_POOL, label: "Exploiter les rapports au niveau du pool", category: "Circuit de validation" },
   { key: PERMISSIONS.REPORTS_REVIEW_PROVINCE, label: "Exploiter les rapports au niveau du bureau IPP", category: "Circuit de validation" },
   { key: PERMISSIONS.REPORTS_VALIDATE, label: "Valider ou rejeter un rapport", category: "Circuit de validation" },
+  { key: PERMISSIONS.REPORTS_ROUTE_IPP, label: "Secrétariat de l'IPP : recevoir les rapports et les envoyer à une cellule", category: "Circuit de validation" },
+  { key: PERMISSIONS.REPORTS_REVIEW_CELL, label: "Exploiter les rapports affectés à sa cellule et préparer ses synthèses", category: "Circuit de validation" },
+  { key: PERMISSIONS.REPORTS_SIGN_CELL, label: "Signer et transmettre à l'IPP les rapports et synthèses de sa cellule (IPA)", category: "Circuit de validation" },
   { key: PERMISSIONS.AUDIT_VIEW, label: "Consulter le journal d'audit", category: "Administration" },
   { key: PERMISSIONS.FORM_TEMPLATES_MANAGE, label: "Gérer les catégories et fiches d'inspection", category: "Administration" },
   { key: PERMISSIONS.PUBLICATION_MANAGE, label: "Autoriser la publication publique des profils (nom, fonction, photo)", category: "Publication" },
@@ -54,10 +61,29 @@ export const ROLE_KEYS = {
   SECRETAIRE_POOL: "secretaire_pool",
   INFORMATICIEN: "informaticien",
   CHARGE_MEDIAS: "charge_medias",
+  SECRETAIRE_IPP: "secretaire_ipp",
   SUPER_ADMIN: "super_admin",
 } as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[keyof typeof ROLE_KEYS];
+
+// Permissions de cellule : elles ne valent QUE pour une cellule précise —
+// celle de la fonction (UserRole.cellId, exploitant de l'IPP) ou celle dont
+// la personne est l'IPA responsable (Cell.ipaId). Sans cellule, elles ne
+// donnent rien : jamais d'accès provincial de repli (décisions du 2026-10-08).
+export const CELL_PERMISSION_KEYS: readonly string[] = [PERMISSIONS.REPORTS_REVIEW_CELL, PERMISSIONS.REPORTS_SIGN_CELL];
+
+// IPA : ses analyses IA sont aussi bornées à sa cellule (décision D4).
+export const IPA_CELL_BOUND_KEYS: readonly string[] = [...CELL_PERMISSION_KEYS, PERMISSIONS.AI_ANALYZE];
+
+// Fonctions rattachées à une cellule : un accès provincial (review_province,
+// review_pool sur tous les POOL) ne peut pas leur être redonné individuellement.
+export const CELL_BOUND_ROLE_KEYS: readonly string[] = [ROLE_KEYS.EXPLOITANT_IPP, ROLE_KEYS.IPA];
+
+// Décision D7 : dans la branche IPP, l'IPP principal ne lit que les rapports
+// signés et transmis par une cellule (et l'historique antérieur). Ses vues de
+// pilotage chiffrées et ses autres pouvoirs ne changent pas.
+export const SIGNED_ONLY_READER_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP];
 
 // Motif de fin d'une affectation (Assignment.endReason).
 export const ASSIGNMENT_END_REASONS = {
@@ -129,6 +155,7 @@ export const ROLE_GRANTORS: Readonly<Record<RoleKey, readonly RoleKey[]>> = {
   [ROLE_KEYS.EXPLOITANT_IPP]: PROVINCIAL_GRANTORS,
   [ROLE_KEYS.AGENT_IPP]: PROVINCIAL_GRANTORS,
   [ROLE_KEYS.CHARGE_MEDIAS]: PROVINCIAL_GRANTORS,
+  [ROLE_KEYS.SECRETAIRE_IPP]: PROVINCIAL_GRANTORS,
   [ROLE_KEYS.INSPECTEUR]: POOL_SUPPORT_GRANTORS,
   [ROLE_KEYS.CHEF_POOL]: PROVINCIAL_GRANTORS,
   [ROLE_KEYS.EXPLOITANT_POOL]: POOL_SUPPORT_GRANTORS,

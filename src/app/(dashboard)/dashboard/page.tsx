@@ -16,6 +16,8 @@ import {
   loadPilotageProvincial,
   loadPoolDetail,
   loadSynthesisCounts,
+  loadCellule,
+  loadSecretariat,
 } from "@/lib/dashboard/data";
 import { loadActor, type SynthesisActor } from "@/lib/synthese/server";
 
@@ -93,7 +95,7 @@ export default async function DashboardPage({
         </Card>
       )}
       {scopes.map((scope) => (
-        <section key={`${scope.kind}:${scope.poolId ?? "org"}`} className="space-y-6">
+        <section key={`${scope.kind}:${scope.poolId ?? scope.cellId ?? "org"}`} className="space-y-6">
           <Section scope={scope} actor={actor} poolId={poolId ?? null} inspectorId={inspecteurId ?? null} />
         </section>
       ))}
@@ -120,7 +122,15 @@ async function Section({
           <SynthesesCard scope={scope} actor={actor} />
         </>
       );
-    case "suivi_adjoint":
+    case "exploitation_cellule":
+      return (
+        <>
+          <Cellule scope={scope} />
+          <SynthesesCard scope={scope} actor={actor} />
+        </>
+      );
+    case "secretariat_ipp":
+      return <Secretariat scope={scope} />;
     case "exploitation_provinciale":
     case "exploitation_pool":
       return (
@@ -166,13 +176,27 @@ async function Section({
 // IPP examine et rédige, le POOL rédige. Seules les synthèses lisibles comptent.
 async function SynthesesCard({ scope, actor }: { scope: DashboardScope; actor: SynthesisActor }) {
   const c = await loadSynthesisCounts(scope, actor);
-  const validator = scope.kind === "pilotage_provincial" || scope.kind === "suivi_adjoint";
+  const validator = scope.kind === "pilotage_provincial";
+  const cellIpa = scope.kind === "exploitation_cellule" && scope.roleKey === "ipa";
   const cards = validator
     ? [
         { label: "Synthèses à valider", value: c.submitted, hint: "Soumises, décision attendue" },
         { label: "Renvoyées pour correction", value: c.toFix },
-        { label: "Synthèses validées", value: c.validated },
+        { label: "Validées ou signées", value: c.validated, hint: "Synthèses de cellule : signées par l'IPA" },
       ]
+    : cellIpa
+      ? [
+          { label: "Synthèses à signer", value: c.submitted, hint: "Soumises par la cellule" },
+          { label: "Renvoyées à la cellule", value: c.toFix },
+          { label: "Signées et transmises à l'IPP", value: c.validated },
+        ]
+    : scope.kind === "exploitation_cellule"
+      ? [
+          { label: "Mes brouillons", value: c.myDrafts },
+          { label: "Mes synthèses à corriger", value: c.myToFix },
+          { label: "Soumises à l'IPA", value: c.submitted, hint: "En attente de signature" },
+          { label: "Signées et transmises à l'IPP", value: c.validated },
+        ]
     : scope.kind === "exploitation_provinciale"
       ? [
           { label: "Synthèses soumises à examiner", value: c.submitted, hint: "Renvoi pour correction possible" },
@@ -190,7 +214,7 @@ async function SynthesesCard({ scope, actor }: { scope: DashboardScope; actor: S
     <Card>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-900">
-          Rapports de synthèse {scope.poolId ? "du POOL" : "de l'Inspection"} ({c.total} soumis au moins une fois)
+          Rapports de synthèse {scope.cellId ? "de la cellule" : scope.poolId ? "du POOL" : "de l'Inspection"} ({c.total} soumis au moins une fois)
         </h2>
         <ActionLink href="/syntheses">Ouvrir les synthèses</ActionLink>
       </div>
@@ -233,6 +257,7 @@ async function PilotageProvincial({ scope, poolId, inspectorId }: { scope: Dashb
         <StatCard icon={Users} label="Comptes actifs" value={data.activeUsers} />
         <StatCard icon={FileCheck2} label={label("rejetes")} value={data.buckets.rejetes} />
         <StatCard icon={Inbox} label="Rapports reçus (total)" value={data.received} />
+        <StatCard icon={FileCheck2} label="Signés par les cellules" value={data.signedFromCells} hint="Signés par l'IPA, transmis à l'IPP" />
       </div>
       {data.buckets.corrections > 0 && (
         <Card className="flex items-center gap-3 border-amber-200 bg-amber-50">
@@ -405,18 +430,100 @@ async function PilotagePool({ scope, inspectorId }: { scope: DashboardScope; ins
   );
 }
 
-// ─── Exploitation : exploitant de POOL, exploitant IPP, IPP adjoint ────────
+// ─── Cellule de l'IPP : exploitants et IPA (décisions du 2026-10-08) ──────
+
+function ReportMiniList({ title, rows, empty }: { title: string; rows: { id: string; title: string; author: string }[]; empty: string }) {
+  return (
+    <Card>
+      <h2 className="mb-3 text-sm font-semibold text-gray-900">{title}</h2>
+      {rows.length === 0 ? (
+        <p className="text-sm text-gray-500">{empty}</p>
+      ) : (
+        <ul className="space-y-2 text-sm">
+          {rows.map((r) => (
+            <li key={r.id}>
+              <Link href={`/rapports/${r.id}`} className="font-medium text-blue-600 hover:underline">
+                {r.title}
+              </Link>
+              <span className="text-gray-500"> — {r.author}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+async function Cellule({ scope }: { scope: DashboardScope }) {
+  const data = await loadCellule(scope);
+  const ipa = scope.roleKey === "ipa";
+  const cellLabel = data.cell ? `cellule ${data.cell.code} — ${data.cell.name}` : "votre cellule";
+  return (
+    <>
+      <PageHeader
+        title={ipa ? "Ma cellule — signatures" : "Exploitation de la cellule"}
+        description={`Rapports envoyés par le secrétariat de l'IPP à la ${cellLabel}.${data.cell?.ipa ? ` IPA : ${data.cell.ipa.name}.` : ""}`}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ActionLink href="/rapports">Rapports de la cellule</ActionLink>
+            <ActionLink href="/exploitation">Exploitation des fiches</ActionLink>
+          </div>
+        }
+      />
+      <ScopeBanner scope={scope} perimeter={`${cellLabel} (rapports affectés uniquement)`} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={Inbox} label="En exploitation" value={data.affected} hint="Envoyés par le secrétariat" />
+        <StatCard icon={FileCheck2} label="À signer par l'IPA" value={data.toSign} />
+        <StatCard icon={FileCheck2} label="Signés et transmis à l'IPP" value={data.signed} />
+        <StatCard icon={ClipboardList} label="Mes étapes (30 jours)" value={data.myActions} />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ReportMiniList title="À signer (exploitation terminée)" rows={data.toSignList} empty="Aucun rapport en attente de signature." />
+        <ReportMiniList title="Derniers rapports reçus par la cellule" rows={data.latestAffected} empty="Aucun rapport en cours dans la cellule." />
+      </div>
+    </>
+  );
+}
+
+// ─── Secrétariat de l'IPP ─────────────────────────────────────────────────
+
+async function Secretariat({ scope }: { scope: DashboardScope }) {
+  const data = await loadSecretariat(scope);
+  return (
+    <>
+      <PageHeader
+        title="Secrétariat de l'IPP"
+        description="Rapports soumis arrivés au secrétariat, à envoyer à la cellule correspondante."
+        actions={<ActionLink href="/secretariat">Ouvrir le secrétariat</ActionLink>}
+      />
+      <ScopeBanner scope={scope} perimeter="rapports arrivés au secrétariat (réception et orientation, sans exploitation)" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={Inbox} label="À envoyer à une cellule" value={data.waiting} hint={data.legacy ? `dont ${data.legacy} antérieur(s) à orienter` : undefined} />
+        <StatCard icon={Users} label="Cellules actives" value={data.activeCells} />
+      </div>
+      {data.byCell.length > 0 && (
+        <Card>
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">Rapports en cours par cellule</h2>
+          <ul className="space-y-1 text-sm text-gray-700">
+            {data.byCell.map((c) => (
+              <li key={c.id}>
+                <strong>{c.code}</strong> — {c.name} : {c.inProgress}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </>
+  );
+}
+
+// ─── Exploitation : exploitant de POOL, fonction provinciale hors cellule ───
 
 async function Exploitation({ scope }: { scope: DashboardScope }) {
   const data = await loadExploitation(scope);
   const provincial = scope.poolId === null;
   const poolName = data.byPool[0]?.pool.name ?? "";
-  const title =
-    scope.kind === "suivi_adjoint"
-      ? "Suivi provincial de l'exploitation"
-      : provincial
-        ? "Mes activités d'exploitation (bureau IPP)"
-        : `Exploitation des rapports — POOL ${poolName}`;
+  const title = provincial ? "Mes activités d'exploitation (bureau IPP)" : `Exploitation des rapports — POOL ${poolName}`;
   return (
     <>
       <PageHeader

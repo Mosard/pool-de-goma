@@ -8,10 +8,12 @@ import { TransitionActions } from "../transition-actions";
 import { getAvailableTransitions } from "@/lib/workflow";
 import { parseFieldsSchema } from "@/lib/form-schema";
 import { PERMISSIONS } from "@/lib/rbac-data";
-import { hasPermission } from "@/lib/permissions";
 import { FicheEditor } from "@/components/fiches/fiche-editor";
 import { PdfButtons } from "@/components/pdf-buttons";
-import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope } from "@/lib/fiches/report-scope";
+import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope, reportTrack } from "@/lib/fiches/report-scope";
+import { IPP_STAGE_LABELS, TRACK_ACTIONS, availableTrackActions, canWorkOnReport } from "@/lib/cells/rules";
+import { activeCells, ippHistory, loadCellActor } from "@/lib/cells/server";
+import { IppTrackPanel } from "../ipp-track-panel";
 import { resolveFicheDef } from "@/lib/fiches/defs/index";
 import { ficheData, workflowStatusById } from "@/lib/fiches/server";
 import { loadActor, synthesesIncludingReport } from "@/lib/synthese/server";
@@ -47,13 +49,25 @@ export default async function RapportDetailPage({
   const user = session.user;
   const scope = reportScope(report);
   const statuses = await workflowStatusById();
-  if (!canReadScope(user, scope)) notFound();
+  // Règle centrale de lecture (POOL, secrétariat, cellule, IPP : signé seulement), droits relus en base.
+  const actor = await loadCellActor(user.id);
+  const track = reportTrack(report);
+  if (!canReadScope(actor, scope, track)) notFound();
 
-  const target = { poolId: scope.poolId, organizationId: scope.organizationId };
-  const canComment =
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, target) ||
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, target) ||
-    hasPermission(user.permissions, PERMISSIONS.REPORTS_VALIDATE, target);
+  const canComment = canWorkOnReport(actor, scope, track);
+  const trackActions = track
+    ? availableTrackActions(actor, track).map((a) => ({
+        key: a,
+        label: TRACK_ACTIONS[a].label,
+        needsCell: a === "assign" || a === "reassign",
+        commentRequired: TRACK_ACTIONS[a].commentRequired,
+      }))
+    : [];
+  const [cells, ippEvents] = await Promise.all([
+    trackActions.some((a) => a.needsCell) ? activeCells(actor.organizationId) : Promise.resolve([]),
+    track ? ippHistory(report.id) : Promise.resolve([]),
+  ]);
+  const trackCell = report.ippTrack?.cellId ? await prisma.cell.findUnique({ where: { id: report.ippTrack.cellId }, select: { code: true, name: true } }) : null;
 
   const allTransitions = await getAvailableTransitions(report.id, user.permissions, scope.poolId, scope.organizationId);
   // « Resoumettre » appartient à l'auteur, depuis sa fiche.
@@ -129,6 +143,40 @@ export default async function RapportDetailPage({
           </Card>
         );
       })}
+
+      {report.ippTrack && (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-900">Circuit de l&apos;IPP</h3>
+            <Badge color={report.ippTrack.stage === "SIGNE" ? "green" : report.ippTrack.stage === "AU_SECRETARIAT" ? "orange" : "blue"}>
+              {IPP_STAGE_LABELS[report.ippTrack.stage]}
+            </Badge>
+          </div>
+          <p className="mt-2 text-sm text-gray-600">
+            {trackCell ? (
+              <>
+                Cellule : <strong className="text-gray-900">{trackCell.code}</strong> — {trackCell.name}
+              </>
+            ) : report.ippTrack.legacy ? (
+              "Rapport antérieur au circuit des cellules : cellule indéterminable, à orienter par le secrétariat."
+            ) : (
+              "Au secrétariat de l'IPP, en attente d'envoi à une cellule."
+            )}
+          </p>
+          {ippEvents.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-gray-600">
+              {ippEvents.map((e) => (
+                <li key={e.id}>
+                  {new Date(e.createdAt).toLocaleString("fr-FR")} — {e.actor.name} — {IPP_STAGE_LABELS[e.toStage]}
+                  {e.fromCell ? ` (de ${e.fromCell.code} vers ${e.cell?.code ?? "?"})` : e.cell ? ` (${e.cell.code})` : ""}
+                  {e.comment && <span className="text-gray-400"> — {e.comment}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <IppTrackPanel reportId={report.id} actions={trackActions} cells={cells.map((c) => ({ id: c.id, code: c.code, name: c.name }))} />
+        </Card>
+      )}
 
       <Card>
         <h3 className="mb-4 text-sm font-semibold text-gray-900">Historique du circuit</h3>

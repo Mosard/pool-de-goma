@@ -58,7 +58,16 @@ const ACCOUNT_SELECT = {
   organizationId: true,
   poolId: true,
   pool: { select: { id: true, name: true } },
-  roles: { select: { id: true, poolId: true, role: { select: { id: true, key: true, label: true, scope: true } }, pool: { select: { name: true } } } },
+  roles: {
+    select: {
+      id: true,
+      poolId: true,
+      cellId: true,
+      role: { select: { id: true, key: true, label: true, scope: true } },
+      pool: { select: { name: true } },
+      cell: { select: { code: true, name: true } },
+    },
+  },
 } as const;
 
 /** Comptes que l'acteur peut gérer, avec recherche et filtres. */
@@ -131,7 +140,8 @@ export async function inheritedPermissions(targetId: string) {
 // ---------------------------------------------------------------------------
 
 export type AccessChanges = {
-  addRoles: { roleId: string; poolId: string | null }[];
+  /** `cellId` : obligatoire pour une fonction de cellule (exploitant de l'IPP). */
+  addRoles: { roleId: string; poolId: string | null; cellId?: string | null }[];
   removeUserRoleIds: string[];
   /** État voulu des ajustements individuels (remplace l'état actuel, après contrôle de chaque différence). */
   adjustments: Adjustment[];
@@ -153,7 +163,7 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
   await requireAuthorityOverAccount(actorId, { targetUserId: targetId, organizationId: actor.organizationId });
 
   // --- Fonctions à ajouter ---
-  const rolesToAdd: { roleId: string; roleKey: string; poolId: string | null }[] = [];
+  const rolesToAdd: { roleId: string; roleKey: string; poolId: string | null; cellId: string | null }[] = [];
   for (const add of changes.addRoles) {
     const role = await prisma.roleDefinition.findUnique({ where: { id: add.roleId } });
     if (!role || ROLES_MANAGED_ELSEWHERE.includes(role.key)) throw new ForbiddenError("Cette fonction ne s'attribue pas depuis cet écran.");
@@ -163,8 +173,21 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
       const pool = await prisma.pool.findFirst({ where: { id: poolId, organizationId: actor.organizationId } });
       if (!pool) throw new ForbiddenError("POOL introuvable.");
     }
+    // Fonction de cellule : rattachement OBLIGATOIRE à une cellule active de l'organisation, et une seule.
+    const cellId = role.scope === "CELL" ? (add.cellId ?? null) : null;
+    if (role.scope === "CELL") {
+      if (!cellId) throw new ForbiddenError(`« ${role.label} » : choisissez la cellule.`);
+      const cell = await prisma.cell.findFirst({ where: { id: cellId, organizationId: actor.organizationId, active: true } });
+      if (!cell) throw new ForbiddenError("Cellule introuvable ou archivée.");
+      const kept = target.roles.filter((r) => r.role.id === role.id && !changes.removeUserRoleIds.includes(r.id));
+      if (kept.length > 0 || rolesToAdd.some((r) => r.roleId === role.id)) {
+        throw new ForbiddenError(`« ${role.label} » : une seule cellule par personne. Retirez d'abord le rattachement actuel.`);
+      }
+    }
     await requireRoleGrant(actorId, { roleKey: role.key, poolId, organizationId: actor.organizationId, targetUserId: targetId });
-    if (!target.roles.some((r) => r.role.id === role.id && r.poolId === poolId)) rolesToAdd.push({ roleId: role.id, roleKey: role.key, poolId });
+    if (!target.roles.some((r) => r.role.id === role.id && r.poolId === poolId && r.cellId === cellId)) {
+      rolesToAdd.push({ roleId: role.id, roleKey: role.key, poolId, cellId });
+    }
   }
 
   // --- Fonctions à retirer ---
@@ -176,6 +199,15 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
     await requireRoleGrant(actorId, { roleKey: ur.role.key, poolId: ur.poolId, organizationId: actor.organizationId, targetUserId: targetId });
     rolesToRemove.push(ur);
   }
+
+  // Fonctions du compte APRÈS ce lot : un exploitant de cellule ou un IPA ne reçoit pas d'accès provincial.
+  const finalRoles = {
+    roles: [
+      ...target.roles.filter((r) => !rolesToRemove.some((x) => x.id === r.id)).map((r) => ({ key: r.role.key })),
+      ...rolesToAdd.map((r) => ({ key: r.roleKey })),
+    ],
+  };
+  const assertAdjustable = (a: Actor, permissionKey: string, poolId: string | null, effect: AdjustmentEffect) => assertAdjustableFor(a, permissionKey, poolId, effect, finalRoles);
 
   // --- Ajustements individuels : seules les différences sont contrôlées et appliquées ---
   const permissions = await prisma.permission.findMany({ select: { id: true, key: true } });
@@ -214,8 +246,8 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
   const metadata = { via: "gestion-acces" };
   await prisma.$transaction(async (tx) => {
     for (const r of rolesToAdd) {
-      const created = await tx.userRole.create({ data: { userId: targetId, roleId: r.roleId, poolId: r.poolId } });
-      audits.push({ ...base, action: "user.role_add", newValue: { userRoleId: created.id, roleKey: r.roleKey, poolId: r.poolId }, metadata });
+      const created = await tx.userRole.create({ data: { userId: targetId, roleId: r.roleId, poolId: r.poolId, cellId: r.cellId } });
+      audits.push({ ...base, action: "user.role_add", newValue: { userRoleId: created.id, roleKey: r.roleKey, poolId: r.poolId, cellId: r.cellId }, metadata });
     }
     for (const ur of rolesToRemove) {
       await tx.userRole.delete({ where: { id: ur.id } });
@@ -235,7 +267,7 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
       audits.push({
         ...base,
         action: "user.role_remove",
-        oldValue: { userRoleId: ur.id, roleKey: ur.role.key, poolId: ur.poolId },
+        oldValue: { userRoleId: ur.id, roleKey: ur.role.key, poolId: ur.poolId, cellId: ur.cellId },
         metadata: { ...metadata, endedAssignments, chiefRemoved },
       });
     }
@@ -264,8 +296,8 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
   return { changed: audits.length };
 }
 
-function assertAdjustable(actor: Actor, permissionKey: string, poolId: string | null, effect: AdjustmentEffect) {
-  const v = canAdjustPermission(actor, permissionKey, poolId, effect);
+function assertAdjustableFor(actor: Actor, permissionKey: string, poolId: string | null, effect: AdjustmentEffect, target: { roles: { key: string }[] }) {
+  const v = canAdjustPermission(actor, permissionKey, poolId, effect, target);
   if (!v.ok) throw new ForbiddenError(`${permissionKey}${poolId ? "" : " (tous les POOL)"} : ${v.reason}`);
 }
 

@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
-import { hasPermission, ForbiddenError, requireOfficialActorUnlessDemoTarget, type SessionPermission } from "@/lib/permissions";
+import { hasPermission, ForbiddenError, requireOfficialActorUnlessDemoTarget, usersHoldingPermission, type SessionPermission } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { notify, notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
-import { REPORT_SCOPE_INCLUDE, reportScope } from "@/lib/fiches/report-scope";
+import { notify } from "@/lib/notifications/dispatcher";
+import { REPORT_SCOPE_INCLUDE, reportScope, reportTrack } from "@/lib/fiches/report-scope";
+import { canReadReport } from "@/lib/cells/rules";
+import { loadCellActor } from "@/lib/cells/server";
 
 export async function getWorkflowStatusByKey(key: string) {
   return prisma.workflowStatus.findUniqueOrThrow({ where: { key } });
@@ -67,6 +69,10 @@ export async function applyTransition(params: {
   ) {
     throw new ForbiddenError();
   }
+  // Lire le rapport est un préalable (règle centrale : l'IPP principal, par
+  // exemple, n'agit pas sur un rapport que les cellules n'ont pas signé).
+  const reader = await loadCellActor(params.actorId);
+  if (!canReadReport(reader, scope, reportTrack(report))) throw new ForbiddenError();
   // Resoumettre (droit de l'inspecteur) : seulement l'auteur du rapport, pas
   // un autre inspecteur du même POOL.
   if (transition.allowedPermissionKey === PERMISSIONS.INSPECTIONS_CONDUCT && scope.authorId !== params.actorId) {
@@ -131,14 +137,18 @@ export async function applyTransition(params: {
 
   const nextPermission = NEXT_ACTOR_PERMISSION[toStatus.key];
   if (nextPermission && reportOrganizationId) {
-    await notifyUsersWithPermission({
-      permissionKey: nextPermission,
-      poolId: reportPoolId,
-      organizationId: reportOrganizationId,
-      event: "report.awaiting_action",
-      title: `Rapport à traiter — ${scope.title}`,
-      body: `Le rapport est au statut "${toStatus.label}".`,
-    });
+    // Seuls les détenteurs qui peuvent LIRE ce rapport sont prévenus (règle centrale).
+    const holders = await usersHoldingPermission({ permissionKey: nextPermission, poolId: reportPoolId, organizationId: reportOrganizationId });
+    const track = reportTrack(report);
+    for (const userId of holders) {
+      if (!canReadReport(await loadCellActor(userId, { real: true }), scope, track)) continue;
+      await notify({
+        userId,
+        event: "report.awaiting_action",
+        title: `Rapport à traiter — ${scope.title}`,
+        body: `Le rapport est au statut "${toStatus.label}".`,
+      });
+    }
   }
 
   return toStatus;

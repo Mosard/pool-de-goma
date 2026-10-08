@@ -4,8 +4,8 @@
 // de période A2, A3, A4, A6).
 
 import type { Prisma } from "@prisma/client";
-import { PERMISSIONS } from "@/lib/rbac-data";
-import { hasPermission, type SessionPermission } from "@/lib/permission-checks";
+import type { SessionPermission, SessionRole } from "@/lib/permission-checks";
+import { canReadReport, type IppTrackInfo } from "@/lib/cells/rules";
 
 const INSPECTION_INCLUDE = { include: { school: { include: { pool: true } }, inspector: true } } as const;
 
@@ -13,7 +13,15 @@ export const REPORT_SCOPE_INCLUDE = {
   status: true,
   inspection: INSPECTION_INCLUDE,
   form: { include: { formTemplate: true, author: true, pool: true, inspection: INSPECTION_INCLUDE } },
+  // Branche IPP (secrétariat, cellule, signature) : nécessaire à la règle de lecture.
+  ippTrack: true,
 } satisfies Prisma.ReportInclude;
+
+/** Branche IPP d'un rapport chargé avec REPORT_SCOPE_INCLUDE. */
+export function reportTrack(report: ReportWithScope): IppTrackInfo | null {
+  const t = report.ippTrack;
+  return t ? { stage: t.stage, cellId: t.cellId, legacy: t.legacy, organizationId: t.organizationId } : null;
+}
 
 export type ReportWithScope = Prisma.ReportGetPayload<{ include: typeof REPORT_SCOPE_INCLUDE }>;
 
@@ -70,18 +78,20 @@ export function reportsOfAuthor(userId: string): Prisma.ReportWhereInput {
 }
 
 /**
- * Lecture d'une inspection, d'une fiche ou d'un rapport : son auteur, ou une
- * personne qui exploite, valide ou affecte dans ce POOL (portée provinciale
- * comprise). Restreint les pages auparavant ouvertes à tout compte connecté.
+ * Lecture d'une inspection, d'une fiche ou d'un rapport : règle centrale
+ * `canReadReport` (src/lib/cells/rules.ts) — son auteur ; une personne qui
+ * exploite, valide ou affecte dans ce POOL ; la portée organisation (sauf
+ * l'IPP principal, limité dans la branche IPP à ce que les cellules ont
+ * signé) ; le secrétariat de l'IPP ; la cellule à laquelle le rapport est
+ * affecté. `track` : branche IPP du rapport (null pour une visite ou une
+ * fiche sans rapport). `visit` : page d'une visite, hors branche IPP.
  */
 export function canReadScope(
-  user: { id: string; permissions: SessionPermission[] },
-  scope: { poolId: string | null; organizationId: string | null; authorId: string | null }
+  user: { id: string; organizationId?: string; roles: SessionRole[]; permissions: SessionPermission[] },
+  scope: { poolId: string | null; organizationId: string | null; authorId: string | null },
+  track: IppTrackInfo | null = null,
+  opts: { visit?: boolean } = {}
 ): boolean {
-  if (scope.authorId === user.id) return true;
-  if (!scope.organizationId) return false;
-  const target = { poolId: scope.poolId, organizationId: scope.organizationId };
-  return [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE, PERMISSIONS.ASSIGNMENTS_MANAGE].some((key) =>
-    hasPermission(user.permissions, key, target)
-  );
+  const actor = { id: user.id, organizationId: user.organizationId ?? scope.organizationId ?? "", roles: user.roles, permissions: user.permissions };
+  return canReadReport(actor, scope, track, opts);
 }

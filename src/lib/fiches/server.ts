@@ -109,6 +109,7 @@ export const FORM_INCLUDE = {
   report: {
     include: {
       status: true,
+      ippTrack: true,
       comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
       statusHistory: { include: { changedBy: true }, orderBy: { createdAt: "asc" } },
     },

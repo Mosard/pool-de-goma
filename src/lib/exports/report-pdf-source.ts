@@ -4,7 +4,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { parseFieldsSchema } from "@/lib/form-schema";
-import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope } from "@/lib/fiches/report-scope";
+import { REPORT_SCOPE_INCLUDE, canReadScope, reportScope, reportTrack } from "@/lib/fiches/report-scope";
 import { resolveFicheDef } from "@/lib/fiches/defs/index";
 import { ficheData } from "@/lib/fiches/server";
 import type { FicheComputed } from "@/lib/fiches/calculs";
@@ -34,7 +34,7 @@ export async function loadReportPdfSource(subject: ExportSubject, reportId: stri
   });
   if (!report) throw new PdfAccessError("Rapport introuvable.");
   const scope = reportScope(report);
-  if (!canReadScope(subject, scope) || scope.isDemo !== subject.isDemo) throw new PdfAccessError("Rapport introuvable.");
+  if (!canReadScope(subject, scope, reportTrack(report)) || scope.isDemo !== subject.isDemo) throw new PdfAccessError("Rapport introuvable.");
 
   const form = report.form;
   const def = form ? resolveFicheDef(form.formTemplate) : null;

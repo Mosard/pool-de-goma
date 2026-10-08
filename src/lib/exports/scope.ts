@@ -4,19 +4,31 @@
 // depuis ce qu'envoie le navigateur. Les filtres ne font que restreindre.
 
 import type { Prisma } from "@prisma/client";
-import type { SessionPermission } from "@/lib/permission-checks";
+import { readableCells, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
+import { CELL_VISIBLE_STAGES, holdsRouteIpp, readsSignedOnly } from "@/lib/cells/rules";
 
 /** Permissions qui donnent accès aux rapports des autres (exploiter, valider). */
 export const REVIEW_KEYS: readonly string[] = [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE];
 
-export type ExportSubject = { id: string; organizationId: string; permissions: SessionPermission[]; isDemo: boolean };
+export type ExportSubject = { id: string; organizationId: string; roles: SessionRole[]; permissions: SessionPermission[]; isDemo: boolean };
 
-/** POOL dont la personne exploite ou valide les rapports : « ALL » (toute l'organisation), une liste, ou aucun. */
+/** Permissions de lecture au POOL ou à l'organisation (hors permissions de cellule). */
+function heldReview(subject: ExportSubject) {
+  return subject.permissions.filter((p) => REVIEW_KEYS.includes(p.permissionKey) && !p.cellId && p.organizationId === subject.organizationId);
+}
+
+/**
+ * POOL proposés dans les filtres : « ALL » (tous ceux de l'organisation),
+ * une liste, ou aucun. Le secrétariat et les cellules reçoivent des rapports
+ * de plusieurs POOL : « ALL », mais le filtre ne fait que RESTREINDRE leur
+ * périmètre (scopeWhere), jamais l'élargir.
+ */
 export function reviewPools(subject: ExportSubject): "ALL" | string[] {
-  const held = subject.permissions.filter((p) => REVIEW_KEYS.includes(p.permissionKey) && p.organizationId === subject.organizationId);
+  const held = heldReview(subject);
   if (held.some((p) => p.poolId === null)) return "ALL";
+  if (holdsRouteIpp(subject, subject.organizationId) || readableCells(subject.permissions).length > 0) return "ALL";
   return [...new Set(held.map((p) => p.poolId as string))];
 }
 
@@ -32,12 +44,29 @@ export function demoWhere(isDemo: boolean): Prisma.ReportWhereInput {
   };
 }
 
-/** Rapports que la personne peut voir et exporter : les siens, et ceux des POOL qu'elle exploite. */
+/**
+ * Rapports que la personne peut voir et exporter — même règle que la lecture
+ * d'un rapport (canReadReport, src/lib/cells/rules.ts) : les siens ; ceux des
+ * POOL qu'elle exploite ; toute l'organisation pour une portée provinciale
+ * (l'IPP principal : seulement ce que les cellules ont signé, et
+ * l'historique) ; le secrétariat : la branche IPP ; une cellule : les
+ * rapports qui lui sont affectés.
+ */
 export function scopeWhere(subject: ExportSubject): Prisma.ReportWhereInput {
-  const pools = reviewPools(subject);
+  const org = subject.organizationId;
+  const held = heldReview(subject);
   const visible: Prisma.ReportWhereInput[] = [reportsOfAuthor(subject.id)];
-  if (pools === "ALL") visible.push(reportsOfOrganization(subject.organizationId));
-  else for (const poolId of pools) visible.push(reportsOfPool(poolId));
+  if (held.some((p) => p.poolId === null)) {
+    visible.push(
+      readsSignedOnly(subject.roles)
+        ? { AND: [reportsOfOrganization(org), { ippTrack: { is: { OR: [{ stage: "SIGNE" }, { legacy: true }] } } }] }
+        : reportsOfOrganization(org)
+    );
+  }
+  for (const poolId of new Set(held.flatMap((p) => (p.poolId ? [p.poolId] : [])))) visible.push(reportsOfPool(poolId));
+  if (holdsRouteIpp(subject, org)) visible.push({ AND: [reportsOfOrganization(org), { ippTrack: { isNot: null } }] });
+  const cells = readableCells(subject.permissions);
+  if (cells.length > 0) visible.push({ ippTrack: { is: { organizationId: org, cellId: { in: cells }, stage: { in: [...CELL_VISIBLE_STAGES] } } } });
   return { AND: [{ OR: visible }, demoWhere(subject.isDemo)] };
 }
 

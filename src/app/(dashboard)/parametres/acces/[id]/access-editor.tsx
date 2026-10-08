@@ -16,8 +16,16 @@ type Props = {
   actor: { organizationId: string; roles: SessionRole[]; permissions: SessionPermission[] };
   poolNames: Record<string, string>;
   actorPools: { id: string; name: string }[];
-  currentRoles: { userRoleId: string; label: string; poolId: string | null; removable: boolean; reason: string }[];
-  addableRoles: { id: string; label: string; scope: string; pools: { id: string; name: string }[] }[];
+  /** `roleKey` : sert aussi au refus d'accès provincial pour une personne rattachée à une cellule. */
+  currentRoles: { userRoleId: string; roleKey: string; label: string; poolId: string | null; removable: boolean; reason: string }[];
+  addableRoles: {
+    id: string;
+    key: string;
+    label: string;
+    scope: string;
+    pools: { id: string; name: string }[];
+    cells: { id: string; code: string; name: string }[];
+  }[];
   catalog: { key: string; label: string; category: string }[];
   inherited: { permissionKey: string; poolId: string | null; roles: string[] }[];
   adjustments: Adjustment[];
@@ -28,8 +36,8 @@ const key = (k: string, poolId: string | null) => `${k}|${poolId ?? ""}`;
 export function AccessEditor(p: Props) {
   const router = useRouter();
   const [removeRoles, setRemoveRoles] = useState<Set<string>>(new Set());
-  const [addRoles, setAddRoles] = useState<{ roleId: string; poolId: string | null; label: string }[]>([]);
-  const [newRole, setNewRole] = useState({ roleId: "", poolId: "" });
+  const [addRoles, setAddRoles] = useState<{ roleId: string; roleKey: string; poolId: string | null; cellId: string | null; label: string }[]>([]);
+  const [newRole, setNewRole] = useState({ roleId: "", poolId: "", cellId: "" });
   const [adj, setAdj] = useState<Map<string, Adjustment>>(() => new Map(p.adjustments.map((a) => [key(a.permissionKey, a.poolId), a])));
   const [addScope, setAddScope] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
@@ -37,7 +45,14 @@ export function AccessEditor(p: Props) {
   const [pending, start] = useTransition();
 
   const scopeLabel = (poolId: string | null) => (poolId ? `POOL ${p.poolNames[poolId] ?? "?"}` : "Tous les POOL");
-  const verdict = (k: string, poolId: string | null, effect: AdjustmentEffect) => canAdjustPermission(p.actor, k, poolId, effect);
+  // Fonctions du compte après les changements en cours (même calcul que le serveur).
+  const finalRoles = {
+    roles: [
+      ...p.currentRoles.filter((r) => !removeRoles.has(r.userRoleId)).map((r) => ({ key: r.roleKey })),
+      ...addRoles.map((r) => ({ key: r.roleKey })),
+    ],
+  };
+  const verdict = (k: string, poolId: string | null, effect: AdjustmentEffect) => canAdjustPermission(p.actor, k, poolId, effect, finalRoles);
   const label = (k: string) => p.catalog.find((c) => c.key === k)?.label ?? k;
 
   const setAdjustment = (k: string, poolId: string | null, effect: AdjustmentEffect | null) =>
@@ -64,7 +79,7 @@ export function AccessEditor(p: Props) {
       const res = await saveAccessChangesAction(
         p.targetId,
         JSON.stringify({
-          addRoles: addRoles.map(({ roleId, poolId }) => ({ roleId, poolId })),
+          addRoles: addRoles.map(({ roleId, poolId, cellId }) => ({ roleId, poolId, cellId })),
           removeUserRoleIds: [...removeRoles],
           adjustments: [...adj.values()],
         })
@@ -127,7 +142,7 @@ export function AccessEditor(p: Props) {
         </ul>
         {p.addableRoles.length > 0 && (
           <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 sm:flex-row">
-            <select className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm" value={newRole.roleId} onChange={(e) => setNewRole({ roleId: e.target.value, poolId: "" })}>
+            <select className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm" value={newRole.roleId} onChange={(e) => setNewRole({ roleId: e.target.value, poolId: "", cellId: "" })}>
               <option value="">Ajouter une fonction…</option>
               {p.addableRoles.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -145,14 +160,34 @@ export function AccessEditor(p: Props) {
                 ))}
               </select>
             )}
+            {selectedRole?.scope === "CELL" && (
+              <select className="rounded-xl border border-gray-200 px-3 py-2 text-sm" value={newRole.cellId} onChange={(e) => setNewRole((n) => ({ ...n, cellId: e.target.value }))}>
+                <option value="">Cellule (obligatoire)…</option>
+                {selectedRole.cells.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} — {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <Button
               type="button"
               variant="secondary"
-              disabled={!selectedRole || (selectedRole.scope === "POOL" && !newRole.poolId)}
+              disabled={!selectedRole || (selectedRole.scope === "POOL" && !newRole.poolId) || (selectedRole.scope === "CELL" && !newRole.cellId)}
               onClick={() => {
                 if (!selectedRole) return;
-                setAddRoles((a) => [...a, { roleId: selectedRole.id, poolId: selectedRole.scope === "POOL" ? newRole.poolId : null, label: selectedRole.label }]);
-                setNewRole({ roleId: "", poolId: "" });
+                const cell = selectedRole.cells.find((c) => c.id === newRole.cellId);
+                setAddRoles((a) => [
+                  ...a,
+                  {
+                    roleId: selectedRole.id,
+                    roleKey: selectedRole.key,
+                    poolId: selectedRole.scope === "POOL" ? newRole.poolId : null,
+                    cellId: selectedRole.scope === "CELL" ? newRole.cellId : null,
+                    label: cell ? `${selectedRole.label} — cellule ${cell.code}` : selectedRole.label,
+                  },
+                ]);
+                setNewRole({ roleId: "", poolId: "", cellId: "" });
               }}
             >
               Ajouter

@@ -15,9 +15,15 @@ import type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 export type DashboardKind =
   /** IPP (et Super Admin hors simulation) : pilotage provincial. */
   | "pilotage_provincial"
-  /** IPP adjoint : suivi provincial de l'exploitation, sans le pilotage de l'IPP. */
-  | "suivi_adjoint"
-  /** Exploitant IPP (et toute fonction provinciale d'exploitation) : ses activités d'exploitation. */
+  /**
+   * Cellule de l'IPP (décisions du 2026-10-08) : exploitant de l'IPP rattaché
+   * à une cellule, ou IPA responsable de la cellule (signature). Uniquement
+   * les rapports et synthèses de SA cellule, sans les indicateurs de l'IPP.
+   */
+  | "exploitation_cellule"
+  /** Secrétaire de l'IPP : rapports arrivés au secrétariat, envois aux cellules. */
+  | "secretariat_ipp"
+  /** Fonction provinciale d'exploitation hors cellule (agent IPP, fonction créée dans Paramètres). */
   | "exploitation_provinciale"
   /** Informaticien : administration de la plateforme (comptes, POOL), sans statistiques de rapports. */
   | "administration"
@@ -40,6 +46,8 @@ export type DashboardScope = {
   organizationId: string;
   /** null : toute l'organisation (vues provinciales uniquement). Sinon le seul POOL autorisé. */
   poolId: string | null;
+  /** Vue de cellule : la seule cellule autorisée (rapports affectés à elle). */
+  cellId: string | null;
   /** Fonction à l'origine de cette section (libellé affiché). */
   roleKey: string;
   roleLabel: string;
@@ -58,7 +66,8 @@ export type DashboardSubject = {
 
 const PROVINCIAL_KINDS: readonly DashboardKind[] = [
   "pilotage_provincial",
-  "suivi_adjoint",
+  "exploitation_cellule",
+  "secretariat_ipp",
   "exploitation_provinciale",
   "administration",
   "contenus",
@@ -74,8 +83,10 @@ export function isProvincialKind(kind: DashboardKind): boolean {
 const ROLE_KIND: Partial<Record<string, DashboardKind>> = {
   [ROLE_KEYS.SUPER_ADMIN]: "pilotage_provincial",
   [ROLE_KEYS.IPP]: "pilotage_provincial",
-  [ROLE_KEYS.IPA]: "suivi_adjoint",
-  [ROLE_KEYS.EXPLOITANT_IPP]: "exploitation_provinciale",
+  // D4, D6 : l'IPA ne voit que sa cellule, qu'il dirige et dont il signe les rapports.
+  [ROLE_KEYS.IPA]: "exploitation_cellule",
+  [ROLE_KEYS.EXPLOITANT_IPP]: "exploitation_cellule",
+  [ROLE_KEYS.SECRETAIRE_IPP]: "secretariat_ipp",
   [ROLE_KEYS.INFORMATICIEN]: "administration",
   [ROLE_KEYS.CHARGE_MEDIAS]: "contenus",
   [ROLE_KEYS.CHEF_POOL]: "pilotage_pool",
@@ -89,7 +100,8 @@ const ROLE_KIND: Partial<Record<string, DashboardKind>> = {
 // perdu ces droits en base, la section retombe sur « aucun ».
 const REQUIRED: Record<DashboardKind, readonly string[]> = {
   pilotage_provincial: [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE],
-  suivi_adjoint: [PERMISSIONS.REPORTS_REVIEW_PROVINCE],
+  exploitation_cellule: [PERMISSIONS.REPORTS_REVIEW_CELL, PERMISSIONS.REPORTS_SIGN_CELL],
+  secretariat_ipp: [PERMISSIONS.REPORTS_ROUTE_IPP],
   exploitation_provinciale: [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_REVIEW_POOL],
   administration: [PERMISSIONS.ACCOUNTS_MANAGE, PERMISSIONS.USERS_MANAGE],
   contenus: [PERMISSIONS.CONTENT_WRITE],
@@ -101,12 +113,16 @@ const REQUIRED: Record<DashboardKind, readonly string[]> = {
 };
 
 // Vue provinciale : permission à portée organisation (poolId null) ; vue de
-// POOL : permission pour CE POOL.
-function holds(subject: DashboardSubject, kind: DashboardKind, poolId: string | null): boolean {
+// POOL : permission pour CE POOL ; vue de cellule : permission pour CETTE
+// cellule (sans cellule, aucune vue : jamais de repli provincial).
+function holds(subject: DashboardSubject, kind: DashboardKind, poolId: string | null, cellId: string | null = null): boolean {
   const keys = REQUIRED[kind];
   if (keys.length === 0) return true;
+  if (kind === "exploitation_cellule") {
+    return Boolean(cellId) && subject.permissions.some((p) => keys.includes(p.permissionKey) && p.cellId === cellId && p.organizationId === subject.organizationId);
+  }
   return subject.permissions.some(
-    (p) => keys.includes(p.permissionKey) && p.organizationId === subject.organizationId && p.poolId === poolId
+    (p) => keys.includes(p.permissionKey) && !p.cellId && p.organizationId === subject.organizationId && p.poolId === poolId
   );
 }
 
@@ -119,7 +135,8 @@ function kindFromPermissions(subject: DashboardSubject, poolId: string | null): 
 
 const KIND_ORDER: readonly DashboardKind[] = [
   "pilotage_provincial",
-  "suivi_adjoint",
+  "secretariat_ipp",
+  "exploitation_cellule",
   "exploitation_provinciale",
   "administration",
   "contenus",
@@ -140,17 +157,37 @@ export function resolveDashboardScopes(subject: DashboardSubject): DashboardScop
     let kind = ROLE_KIND[role.key] ?? kindFromPermissions(subject, role.poolId);
     // Fonction de POOL sans POOL, ou fonction provinciale rattachée à un POOL : donnée incohérente, rien n'est montré.
     if (kind !== "aucun" && isProvincialKind(kind) !== (role.poolId === null)) kind = "aucun";
-    if (!holds(subject, kind, role.poolId)) kind = "aucun";
+    const roleCellId = role.cellId ?? null;
+    if (!holds(subject, kind, role.poolId, roleCellId)) kind = "aucun";
     const poolId = isProvincialKind(kind) ? null : role.poolId;
+    const cellId = kind === "exploitation_cellule" ? roleCellId : null;
     // L'itinérant voit ses propres données (par auteur, quel que soit le POOL) : une seule section.
-    if (scopes.some((s) => s.kind === kind && (s.poolId === poolId || kind === "itinerant"))) continue;
-    scopes.push({ kind, userId: subject.id, organizationId: subject.organizationId, poolId, roleKey: role.key, roleLabel: role.label, isDemo: subject.isDemo });
+    if (scopes.some((s) => s.kind === kind && s.cellId === cellId && (s.poolId === poolId || kind === "itinerant"))) continue;
+    scopes.push({
+      kind,
+      userId: subject.id,
+      organizationId: subject.organizationId,
+      poolId,
+      cellId,
+      roleKey: role.key,
+      roleLabel: role.label,
+      isDemo: subject.isDemo,
+    });
   }
   // « aucun » n'est utile que s'il n'y a rien d'autre à montrer.
   const useful = scopes.filter((s) => s.kind !== "aucun");
   const result = useful.length > 0 ? useful : scopes.slice(0, 1);
   if (result.length === 0) {
-    result.push({ kind: "aucun", userId: subject.id, organizationId: subject.organizationId, poolId: null, roleKey: "", roleLabel: "Aucune fonction", isDemo: subject.isDemo });
+    result.push({
+      kind: "aucun",
+      userId: subject.id,
+      organizationId: subject.organizationId,
+      poolId: null,
+      cellId: null,
+      roleKey: "",
+      roleLabel: "Aucune fonction",
+      isDemo: subject.isDemo,
+    });
   }
   return result.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
 }
@@ -158,5 +195,7 @@ export function resolveDashboardScopes(subject: DashboardSubject): DashboardScop
 /** La section peut-elle lire les données de ce POOL ? (contrôle des paramètres d'URL). */
 export function scopeCoversPool(scope: DashboardScope, pool: { id: string; organizationId: string }): boolean {
   if (pool.organizationId !== scope.organizationId) return false;
+  // Une vue de cellule ou de secrétariat ne lit aucun POOL entier.
+  if (scope.kind === "exploitation_cellule" || scope.kind === "secretariat_ipp") return false;
   return scope.poolId === null ? isProvincialKind(scope.kind) : scope.poolId === pool.id;
 }

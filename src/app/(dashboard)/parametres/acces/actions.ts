@@ -11,7 +11,7 @@ import { applyAccessChanges } from "@/lib/access-admin";
 import { ForbiddenError } from "@/lib/permissions";
 
 const changesSchema = z.object({
-  addRoles: z.array(z.object({ roleId: z.string().min(1), poolId: z.string().nullable() })).max(20),
+  addRoles: z.array(z.object({ roleId: z.string().min(1), poolId: z.string().nullable(), cellId: z.string().nullable().optional() })).max(20),
   removeUserRoleIds: z.array(z.string().min(1)).max(20),
   adjustments: z
     .array(z.object({ permissionKey: z.string().min(1), poolId: z.string().nullable(), effect: z.enum(["GRANT", "REVOKE"]) }))

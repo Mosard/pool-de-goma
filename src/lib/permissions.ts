@@ -11,6 +11,7 @@ import {
 import { canGrantRole, hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
 import { applyAdjustments } from "@/lib/access-rules";
+import { bindRolePermissions, withoutProvincialFallback } from "@/lib/cells/rules";
 
 // Fonctions pures réexportées (les composants client importent directement
 // permission-checks, ce module-ci lisant la base et les cookies).
@@ -24,7 +25,14 @@ export class ForbiddenError extends Error {
   }
 }
 
-export type ActiveViewMode = { role: string; label: string; poolId: string | null; poolName: string | null };
+export type ActiveViewMode = {
+  role: string;
+  label: string;
+  poolId: string | null;
+  poolName: string | null;
+  cellId?: string | null;
+  cellName?: string | null;
+};
 
 export type UserAccess = {
   roles: SessionRole[];
@@ -41,28 +49,47 @@ async function loadRealAccess(userId: string) {
   const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, status: true } });
   if (!dbUser || dbUser.status !== "ACTIVE") return null;
 
-  const [userRoles, adjustments] = await Promise.all([
+  const organizationId = dbUser.organizationId;
+  const [userRoles, adjustments, ipaCell] = await Promise.all([
     prisma.userRole.findMany({
       where: { userId },
-      include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
+      include: {
+        role: { include: { rolePermissions: { include: { permission: true } } } },
+        cell: { select: { id: true, code: true, active: true, organizationId: true } },
+      },
     }),
     prisma.userPermission.findMany({ where: { userId }, select: { poolId: true, effect: true, permission: { select: { key: true } } } }),
+    // Cellule dont la personne est l'IPA responsable (une seule, décision D2).
+    prisma.cell.findFirst({ where: { ipaId: userId, active: true, organizationId }, select: { id: true, code: true } }),
   ]);
 
-  const roles: SessionRole[] = userRoles.map((ur) => ({ key: ur.role.key, label: ur.role.label, poolId: ur.poolId }));
-  const fromRoles: SessionPermission[] = [];
-  for (const ur of userRoles) {
-    for (const rp of ur.role.rolePermissions) {
-      fromRoles.push({ permissionKey: rp.permission.key, poolId: ur.poolId, organizationId: dbUser.organizationId });
-    }
-  }
-  // Ajustements individuels (écran « Gérer les accès ») : retraits puis ajouts.
-  const permissions = applyAdjustments(
+  // Une cellule archivée ou d'une autre organisation ne rattache rien.
+  const usable = (c: { id: string; code: string; active: boolean; organizationId: string } | null) =>
+    c && c.active && c.organizationId === organizationId ? c : null;
+  const roles: SessionRole[] = userRoles.map((ur) => {
+    const cell = ur.role.key === ROLE_KEYS.IPA ? ipaCell : usable(ur.cell);
+    return { key: ur.role.key, label: ur.role.label, poolId: ur.poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null };
+  });
+  // Permissions de cellule : uniquement pour la cellule de la personne (jamais de repli provincial).
+  const fromRoles: SessionPermission[] = userRoles.flatMap((ur) =>
+    bindRolePermissions({
+      roleKey: ur.role.key,
+      permissionKeys: ur.role.rolePermissions.map((rp) => rp.permission.key),
+      poolId: ur.poolId,
+      cellId: usable(ur.cell)?.id ?? null,
+      ipaCellId: ipaCell?.id ?? null,
+      organizationId,
+    })
+  );
+  // Ajustements individuels (écran « Gérer les accès ») : retraits puis ajouts ;
+  // aucun ajout ne redonne un accès provincial à une personne rattachée à une cellule.
+  const adjusted = applyAdjustments(
     fromRoles,
     adjustments.map((a) => ({ permissionKey: a.permission.key, poolId: a.poolId, effect: a.effect })),
-    dbUser.organizationId
+    organizationId
   );
-  return { organizationId: dbUser.organizationId, roles, permissions };
+  const permissions = withoutProvincialFallback(roles, fromRoles, adjusted);
+  return { organizationId, roles, permissions };
 }
 
 /**
@@ -98,14 +125,30 @@ async function simulateAccess(
     });
     if (!pool) return null;
   }
+  // Fonction de cellule (exploitant de l'IPP) ou IPA : une cellule active de
+  // l'organisation est obligatoire ; jamais de simulation provinciale de repli.
+  let cell: { id: string; code: string; name: string } | null = null;
+  if (role.scope === "CELL" || role.key === ROLE_KEYS.IPA) {
+    if (!mode.cellId) return null;
+    cell = await prisma.cell.findFirst({
+      where: { id: mode.cellId, organizationId, active: true },
+      select: { id: true, code: true, name: true },
+    });
+    if (!cell) return null;
+  }
   const poolId = pool?.id ?? null;
-  const permissions = role.rolePermissions
-    .map((rp) => ({ permissionKey: rp.permission.key, poolId, organizationId }))
-    .filter((p) => !limitTo || ippExtra || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
+  const permissions = bindRolePermissions({
+    roleKey: role.key,
+    permissionKeys: role.rolePermissions.map((rp) => rp.permission.key),
+    poolId,
+    cellId: cell?.id ?? null,
+    ipaCellId: cell?.id ?? null,
+    organizationId,
+  }).filter((p) => !limitTo || ippExtra || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
   return {
-    roles: [{ key: role.key, label: role.label, poolId }],
+    roles: [{ key: role.key, label: role.label, poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null }],
     permissions,
-    viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null },
+    viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null, cellId: cell?.id ?? null, cellName: cell?.name ?? null },
   };
 }
 

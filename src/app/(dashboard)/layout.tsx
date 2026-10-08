@@ -7,6 +7,7 @@ import { Sidebar, Topbar } from "@/components/nav";
 import { SIDEBAR_COOKIE } from "@/components/nav-items";
 import { IPP_VIEW_MODE_EXTRA_ROLE_KEYS, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { ViewModeBar } from "./view-mode-bar";
+import { cellRoleSuffix } from "@/lib/cells/rules";
 
 // Extra safeguard: these pages already redirect to /login and are disallowed in robots.txt.
 export const metadata: Metadata = {
@@ -35,7 +36,11 @@ export default async function DashboardLayout({
   // base pour qu'une suspension prenne effet immédiatement, pages comprises.
   if (!currentUser || currentUser.status !== "ACTIVE") redirect("/login?compte=inactif");
 
-  const roleLabels = session.user.roles.map((r) => r.label);
+  // « Exploitant de l'IPP — cellule IPAF » : le périmètre de cellule est explicite (ou « cellule à choisir »).
+  const roleLabels = session.user.roles.map((r) => {
+    const suffix = cellRoleSuffix(r);
+    return suffix ? `${r.label} — ${suffix}` : r.label;
+  });
   // Chef de POOL sans accès aux Paramètres : lien direct vers la fiche de son POOL.
   const chiefPoolId = session.user.roles.find((r) => r.key === "chef_pool")?.poolId ?? null;
   const myPoolHref =
@@ -45,7 +50,7 @@ export default async function DashboardLayout({
 
   // « Voir comme » : Super Admin (toute fonction non réservée) et IPP
   // (fonctions de POOL + chargé des médias), d'après les rôles réels relus en base.
-  const [simulableRoles, pools] = session.user.canViewAs
+  const [simulableRoles, pools, cells] = session.user.canViewAs
     ? await Promise.all([
         prisma.roleDefinition.findMany({
           where: {
@@ -62,8 +67,14 @@ export default async function DashboardLayout({
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
+        // Simuler un exploitant de l'IPP ou un IPA exige une cellule (jamais de repli provincial).
+        prisma.cell.findMany({
+          where: { organizationId: session.user.organizationId, active: true },
+          orderBy: { code: "asc" },
+          select: { id: true, code: true, name: true },
+        }),
       ])
-    : [[], []];
+    : [[], [], []];
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -87,9 +98,14 @@ export default async function DashboardLayout({
         {session.user.canViewAs && (
           <ViewModeBar
             holderLabel={session.user.isSuperAdmin ? "Super Admin" : "IPP"}
-            active={session.user.viewMode ? { label: session.user.viewMode.label, poolName: session.user.viewMode.poolName } : null}
+            active={
+              session.user.viewMode
+                ? { label: session.user.viewMode.label, poolName: session.user.viewMode.poolName ?? session.user.viewMode.cellName ?? null }
+                : null
+            }
             roles={simulableRoles}
             pools={pools}
+            cells={cells}
           />
         )}
         <main className="min-w-0 flex-1 p-6">{children}</main>

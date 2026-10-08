@@ -26,19 +26,26 @@ export default async function ParametresPage() {
     }),
   ]);
 
-  const scopeLabel: Record<string, string> = { PROVINCE: "Provincial", POOL: "Pool" };
+  const scopeLabel: Record<string, string> = { PROVINCE: "Provincial", POOL: "Pool", CELL: "Cellule" };
 
   return (
     <div className="space-y-10">
       <PageHeader
         title="Paramètres"
-        description="Organisation provinciale — pools et fonctions"
+        description="Organisation provinciale — pools, cellules et fonctions"
         actions={
-          canOpenAccessScreen(user.roles) ? (
-            <Link href="/parametres/acces">
-              <Button type="button">Gérer les accès</Button>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/parametres/cellules">
+              <Button type="button" variant="secondary">
+                Cellules de l&apos;IPP
+              </Button>
             </Link>
-          ) : undefined
+            {canOpenAccessScreen(user.roles) && (
+              <Link href="/parametres/acces">
+                <Button type="button">Gérer les accès</Button>
+              </Link>
+            )}
+          </div>
         }
       />
 

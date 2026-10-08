@@ -7,6 +7,7 @@ import { FicheEditor } from "@/components/fiches/fiche-editor";
 import { FicheForm } from "@/app/(dashboard)/inspections/fiche-form";
 import { deleteDraftFicheAction, saveLegacyFicheAction, submitFicheAction } from "@/app/(dashboard)/fiches/actions";
 import { canReadScope } from "@/lib/fiches/report-scope";
+import { trackInfo } from "@/lib/cells/server";
 import { FORM_INCLUDE, ficheData, formAuthorId, formDef, formPool, instanceLabel, isFormEditable, workflowStatusById } from "@/lib/fiches/server";
 import { WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 
@@ -20,7 +21,9 @@ export default async function FichePage({ params }: { params: Promise<{ id: stri
   if (!form) notFound();
   const pool = formPool(form);
   const authorId = formAuthorId(form);
-  if (!canReadScope(user, { poolId: pool?.id ?? null, organizationId: pool?.organizationId ?? null, authorId })) notFound();
+  // Règle centrale : la branche IPP du rapport (s'il existe) borne la lecture (cellule, IPP : signé seulement).
+  const track = trackInfo(form.report?.ippTrack);
+  if (!canReadScope(user, { poolId: pool?.id ?? null, organizationId: pool?.organizationId ?? null, authorId }, track)) notFound();
 
   const isAuthor = authorId === user.id;
   // Les exploitants travaillent sur le rapport, pas sur la saisie.

@@ -14,7 +14,14 @@ declare module "next-auth" {
       /** Rôle réellement détenu autorisant « Voir comme » (Super Admin, IPP). */
       canViewAs?: boolean;
       /** Fonction simulée (« Voir comme »), sinon null. */
-      viewMode?: { role: string; label: string; poolId: string | null; poolName: string | null } | null;
+      viewMode?: {
+        role: string;
+        label: string;
+        poolId: string | null;
+        poolName: string | null;
+        cellId?: string | null;
+        cellName?: string | null;
+      } | null;
     } & DefaultSession["user"];
   }
 

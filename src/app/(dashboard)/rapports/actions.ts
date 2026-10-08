@@ -5,11 +5,40 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { commentSchema, transitionSchema } from "@/lib/validations";
-import { PERMISSIONS } from "@/lib/rbac-data";
-import { demoRefusal, hasPermission } from "@/lib/permissions";
+import { ForbiddenError, demoRefusal } from "@/lib/permissions";
 import { applyTransition } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
-import { REPORT_SCOPE_INCLUDE, reportScope } from "@/lib/fiches/report-scope";
+import { REPORT_SCOPE_INCLUDE, reportScope, reportTrack } from "@/lib/fiches/report-scope";
+import { canWorkOnReport, TRACK_ACTIONS, type TrackAction } from "@/lib/cells/rules";
+import { applyTrackAction, loadCellActor } from "@/lib/cells/server";
+
+export type IppTrackState = { error?: string; done?: string };
+
+/**
+ * Étape de la branche IPP (secrétariat, cellule, IPA). L'action, la cellule
+ * et le motif viennent du formulaire ; TOUT le contrôle (droit, stade,
+ * cellule active de l'organisation) est fait par applyTrackAction, sur les
+ * droits relus en base.
+ */
+export async function ippTrackAction(reportId: string, _prev: IppTrackState, formData: FormData): Promise<IppTrackState> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  const action = String(formData.get("action") ?? "") as TrackAction;
+  if (!Object.hasOwn(TRACK_ACTIONS, action)) return { error: "Étape inconnue." };
+  try {
+    await applyTrackAction(session.user.id, reportId, {
+      action,
+      cellId: String(formData.get("cellId") ?? "") || null,
+      comment: String(formData.get("comment") ?? ""),
+    });
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath(`/rapports/${reportId}`);
+  revalidatePath("/secretariat");
+  return { done: TRACK_ACTIONS[action].label };
+}
 
 export type CommentState = {
   errors?: Record<string, string>;
@@ -28,13 +57,9 @@ export async function addCommentAction(
   if (!report) return { formError: "Rapport introuvable." };
 
   const scope = reportScope(report);
-  const poolId = scope.poolId;
-  const organizationId = scope.organizationId;
-  const canComment =
-    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_POOL, { poolId, organizationId }) ||
-    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId, organizationId }) ||
-    hasPermission(session.user.permissions, PERMISSIONS.REPORTS_VALIDATE, { poolId, organizationId });
-  if (!canComment) return { formError: "Action non autorisée." };
+  // Droits relus en base : exploitants du POOL, ou de la cellule destinataire (jamais le secrétariat).
+  const actor = await loadCellActor(session.user.id);
+  if (!canWorkOnReport(actor, scope, reportTrack(report))) return { formError: "Action non autorisée." };
   const refusal = await demoRefusal(session.user.id, scope.isDemo);
   if (refusal) return { formError: refusal };
 

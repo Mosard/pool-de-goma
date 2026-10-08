@@ -10,7 +10,9 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
-import { notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
+import { notify, notifyUsersWithPermission } from "@/lib/notifications/dispatcher";
+import { canWorkOnReport } from "@/lib/cells/rules";
+import { loadCellActor, openIppTrack, secretariatHolders, trackInfo } from "@/lib/cells/server";
 import { ForbiddenError, demoRefusal, hasPermission, loadUserAccess, requireOfficialActorUnlessDemoTarget } from "@/lib/permissions";
 import { PERMISSIONS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { applyTransition, getWorkflowStatusByKey, refreshInspectionStatus } from "@/lib/workflow";
@@ -285,6 +287,8 @@ export async function submitFicheAction(formId: string, payload: string | null):
           data: { formId: form.id, poolId: pool.id, authorId, statusId: soumis.id, submittedAt: now },
         });
         await tx.reportStatusHistory.create({ data: { reportId: report.id, toStatusId: soumis.id, changedById: authorId } });
+        // Branche IPP, indépendante du POOL : le rapport arrive directement au secrétariat (décision D1).
+        await openIppTrack(tx, { reportId: report.id, organizationId: pool.organizationId, actorId: authorId });
         return report.id;
       });
       break;
@@ -313,6 +317,16 @@ export async function submitFicheAction(formId: string, payload: string | null):
     title: `Nouvelle fiche ${form.formTemplate.code} — ${form.inspection?.school.name ?? pool.name}`,
     body: "Une fiche d'inspection a été soumise et attend d'être exploitée.",
   });
+  // Secrétariat de l'IPP : un nouveau rapport à envoyer à une cellule.
+  for (const userId of await secretariatHolders(pool.organizationId, formIsDemo(form))) {
+    await notify({
+      userId,
+      event: "report.ipp_arrived",
+      title: `Nouveau rapport au secrétariat — ${form.formTemplate.code} · ${form.inspection?.school.name ?? pool.name}`,
+      body: "Un rapport soumis attend d'être envoyé à la cellule correspondante.",
+      data: { reportId },
+    });
+  }
 
   revalidateForm(form);
   return { ok: true };
@@ -349,12 +363,10 @@ export async function saveReservedPartAction(formId: string, payload: string): P
   const def = resolveFicheDef(form.formTemplate);
   const pool = formPool(form);
   if (!def || !pool) return { ok: false, error: "Fiche sans partie réservée." };
-  const { permissions } = await loadUserAccess(user.id);
-  const scope = { poolId: pool.id, organizationId: pool.organizationId };
-  const canTreat =
-    hasPermission(permissions, PERMISSIONS.REPORTS_REVIEW_POOL, scope) ||
-    hasPermission(permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE, scope) ||
-    hasPermission(permissions, PERMISSIONS.REPORTS_VALIDATE, scope);
+  // Exploitants du POOL ou de la cellule destinataire (règle centrale, droits relus en base).
+  const actor = await loadCellActor(user.id);
+  const scope = { poolId: pool.id, organizationId: pool.organizationId, authorId: formAuthorId(form) };
+  const canTreat = canWorkOnReport(actor, scope, trackInfo(form.report.ippTrack));
   if (!canTreat || formAuthorId(form) === user.id) return { ok: false, error: "Action non autorisée." };
   const refusal = await demoRefusal(user.id, formIsDemo(form));
   if (refusal) return { ok: false, error: refusal };

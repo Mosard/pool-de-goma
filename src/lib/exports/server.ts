@@ -13,8 +13,8 @@ export const EXPORT_LIMIT = 10_000;
 
 export async function loadExportSubject(userId: string): Promise<ExportSubject> {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, organizationId: true, isDemo: true } });
-  const { permissions } = await loadUserAccess(userId);
-  return { id: user.id, organizationId: user.organizationId, isDemo: user.isDemo, permissions };
+  const { roles, permissions } = await loadUserAccess(userId);
+  return { id: user.id, organizationId: user.organizationId, isDemo: user.isDemo, roles, permissions };
 }
 
 /** Filtres demandés, contrôlés : refus explicite s'ils sortent du périmètre. */

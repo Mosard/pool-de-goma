@@ -24,12 +24,14 @@ export default async function CompteAccesPage({ params }: { params: Promise<{ id
     throw e;
   }
 
-  const [inherited, catalog, pools, allPools, roles] = await Promise.all([
+  const [inherited, catalog, pools, allPools, roles, cells] = await Promise.all([
     inheritedPermissions(target.id),
     prisma.permission.findMany({ orderBy: [{ category: "asc" }, { label: "asc" }], select: { key: true, label: true, category: true } }),
     actorPools(actor),
     prisma.pool.findMany({ where: { organizationId: actor.organizationId }, select: { id: true, name: true } }),
     grantableRoles(actor.roles),
+    // Cellules actives (rattachement obligatoire de l'exploitant de l'IPP).
+    prisma.cell.findMany({ where: { organizationId: actor.organizationId, active: true }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),
   ]);
   const poolNames = Object.fromEntries(allPools.map((p) => [p.id, p.name]));
 
@@ -57,17 +59,21 @@ export default async function CompteAccesPage({ params }: { params: Promise<{ id
         actorPools={pools}
         currentRoles={target.roles.map((r) => ({
           userRoleId: r.id,
-          label: r.role.label,
+          roleKey: r.role.key,
+          // « Exploitant de l'IPP — cellule IPAF », ou « — cellule à choisir » (aucun accès tant qu'elle manque).
+          label: r.role.scope === "CELL" ? `${r.role.label} — ${r.cell ? `cellule ${r.cell.code}` : "cellule à choisir"}` : r.role.label,
           poolId: r.poolId,
           removable: !ROLES_MANAGED_ELSEWHERE.includes(r.role.key) && canGrantRole(actor.roles, r.role.key, r.poolId),
           reason: ROLES_MANAGED_ELSEWHERE.includes(r.role.key) ? "Se gère depuis la fiche du POOL." : "Fonction que vous ne pouvez pas retirer.",
         }))}
         addableRoles={roles.map((r) => ({
           id: r.id,
+          key: r.key,
           label: r.label,
           scope: r.scope,
           pools: r.scope === "POOL" ? pools.filter((p) => canGrantRole(actor.roles, r.key, p.id)) : [],
-        })).filter((r) => r.scope === "PROVINCE" || r.pools.length > 0)}
+          cells: r.scope === "CELL" ? cells : [],
+        })).filter((r) => r.scope === "PROVINCE" || r.pools.length > 0 || r.cells.length > 0)}
         catalog={catalog}
         inherited={inherited}
         adjustments={target.permissionAdjustments.map((a) => ({ permissionKey: a.permission.key, poolId: a.poolId, effect: a.effect }))}

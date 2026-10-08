@@ -32,7 +32,9 @@ export default async function InspectionDetailPage({ params }: { params: Promise
     },
   });
   if (!inspection) notFound();
-  if (!canReadScope(user, { poolId: inspection.school.poolId, organizationId: inspection.school.pool.organizationId, authorId: inspection.inspectorId })) {
+  // Page de la visite (pilotage), hors branche IPP : chaque fiche reste protégée par sa propre page.
+  const visitScope = { poolId: inspection.school.poolId, organizationId: inspection.school.pool.organizationId, authorId: inspection.inspectorId };
+  if (!canReadScope(user, visitScope, null, { visit: true })) {
     notFound();
   }
 

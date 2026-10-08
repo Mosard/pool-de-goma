@@ -18,11 +18,14 @@ export function ViewModeBar({
   active,
   roles,
   pools,
+  cells,
 }: {
   holderLabel: string;
   active: { label: string; poolName: string | null } | null;
   roles: RoleOption[];
   pools: PoolOption[];
+  /** Cellules actives : simuler un exploitant de l'IPP ou un IPA exige une cellule. */
+  cells: { id: string; code: string; name: string }[];
 }) {
   const [roleKey, setRoleKey] = useState("");
   const role = roles.find((r) => r.key === roleKey);
@@ -72,6 +75,14 @@ export function ViewModeBar({
           <option value="" disabled>POOL…</option>
           {pools.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </Select>
+      )}
+      {(role?.scope === "CELL" || role?.key === "ipa") && (
+        <Select name="cellId" aria-label="Cellule" required defaultValue="" className="!w-auto !py-1 text-xs">
+          <option value="" disabled>Cellule…</option>
+          {cells.map((c) => (
+            <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
           ))}
         </Select>
       )}
