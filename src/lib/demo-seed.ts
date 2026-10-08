@@ -64,6 +64,9 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.ACCOUNTS_MANAGE,
     PERMISSIONS.USERS_MANAGE,
     PERMISSIONS.POOLS_MANAGE,
+    // Décision du 2026-10-08 (docs/import-ecoles-excel.md) : fiches écoles
+    // de tous les POOL, import Excel compris.
+    PERMISSIONS.SCHOOLS_MANAGE,
     PERMISSIONS.FORM_TEMPLATES_MANAGE,
     PERMISSIONS.AUDIT_VIEW,
     PERMISSIONS.PUBLICATION_MANAGE,
@@ -446,7 +449,7 @@ async function seedDemoSchools(poolByCode: Map<string, PoolRow>) {
     const director = personName(globalIdx + 1).name;
 
     const school = await prisma.school.upsert({
-      where: { code },
+      where: { poolId_code: { poolId: pool.id, code } },
       update: { poolId: pool.id, name, type, director, isDemo: true },
       create: {
         isDemo: true,
@@ -766,7 +769,7 @@ export async function runDemoSeed() {
   });
 
   const school1 = await prisma.school.upsert({
-    where: { code: "EP-GOMA-001" },
+    where: { poolId_code: { poolId: goma.id, code: "EP-GOMA-001" } },
     update: { isDemo: true, poolId: goma.id },
     create: {
       isDemo: true,
@@ -781,7 +784,7 @@ export async function runDemoSeed() {
   });
 
   const school2 = await prisma.school.upsert({
-    where: { code: "INST-GOMA-002" },
+    where: { poolId_code: { poolId: goma.id, code: "INST-GOMA-002" } },
     update: { isDemo: true, poolId: goma.id },
     create: {
       isDemo: true,
@@ -796,7 +799,7 @@ export async function runDemoSeed() {
   });
 
   await prisma.school.upsert({
-    where: { code: "EP-KARISIMBI-001" },
+    where: { poolId_code: { poolId: karisimbi.id, code: "EP-KARISIMBI-001" } },
     update: { isDemo: true, poolId: karisimbi.id },
     create: {
       isDemo: true,

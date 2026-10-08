@@ -74,14 +74,16 @@ export const ASSIGNMENT_END_REASON_LABELS: Record<string, string> = {
   [ASSIGNMENT_END_REASONS.ROLE_REMOVED]: "Fonction d'inspecteur retirée",
 };
 
-// Administration technique de la plateforme (partenaire technologique) :
-// accès complet, sur tous les POOL, pour assister et dépanner chaque profil,
-// y compris l'autorisation de publication (décision du 2026-09-27). Il peut
-// aussi « voir comme » une fonction précise (src/lib/view-mode.ts). Toute
-// action est tracée dans le journal d'audit sous le nom du compte.
-export const SUPER_ADMIN_LABEL = "Super Admin (administration technique)";
+// Fonction officielle de l'Inspection depuis le 2026-10-08 (décision de
+// l'Inspection) : accès complet, sur tous les POOL, pour administrer la
+// plateforme et assister chaque profil, y compris l'autorisation de
+// publication (décision du 2026-09-27). Il peut aussi « voir comme » une
+// fonction précise (src/lib/view-mode.ts). Toute action est tracée dans le
+// journal d'audit sous le nom du compte. Son attribution reste réservée
+// (RESTRICTED_ROLE_KEYS, script serveur).
+export const SUPER_ADMIN_LABEL = "Super Admin";
 export const SUPER_ADMIN_DESCRIPTION =
-  "Accès complet à la plateforme pour l'assistance technique et le dépannage. N'occupe aucune fonction de l'Inspection ; toutes ses actions sont tracées.";
+  "Fonction officielle de l'Inspection : accès complet à la plateforme pour l'administration, l'assistance et le dépannage. Toutes ses actions sont tracées.";
 export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);
 
 // Fonctions qui ne s'attribuent JAMAIS depuis l'application (formulaire public,

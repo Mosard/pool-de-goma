@@ -1,4 +1,4 @@
-// Attribution du rôle « Super Admin » (administration technique) à UN compte
+// Attribution du rôle « Super Admin » (fonction officielle de l'Inspection) à UN compte
 // officiel existant — procédure serveur uniquement : ni le formulaire public,
 // ni la validation de demande, ni la création de compte, ni un compte démo ne
 // peuvent attribuer ce rôle (voir RESTRICTED_ROLE_KEYS).

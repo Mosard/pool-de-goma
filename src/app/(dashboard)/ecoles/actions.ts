@@ -32,7 +32,22 @@ function parseSchoolForm(formData: FormData) {
     director: formData.get("director"),
     phone: formData.get("phone"),
     type: formData.get("type"),
+    approvalDecree: formData.get("approvalDecree"),
+    classCount: formData.get("classCount"),
+    teacherCount: formData.get("teacherCount"),
+    options: formData.get("options"),
   });
+}
+
+const DUPLICATE_CODE = "Ce code d'école existe déjà dans ce POOL.";
+
+/** Une école = « POOL + code » ; codes comparés sans tenir compte de la casse (décision Q5). */
+async function codeTakenInPool(poolId: string, code: string, exceptId?: string): Promise<boolean> {
+  const other = await prisma.school.findFirst({
+    where: { poolId, code: { equals: code, mode: "insensitive" }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { id: true },
+  });
+  return other !== null;
 }
 
 export async function createSchoolAction(
@@ -55,12 +70,14 @@ export async function createSchoolAction(
     organizationId: targetPool.organizationId,
   });
 
+  if (await codeTakenInPool(parsed.data.poolId, parsed.data.code)) return { formError: DUPLICATE_CODE };
+
   let school;
   try {
     // École créée depuis un compte de démonstration : démo (jamais publiée).
     school = await prisma.school.create({ data: { ...parsed.data, isDemo: await isDemoActor(session.user.id) } });
   } catch {
-    return { formError: "Ce code d'école existe déjà." };
+    return { formError: DUPLICATE_CODE };
   }
 
   await logAudit({
@@ -121,6 +138,8 @@ export async function updateSchoolAction(
     }
   }
 
+  if (await codeTakenInPool(parsed.data.poolId, parsed.data.code, id)) return { formError: DUPLICATE_CODE };
+
   // Changer de POOL met fin aux affectations en cours : les inspecteurs de
   // l'ancien POOL ne sont plus habilités dans cette école.
   let endedAssignments = 0;
@@ -143,7 +162,7 @@ export async function updateSchoolAction(
       await prisma.school.update({ where: { id }, data: parsed.data });
     }
   } catch {
-    return { formError: "Ce code d'école existe déjà." };
+    return { formError: DUPLICATE_CODE };
   }
 
   await logAudit({
