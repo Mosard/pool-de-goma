@@ -347,12 +347,14 @@ Branche `feat/import-ecoles-excel` (worktree `../app-ecoles`), **non poussée**.
   POOL, IPP, informaticien ; 403 pour inspecteur et exploitant ; anonyme
   redirigé vers la connexion ; `/ecoles/import` redirige les comptes sans droit.
 
-### 5.4 Restant
+### 5.4 Finalisation (demande « fais tout ce qui reste », 2026-10-08)
 
-- Pas de contrôle visuel dans un navigateur (outil indisponible ici) : à
-  regarder à l'écran avant fusion.
-- Déploiement : la migration s'appliquera en production au premier push
-  (Vercel) — à faire seulement sur votre accord.
-- Fusion : une autre session travaille sur `feat/cellules-ipp` ; récupérer
-  `master` à jour avant de fusionner (pas de conflit attendu hors
-  `demo-seed.ts`).
+- Super Admin : libellé « Super Admin » et description « Fonction officielle
+  de l'Inspection… » (`rbac-data.ts` + migration
+  `20261009130000_super_admin_fonction_officielle`, texte seulement ; droits,
+  attribution réservée et « Voir comme » inchangés).
+- Contrôle des écrans (HTML rendu, sessions réelles, pas de navigateur
+  disponible) : boutons sur `/ecoles`, écran d'import limité au POOL du chef,
+  nouveaux champs sur la fiche et la création, zone « Options » présente
+  uniquement pour les écoles secondaires.
+- Fusion dans `master` et déploiement : voir l'historique Git.
