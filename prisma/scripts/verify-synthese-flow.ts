@@ -253,7 +253,7 @@ async function main() {
 
   await check("Tableaux de bord : compteurs de synthèses limités à ce que chaque fonction peut lire", async () => {
     const count = async (a: Awaited<ReturnType<typeof act>>) => {
-      const scope = resolveDashboardScopes({ id: a.id, organizationId: a.organizationId, roles: a.roles, permissions: a.permissions })[0];
+      const scope = resolveDashboardScopes({ id: a.id, organizationId: a.organizationId, isDemo: a.isDemo, roles: a.roles, permissions: a.permissions })[0];
       return loadSynthesisCounts(scope, a);
     };
     // POOL A : 1 synthèse validée ; la synthèse provinciale n'est pas du POOL.
@@ -268,7 +268,7 @@ async function main() {
     // Agent IPP : ne lit pas la synthèse provinciale.
     assert.equal((await count(aAgentIpp)).toFix, 0);
     // Un inspecteur n'a pas de compteur de synthèses.
-    const insp = resolveDashboardScopes({ id: aInspA.id, organizationId: aInspA.organizationId, roles: aInspA.roles, permissions: aInspA.permissions })[0];
+    const insp = resolveDashboardScopes({ id: aInspA.id, organizationId: aInspA.organizationId, isDemo: aInspA.isDemo, roles: aInspA.roles, permissions: aInspA.permissions })[0];
     await assert.rejects(() => loadSynthesisCounts(insp, aInspA));
   });
 

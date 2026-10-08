@@ -42,9 +42,9 @@ async function check(name: string, fn: () => Promise<void>) {
 const RUN = Date.now().toString(36);
 
 async function scopesOf(userId: string, viewMode: ViewMode | null = null): Promise<DashboardScope[]> {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { organizationId: true } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { organizationId: true, isDemo: true } });
   const access = await loadUserAccess(userId, { viewMode });
-  return resolveDashboardScopes({ id: userId, organizationId: user.organizationId, roles: access.roles, permissions: access.permissions });
+  return resolveDashboardScopes({ id: userId, organizationId: user.organizationId, isDemo: user.isDemo, roles: access.roles, permissions: access.permissions });
 }
 
 async function single(userId: string, kind: DashboardScope["kind"], viewMode: ViewMode | null = null): Promise<DashboardScope> {
@@ -128,7 +128,11 @@ async function main() {
   await inspectionWithReport(sA.id, inspA.id, null, "PLANIFIEE");
   const b1 = await inspectionWithReport(sB.id, inspB.id, S.EN_ATTENTE_VALIDATION);
   // Rapport d'une fiche de période (sans inspection), rattaché par son POOL.
-  await prisma.report.create({ data: { poolId: pB.id, authorId: inspB.id, statusId: status.get(S.TRANSMIS)!.id, submittedAt: new Date() } });
+  const periodTemplate = await prisma.formTemplate.findFirstOrThrow();
+  const periodForm = await prisma.form.create({ data: { formTemplateId: periodTemplate.id, authorId: inspB.id, poolId: pB.id, completed: true } });
+  await prisma.report.create({
+    data: { formId: periodForm.id, poolId: pB.id, authorId: inspB.id, statusId: status.get(S.TRANSMIS)!.id, submittedAt: new Date() },
+  });
   const x1 = await inspectionWithReport(sX.id, ippX.id, S.SOUMIS);
 
   await prisma.reportStatusHistory.create({
@@ -306,6 +310,26 @@ async function main() {
     const s = await single(ippX.id, "pilotage_provincial");
     assert.equal((await loadPilotageProvincial(s)).received, 1);
     assert.equal(await loadPoolDetail(s, pA.id, null), null);
+  });
+
+  // Cas signalé le 2026-10-08 : inspecteur réel, école de démonstration. Le
+  // rapport est de démonstration : invisible des comptes réels (comme sur
+  // /rapports et /exploitation), visible des comptes de démonstration.
+  await check("Démonstration et officiel séparés : rapport d'une école de démonstration", async () => {
+    const sDemo = await prisma.school.create({
+      data: { poolId: pA.id, code: `SD-${RUN}`, name: "École démo", province: "Nord-Kivu", territoire: "Goma", isDemo: true },
+    });
+    await inspectionWithReport(sDemo.id, inspA.id, S.SOUMIS);
+    const exploitDemo = await user("Exploitant A demo", org.id, [{ role: ROLE_KEYS.EXPLOITANT_POOL, poolId: pA.id }]);
+    await prisma.user.update({ where: { id: exploitDemo.id }, data: { isDemo: true } });
+
+    const real = await loadExploitation(await single(exploitA.id, "exploitation_pool"));
+    assert.equal(real.received, 2, "compte réel : rapport de l'école de démonstration exclu");
+    assert.ok(!real.oldestPending.some((r) => r.title.includes("École démo")));
+    assert.equal((await loadPilotageProvincial(await single(ipp.id, "pilotage_provincial"))).received, 5);
+
+    const demo = await loadExploitation(await single(exploitDemo.id, "exploitation_pool"));
+    assert.equal(demo.received, 1, "compte de démonstration : uniquement le rapport de démonstration");
   });
 
   console.log(`\n${passed} vérifications réussies.`);

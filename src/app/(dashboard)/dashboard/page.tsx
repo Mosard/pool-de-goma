@@ -80,6 +80,7 @@ export default async function DashboardPage({
   const scopes = resolveDashboardScopes({
     id: user.id,
     organizationId: user.organizationId,
+    isDemo: actor.isDemo,
     roles: user.roles,
     permissions: user.permissions,
   });

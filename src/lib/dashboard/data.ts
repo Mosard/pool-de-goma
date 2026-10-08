@@ -13,6 +13,7 @@ import { ROLE_KEYS, WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
 import { type DashboardKind, type DashboardScope, isProvincialKind, scopeCoversPool } from "@/lib/dashboard/scope";
 import { listSyntheses, type SynthesisActor } from "@/lib/synthese/server";
+import { demoWhere } from "@/lib/exports/scope";
 import {
   PILOTAGE_BUCKETS,
   POOL_EXPLOITATION_BUCKETS,
@@ -30,11 +31,15 @@ function assertKind(scope: DashboardScope, ...kinds: DashboardKind[]) {
   if (!kinds.includes(scope.kind)) throw new Error(`Section ${scope.kind} : requête non autorisée pour ce périmètre.`);
 }
 
-/** Rapports du périmètre de la section : son POOL, ou toute son organisation pour une vue provinciale. */
+/**
+ * Rapports du périmètre de la section : son POOL, ou toute son organisation
+ * pour une vue provinciale ; démonstration et officiel jamais mélangés (même
+ * règle que /rapports et /exploitation, src/lib/exports/scope.ts).
+ */
 export function reportsInScope(scope: DashboardScope): Prisma.ReportWhereInput {
-  if (scope.poolId) return reportsOfPool(scope.poolId);
-  if (!isProvincialKind(scope.kind)) throw new Error("Section de POOL sans POOL.");
-  return reportsOfOrganization(scope.organizationId);
+  if (!scope.poolId && !isProvincialKind(scope.kind)) throw new Error("Section de POOL sans POOL.");
+  const area = scope.poolId ? reportsOfPool(scope.poolId) : reportsOfOrganization(scope.organizationId);
+  return { AND: [area, demoWhere(scope.isDemo)] };
 }
 
 /** POOL actifs du périmètre (tous ceux de l'organisation, ou le seul POOL de la section). */

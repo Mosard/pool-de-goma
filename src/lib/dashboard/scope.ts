@@ -43,11 +43,15 @@ export type DashboardScope = {
   /** Fonction à l'origine de cette section (libellé affiché). */
   roleKey: string;
   roleLabel: string;
+  /** Compte de démonstration : ne compte que les rapports de démonstration (et l'inverse), comme /rapports et /exploitation. */
+  isDemo: boolean;
 };
 
 export type DashboardSubject = {
   id: string;
   organizationId: string;
+  /** Lu en base (User.isDemo), jamais transmis par le navigateur. */
+  isDemo: boolean;
   roles: SessionRole[];
   permissions: SessionPermission[];
 };
@@ -140,13 +144,13 @@ export function resolveDashboardScopes(subject: DashboardSubject): DashboardScop
     const poolId = isProvincialKind(kind) ? null : role.poolId;
     // L'itinérant voit ses propres données (par auteur, quel que soit le POOL) : une seule section.
     if (scopes.some((s) => s.kind === kind && (s.poolId === poolId || kind === "itinerant"))) continue;
-    scopes.push({ kind, userId: subject.id, organizationId: subject.organizationId, poolId, roleKey: role.key, roleLabel: role.label });
+    scopes.push({ kind, userId: subject.id, organizationId: subject.organizationId, poolId, roleKey: role.key, roleLabel: role.label, isDemo: subject.isDemo });
   }
   // « aucun » n'est utile que s'il n'y a rien d'autre à montrer.
   const useful = scopes.filter((s) => s.kind !== "aucun");
   const result = useful.length > 0 ? useful : scopes.slice(0, 1);
   if (result.length === 0) {
-    result.push({ kind: "aucun", userId: subject.id, organizationId: subject.organizationId, poolId: null, roleKey: "", roleLabel: "Aucune fonction" });
+    result.push({ kind: "aucun", userId: subject.id, organizationId: subject.organizationId, poolId: null, roleKey: "", roleLabel: "Aucune fonction", isDemo: subject.isDemo });
   }
   return result.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
 }

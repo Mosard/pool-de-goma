@@ -31,7 +31,7 @@ function subject(...grants: { role: RoleKey | string; poolId?: string | null; pe
     const keys = g.permissions ?? ROLE_PERMISSIONS[g.role as RoleKey] ?? [];
     for (const k of keys) permissions.push({ permissionKey: k, poolId, organizationId: ORG });
   }
-  return { id: "user-1", organizationId: ORG, roles, permissions };
+  return { id: "user-1", organizationId: ORG, isDemo: false, roles, permissions };
 }
 
 function only(scopes: DashboardScope[]): DashboardScope {
