@@ -124,6 +124,8 @@ export async function applyTrackAction(actorId: string, reportId: string, input:
   if (input.action === "assign" || input.action === "reassign") Object.assign(data, { cellId, assignedAt: now, exploitedAt: null });
   if (input.action === "exploit") data.exploitedAt = now;
   if (input.action === "return") data.exploitedAt = null;
+  if (input.action === "validate") Object.assign(data, { validatedAt: now, validatedById: actorId });
+  if (input.action === "refuse") Object.assign(data, { exploitedAt: null, validatedAt: null, validatedById: null });
   if (input.action === "sign") Object.assign(data, { signedAt: now, signedById: actorId });
 
   await prisma.$transaction(async (tx) => {
@@ -157,9 +159,10 @@ export async function applyTrackAction(actorId: string, reportId: string, input:
   // Notifications limitées à la cellule concernée (jamais à toute la province).
   const title = `${scope.title} — ${IPP_STAGE_LABELS[rule.to]}`;
   let recipients: string[] = [];
-  if (input.action === "assign" || input.action === "reassign" || input.action === "return") recipients = await cellMembers(cellId!, { exploitants: true, ipa: true });
+  if (["assign", "reassign", "return", "refuse", "sign"].includes(input.action)) recipients = await cellMembers(cellId!, { exploitants: true, ipa: true });
   if (input.action === "exploit") recipients = await cellMembers(cellId!, { exploitants: false, ipa: true });
-  if (input.action === "sign") recipients = await ippHolders(track.organizationId);
+  // Validé par l'IPA : transmis à l'IPP principal pour signature.
+  if (input.action === "validate") recipients = await ippHolders(track.organizationId);
   for (const userId of recipients) {
     if (userId === actorId) continue;
     await notify({ userId, event: rule.audit, title, body: comment ?? rule.label, data: { reportId } });

@@ -86,7 +86,7 @@ async function receivedReports(scope: DashboardScope): Promise<LightReport[]> {
 export async function loadPilotageProvincial(scope: DashboardScope, now = new Date()) {
   assertKind(scope, "pilotage_provincial");
   const org = scope.organizationId;
-  const [pools, reports, schools, realizedInspections, activeUsers, schoolsByPool, signedFromCells] = await Promise.all([
+  const [pools, reports, schools, realizedInspections, activeUsers, schoolsByPool, toSign, signed] = await Promise.all([
     poolsInScope(scope),
     receivedReports(scope),
     prisma.school.count({ where: { active: true, pool: { organizationId: org } } }),
@@ -95,11 +95,13 @@ export async function loadPilotageProvincial(scope: DashboardScope, now = new Da
     }),
     prisma.user.count({ where: { status: "ACTIVE", organizationId: org } }),
     prisma.school.groupBy({ by: ["poolId"], where: { active: true, pool: { organizationId: org } }, _count: { _all: true } }),
-    // Branche IPP (D3) : rapports signés par l'IPA d'une cellule et transmis à l'IPP.
+    // Branche IPP : rapports validés par l'IPA d'une cellule et transmis à l'IPP (à signer), puis signés.
+    prisma.reportIppTrack.count({ where: { organizationId: org, stage: "VALIDE", report: demoWhere(scope.isDemo) } }),
     prisma.reportIppTrack.count({ where: { organizationId: org, stage: "SIGNE", report: demoWhere(scope.isDemo) } }),
   ]);
   return {
-    signedFromCells,
+    toSign,
+    signed,
     schools,
     activeUsers,
     realizedInspections,
@@ -239,8 +241,10 @@ export async function loadSynthesisCounts(scope: DashboardScope, actor: Synthesi
     myToFix: mine.filter((s) => s.status === "A_CORRIGER").length,
     submitted: rows.filter((s) => s.status === "SOUMIS").length,
     toFix: rows.filter((s) => s.status === "A_CORRIGER").length,
-    // Abouties : validées (POOL) ou signées par l'IPA et transmises à l'IPP (cellule).
-    validated: rows.filter((s) => s.status === "VALIDE" || s.status === "SIGNE").length,
+    // Synthèses de cellule validées par l'IPA et transmises à l'IPP, en attente de sa signature.
+    toSign: rows.filter((s) => s.cellId && s.status === "VALIDE").length,
+    // Abouties : validées (POOL) ou signées par l'IPP (cellule).
+    validated: rows.filter((s) => (!s.cellId && s.status === "VALIDE") || s.status === "SIGNE").length,
   };
 }
 
@@ -248,8 +252,8 @@ export async function loadSynthesisCounts(scope: DashboardScope, actor: Synthesi
 
 /**
  * Activité de SA cellule : rapports affectés par le secrétariat, en cours,
- * exploités (à signer par l'IPA), signés et transmis à l'IPP. Aucun indicateur
- * de l'IPP principal, aucun autre périmètre.
+ * exploités (à valider par l'IPA), validés et transmis à l'IPP, signés par
+ * l'IPP. Aucun indicateur de l'IPP principal, aucun autre périmètre.
  */
 export async function loadCellule(scope: DashboardScope, now = new Date()) {
   assertKind(scope, "exploitation_cellule");
@@ -278,10 +282,11 @@ export async function loadCellule(scope: DashboardScope, now = new Date()) {
   return {
     cell,
     affected: stage("AFFECTE"),
-    toSign: stage("EXPLOITE"),
+    toValidate: stage("EXPLOITE"),
+    transmitted: stage("VALIDE"),
     signed: stage("SIGNE"),
     myActions,
-    toSignList: toSign.map(brief),
+    toValidateList: toSign.map(brief),
     latestAffected: latest.map(brief),
   };
 }
@@ -294,7 +299,7 @@ export async function loadSecretariat(scope: DashboardScope) {
   const [waiting, legacy, byCell, cells] = await Promise.all([
     prisma.reportIppTrack.count({ where: { stage: "AU_SECRETARIAT", report: where } }),
     prisma.reportIppTrack.count({ where: { stage: "AU_SECRETARIAT", legacy: true, report: where } }),
-    prisma.reportIppTrack.groupBy({ by: ["cellId"], where: { cellId: { not: null }, stage: { not: "SIGNE" }, report: where }, _count: { _all: true } }),
+    prisma.reportIppTrack.groupBy({ by: ["cellId"], where: { cellId: { not: null }, stage: { in: ["AFFECTE", "EXPLOITE"] }, report: where }, _count: { _all: true } }),
     prisma.cell.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),
   ]);
   return {

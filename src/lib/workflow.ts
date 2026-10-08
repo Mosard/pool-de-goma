@@ -33,8 +33,8 @@ export async function getAvailableTransitions(
 const NEXT_ACTOR_PERMISSION: Partial<Record<string, string>> = {
   [WORKFLOW_STATUS_KEYS.SOUMIS]: PERMISSIONS.REPORTS_REVIEW_POOL,
   [WORKFLOW_STATUS_KEYS.RECU]: PERMISSIONS.REPORTS_REVIEW_POOL,
-  [WORKFLOW_STATUS_KEYS.TRANSMIS]: PERMISSIONS.REPORTS_REVIEW_PROVINCE,
-  [WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION]: PERMISSIONS.REPORTS_VALIDATE,
+  // Ancien circuit retiré (2026-10-09) : plus de transmission au bureau IPP ni
+  // de validation dans le circuit du POOL ; la branche IPP a ses propres avis.
 };
 
 export async function applyTransition(params: {

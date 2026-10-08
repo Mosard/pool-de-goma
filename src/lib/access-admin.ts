@@ -224,7 +224,9 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
     const prev = current.get(k);
     if (prev && prev.effect === next.effect) continue;
     // Modifier un ajustement existant suppose de pouvoir défaire le précédent ET poser le nouveau.
-    if (prev) assertAdjustable(actor, next.permissionKey, next.poolId, prev.effect);
+    // Défaire l'ajustement précédent n'est jamais bloqué par le refus d'accès provincial
+    // (retirer un ancien ajout provincial doit rester possible) ; seul le NOUVEL état est contrôlé.
+    if (prev) assertAdjustableFor(actor, next.permissionKey, next.poolId, prev.effect, { roles: [] });
     assertAdjustable(actor, next.permissionKey, next.poolId, next.effect);
     if (next.poolId) {
       const pool = await prisma.pool.findFirst({ where: { id: next.poolId, organizationId: actor.organizationId } });
@@ -234,7 +236,8 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
   }
   for (const [k, prev] of current) {
     if (wanted.has(k)) continue;
-    assertAdjustable(actor, prev.permission.key, prev.poolId, prev.effect);
+    // Retrait d'un ajustement : toujours permis à qui pourrait le poser, même un ancien ajout provincial.
+    assertAdjustableFor(actor, prev.permission.key, prev.poolId, prev.effect, { roles: [] });
     adjustmentOps.push({ kind: "remove", key: k, prev: { effect: prev.effect } });
   }
 

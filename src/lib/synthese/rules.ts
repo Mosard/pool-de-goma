@@ -18,8 +18,9 @@ export const SYNTHESIS_STATUS_LABELS: Record<SynthesisStatusKey, string> = {
   BROUILLON: "Brouillon",
   SOUMIS: "Soumis",
   A_CORRIGER: "À corriger",
+  // Synthèse de cellule : validée par l'IPA et transmise à l'IPP pour signature.
   VALIDE: "Validé",
-  SIGNE: "Signé par l'IPA (transmis à l'IPP)",
+  SIGNE: "Signé par l'IPP",
 };
 
 export const SYNTHESIS_STATUS_COLOR: Record<SynthesisStatusKey, "gray" | "orange" | "red" | "green"> = {
@@ -113,7 +114,8 @@ export function canRead(actor: Actor, s: SynthesisMeta): boolean {
   if (s.cellId) {
     if (isSuperAdmin(actor)) return true;
     if (holdsCell(actor, PERMISSIONS.REPORTS_REVIEW_CELL, s.cellId) || holdsCell(actor, PERMISSIONS.REPORTS_SIGN_CELL, s.cellId)) return true;
-    return s.status === "SIGNE" && isValidator(actor, s.organizationId);
+    // L'IPP lit la synthèse dès que l'IPA l'a validée et transmise (pour la signer).
+    return (s.status === "VALIDE" || s.status === "SIGNE") && isValidator(actor, s.organizationId);
   }
   if (s.poolId === null) return isValidator(actor, s.organizationId);
   const target = { poolId: s.poolId, organizationId: s.organizationId };
@@ -138,15 +140,26 @@ export function canReturn(actor: Actor, s: SynthesisMeta): boolean {
   return hasPermission(actor.permissions.filter((p) => !p.cellId), PERMISSIONS.REPORTS_REVIEW_PROVINCE, { poolId: s.poolId, organizationId: s.organizationId });
 }
 
-/** Q3 : valider une synthèse de POOL ou provinciale — IPP ou Super Admin, jamais l'auteur. Une synthèse de cellule se SIGNE. */
+/**
+ * Valider, jamais l'auteur. Synthèse de POOL ou provinciale (Q3) : IPP ou
+ * Super Admin. Synthèse de cellule (2026-10-09) : l'IPA de la cellule (chef
+ * de cellule) valide et la TRANSMET à l'IPP pour signature.
+ */
 export function canValidate(actor: Actor, s: SynthesisMeta): boolean {
-  return !s.cellId && s.status === "SOUMIS" && !isAuthor(actor, s) && isValidator(actor, s.organizationId);
+  if (s.status !== "SOUMIS" || isAuthor(actor, s) || actor.organizationId !== s.organizationId) return false;
+  if (s.cellId) return isSuperAdmin(actor) || holdsCell(actor, PERMISSIONS.REPORTS_SIGN_CELL, s.cellId);
+  return isValidator(actor, s.organizationId);
 }
 
-/** D3, D6 : signer une synthèse de cellule et la transmettre à l'IPP — l'IPA de la cellule (ou le Super Admin), jamais l'auteur. */
+/** Signer une synthèse de cellule validée et transmise : l'IPP principal (ou le Super Admin), jamais l'auteur. */
 export function canSign(actor: Actor, s: SynthesisMeta): boolean {
-  if (!s.cellId || s.status !== "SOUMIS" || isAuthor(actor, s) || actor.organizationId !== s.organizationId) return false;
-  return isSuperAdmin(actor) || holdsCell(actor, PERMISSIONS.REPORTS_SIGN_CELL, s.cellId);
+  if (!s.cellId || s.status !== "VALIDE" || isAuthor(actor, s)) return false;
+  return isValidator(actor, s.organizationId);
+}
+
+/** L'IPP renvoie à la cellule une synthèse transmise (motif obligatoire), au lieu de la signer. */
+export function canReturnTransmitted(actor: Actor, s: SynthesisMeta): boolean {
+  return canSign(actor, s);
 }
 
 export type SynthesisTransition = {
@@ -163,7 +176,9 @@ export const SYNTHESIS_TRANSITIONS: readonly SynthesisTransition[] = [
   { from: "A_CORRIGER", to: "SOUMIS", label: "Resoumettre", commentRequired: false, allowed: canEdit },
   { from: "SOUMIS", to: "A_CORRIGER", label: "Renvoyer pour correction", commentRequired: true, allowed: canReturn },
   { from: "SOUMIS", to: "VALIDE", label: "Valider", commentRequired: false, allowed: canValidate },
-  { from: "SOUMIS", to: "SIGNE", label: "Signer et transmettre à l'IPP", commentRequired: false, allowed: canSign },
+  // Synthèse de cellule validée par l'IPA : l'IPP signe, ou renvoie à la cellule.
+  { from: "VALIDE", to: "SIGNE", label: "Signer (IPP)", commentRequired: false, allowed: canSign },
+  { from: "VALIDE", to: "A_CORRIGER", label: "Renvoyer à la cellule", commentRequired: true, allowed: canReturnTransmitted },
 ];
 
 export function findTransition(from: SynthesisStatusKey, to: SynthesisStatusKey): SynthesisTransition | null {
@@ -177,7 +192,7 @@ export function availableTransitions(actor: Actor, s: SynthesisMeta): SynthesisT
 /** Action d'audit de chaque étape. */
 export function auditActionFor(from: SynthesisStatusKey, to: SynthesisStatusKey): string {
   if (to === "SOUMIS") return from === "A_CORRIGER" ? "synthesis.resubmit" : "synthesis.submit";
-  if (to === "A_CORRIGER") return "synthesis.return";
+  if (to === "A_CORRIGER") return from === "VALIDE" ? "synthesis.ipp_return" : "synthesis.return";
   if (to === "SIGNE") return "synthesis.sign";
   return "synthesis.validate";
 }

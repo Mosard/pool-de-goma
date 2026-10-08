@@ -88,9 +88,19 @@ async function main() {
     });
   }
   const ipp = await user("IPP", org.id, [{ role: ROLE_KEYS.IPP }]);
-  // Fonction provinciale d'exploitation hors cellule (Agent IPP, inchangé) : l'exploitant de
-  // l'IPP est désormais rattaché à une cellule (prisma/scripts/verify-cellules.ts).
-  const exploitIpp = await user("Agent IPP", org.id, [{ role: ROLE_KEYS.AGENT_IPP }]);
+  // Fonction provinciale d'exploitation hors cellule : une fonction créée dans Paramètres
+  // avec la lecture provinciale (l'Agent IPP ne lit plus la province depuis le 2026-10-09 ;
+  // l'exploitant de l'IPP est rattaché à une cellule, prisma/scripts/verify-cellules.ts).
+  const provincialRole = await prisma.roleDefinition.create({
+    data: {
+      key: `conseiller_${RUN}`,
+      label: "Conseiller provincial (test)",
+      scope: "PROVINCE",
+      rolePermissions: { create: [{ permission: { connect: { key: "reports.review_province" } } }] },
+    },
+  });
+  roles.set(provincialRole.key, provincialRole);
+  const exploitIpp = await user("Conseiller provincial", org.id, [{ role: provincialRole.key }]);
   const ipa = await user("IPA", org.id, [{ role: ROLE_KEYS.IPA }]);
   const info = await user("Informaticien", org.id, [{ role: ROLE_KEYS.INFORMATICIEN }]);
   const media = await user("Medias", org.id, [{ role: ROLE_KEYS.CHARGE_MEDIAS }]);
@@ -172,7 +182,7 @@ async function main() {
     );
   });
 
-  await check("Agent IPP : ses activités d'exploitation sur tous les POOL, pas le pilotage", async () => {
+  await check("Fonction provinciale d'exploitation (créée dans Paramètres) : tous les POOL, pas le pilotage", async () => {
     const s = await single(exploitIpp.id, "exploitation_provinciale");
     const d = await loadExploitation(s);
     assert.equal(d.received, 5);

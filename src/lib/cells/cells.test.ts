@@ -87,7 +87,7 @@ test("Ajustements : un ajout individuel ne redonne jamais d'accès provincial à
   assert.equal(v.ok, false);
   assert.equal(canAdjustPermission(ipp, PERMISSIONS.REPORTS_REVIEW_POOL, null, "GRANT", { roles: [{ key: ROLE_KEYS.IPA }] }).ok, false);
   assert.equal(canAdjustPermission(superAdmin, PERMISSIONS.REPORTS_REVIEW_CELL, null, "GRANT", { roles: [] }).ok, false, "permission de cellule : jamais à la main");
-  assert.ok(canAdjustPermission(ipp, PERMISSIONS.REPORTS_REVIEW_PROVINCE, null, "GRANT", { roles: [{ key: ROLE_KEYS.AGENT_IPP }] }).ok, "autres fonctions inchangées");
+  assert.ok(canAdjustPermission(ipp, PERMISSIONS.REPORTS_REVIEW_PROVINCE, null, "GRANT", { roles: [{ key: ROLE_KEYS.CHARGE_MEDIAS }] }).ok, "autres fonctions inchangées");
 });
 
 test("Lecture : un exploitant ne lit que les rapports AFFECTÉS à sa cellule, jamais ceux d'une autre", () => {
@@ -106,15 +106,16 @@ test("Lecture : un exploitant ne lit que les rapports AFFECTÉS à sa cellule, j
   assert.equal(canReadReport(ipaC1, scope, track("EXPLOITE", C2)), false, "D4 : jamais une autre cellule");
 });
 
-test("Lecture : secrétariat (branche IPP), IPP (signés et historique seulement, D7), Agent IPP et Super Admin inchangés", () => {
+test("Lecture : secrétariat (branche IPP), IPP (transmis par la cellule, signés, historique), Agent IPP plus rien, Super Admin tout", () => {
   for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C2), track("SIGNE", C1)]) assert.ok(canReadReport(secretaire, scope, t));
   assert.equal(canReadReport(secretaire, scope, null), false, "hors branche IPP");
+  assert.ok(canReadReport(ipp, scope, track("VALIDE", C1)), "validé par l'IPA et transmis : l'IPP le lit pour le signer");
   assert.ok(canReadReport(ipp, scope, track("SIGNE", C1)));
   assert.ok(canReadReport(ipp, scope, track("AU_SECRETARIAT", null, true)), "historique antérieur");
   for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1)]) assert.equal(canReadReport(ipp, scope, t), false, t.stage);
   assert.ok(canReadReport(ipp, scope, null, { visit: true }), "pilotage : pages de visite");
-  for (const t of [track("AFFECTE", C1), null]) {
-    assert.ok(canReadReport(agentIpp, scope, t), "Agent IPP : inchangé (toute la province)");
+  for (const t of [track("AFFECTE", C1), track("SIGNE", C1), null]) {
+    assert.equal(canReadReport(agentIpp, scope, t), false, "Agent IPP : ne lit plus toute la province (2026-10-09)");
     assert.ok(canReadReport(superAdmin, scope, t), "Super Admin : assistance technique");
   }
 });
@@ -136,20 +137,25 @@ test("Exploiter (commenter, partie réservée) : POOL ou cellule destinataire ; 
   assert.equal(canWorkOnReport(sansCellule, scope, track("AFFECTE", C1)), false);
 });
 
-test("Étapes : secrétariat envoie et réaffecte ; exploitant termine ; seul l'IPA de la cellule renvoie et signe", () => {
+test("Étapes : secrétariat envoie et réaffecte ; exploitant termine ; l'IPA de SA cellule valide et transmet ; l'IPP signe ou renvoie", () => {
   assert.deepEqual(availableTrackActions(secretaire, track("AU_SECRETARIAT", null)), ["assign"]);
   assert.deepEqual(availableTrackActions(secretaire, track("AFFECTE", C1)), ["reassign"]);
-  assert.deepEqual(availableTrackActions(secretaire, track("SIGNE", C1)), [], "jamais après la signature");
+  for (const st of ["VALIDE", "SIGNE"] as const) assert.deepEqual(availableTrackActions(secretaire, track(st, C1)), [], `jamais après la validation (${st})`);
   assert.deepEqual(availableTrackActions(exploitC1, track("AFFECTE", C1)), ["exploit"]);
   assert.deepEqual(availableTrackActions(exploitC2, track("AFFECTE", C1)), [], "autre cellule");
-  assert.deepEqual(availableTrackActions(ipaC1, track("EXPLOITE", C1)), ["return", "sign"]);
-  assert.equal(canActOnTrack(ipaC1, track("EXPLOITE", C2), "sign"), false, "autre cellule");
-  assert.equal(canActOnTrack(exploitC1, track("EXPLOITE", C1), "sign"), false, "l'exploitant ne signe pas");
-  for (const a of [ipp, agentIpp, exploitPoolA, sansCellule, ipaSansCellule]) {
-    for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1)]) {
+  assert.deepEqual(availableTrackActions(ipaC1, track("EXPLOITE", C1)), ["return", "validate"]);
+  assert.equal(canActOnTrack(ipaC1, track("EXPLOITE", C2), "validate"), false, "autre cellule");
+  assert.equal(canActOnTrack(exploitC1, track("EXPLOITE", C1), "validate"), false, "l'exploitant ne valide pas");
+  assert.equal(canActOnTrack(ipaC1, track("VALIDE", C1), "sign"), false, "l'IPA ne signe pas : c'est l'IPP");
+  assert.deepEqual(availableTrackActions(ipp, track("VALIDE", C1)), ["sign", "refuse"]);
+  assert.deepEqual(availableTrackActions(ipp, track("EXPLOITE", C1)), [], "pas avant la validation de l'IPA");
+  assert.deepEqual(availableTrackActions(ipp, track("SIGNE", C1)), [], "signé : fin du circuit");
+  for (const a of [agentIpp, exploitPoolA, sansCellule, ipaSansCellule]) {
+    for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1), track("VALIDE", C1)]) {
       assert.deepEqual(availableTrackActions(a, t), [], `${a.id} ${t.stage}`);
     }
   }
+  for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1)]) assert.deepEqual(availableTrackActions(ipp, t), [], `IPP ${t.stage}`);
   assert.equal(canActOnTrack(secretaire, { ...track("AU_SECRETARIAT", null), organizationId: "autre-org" }, "assign"), false);
 });
 
@@ -158,7 +164,7 @@ test("Listes et exports : même périmètre que la lecture (cellule, secrétaria
   assert.match(where(exploitC1), /"cellId":\{"in":\["cell-1"\]\}/);
   assert.doesNotMatch(where(exploitC1), /cell-2/);
   assert.doesNotMatch(where(sansCellule), /ippTrack/, "sans cellule : ses propres rapports seulement");
-  assert.match(where(ipp), /"stage":"SIGNE"/);
+  assert.match(where(ipp), /"stage":\{"in":\["VALIDE","SIGNE"\]\}/);
   assert.match(where(secretaire), /"ippTrack":\{"isNot":null\}/);
-  assert.doesNotMatch(where(agentIpp), /"stage":"SIGNE"/, "Agent IPP : inchangé");
+  assert.equal(where(agentIpp), where({ ...agentIpp, permissions: [] }), "Agent IPP : plus de portée provinciale, ses propres rapports seulement");
 });

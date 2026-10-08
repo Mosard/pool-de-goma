@@ -91,6 +91,10 @@ async function main() {
     where: { isDemo: true, status: "ACTIVE", id: { not: inspector.id }, roles: { some: { role: { key: ROLE_KEYS.INSPECTEUR }, poolId: school.poolId } } },
   });
   const exploitantIpp = await prisma.user.findFirst({ where: { isDemo: true, status: "ACTIVE", roles: { some: { role: { key: ROLE_KEYS.EXPLOITANT_IPP } } } } });
+  // Exploitant du POOL de l'école : depuis le retrait de Q8 (2026-10-08), lui seul exploite au POOL.
+  const exploitantPool = await prisma.user.findFirst({
+    where: { isDemo: true, status: "ACTIVE", roles: { some: { role: { key: ROLE_KEYS.EXPLOITANT_POOL }, poolId: assignment.school.poolId } } },
+  });
   const c3Template = (await proposedTemplates("visite")).find((t) => t.code === "C3")!;
   const c1Template = (await proposedTemplates("visite")).find((t) => t.code === "C1")!;
   const inspection = await prisma.inspection.create({ data: { schoolId: school.id, inspectorId: inspector.id, status: "EN_COURS" } });
@@ -152,30 +156,34 @@ async function main() {
     assert.equal(scope.isDemo, true);
   });
 
-  if (exploitantIpp) {
-    await step("exploitant IPP : exploitation au niveau POOL sur tous les POOL (décision Q8)", async () => {
-      const { permissions } = await loadUserAccess(exploitantIpp.id, { viewMode: null });
-      assert.ok(permissions.some((p) => p.permissionKey === PERMISSIONS.REPORTS_REVIEW_POOL && p.poolId === null));
-      assert.ok(permissions.some((p) => p.permissionKey === PERMISSIONS.AI_ANALYZE));
-      await applyTransition({
-        reportId: first.report.id,
-        toStatusKey: WORKFLOW_STATUS_KEYS.RECU,
-        actorId: exploitantIpp.id,
-        actorPermissions: permissions,
-        actorPoolId: null,
-        actorOrganizationId: exploitantIpp.organizationId,
-      });
-      for (const key of [WORKFLOW_STATUS_KEYS.EN_EXPLOITATION, WORKFLOW_STATUS_KEYS.A_CORRIGER]) {
-        await applyTransition({ reportId: first.report.id, toStatusKey: key, actorId: exploitantIpp.id, actorPermissions: permissions, actorPoolId: null, actorOrganizationId: exploitantIpp.organizationId, comment: "Test" });
+  if (exploitantIpp && exploitantPool) {
+    await step("Q8 retiré : l'exploitant IPP n'exploite plus au POOL ; l'exploitant du POOL le fait", async () => {
+      const ipp = await loadUserAccess(exploitantIpp.id, { viewMode: null });
+      assert.ok(!ipp.permissions.some((p) => p.permissionKey === PERMISSIONS.REPORTS_REVIEW_POOL), "plus de review_pool");
+      assert.ok(!ipp.permissions.some((p) => p.permissionKey === PERMISSIONS.AI_ANALYZE), "plus d'analyse IA");
+      await assert.rejects(
+        applyTransition({
+          reportId: first.report.id,
+          toStatusKey: WORKFLOW_STATUS_KEYS.RECU,
+          actorId: exploitantIpp.id,
+          actorPermissions: ipp.permissions,
+          actorPoolId: null,
+          actorOrganizationId: exploitantIpp.organizationId,
+        }),
+        (e: unknown) => e instanceof ForbiddenError
+      );
+      const pool = await loadUserAccess(exploitantPool.id, { viewMode: null });
+      for (const key of [WORKFLOW_STATUS_KEYS.RECU, WORKFLOW_STATUS_KEYS.EN_EXPLOITATION, WORKFLOW_STATUS_KEYS.A_CORRIGER]) {
+        await applyTransition({ reportId: first.report.id, toStatusKey: key, actorId: exploitantPool.id, actorPermissions: pool.permissions, actorPoolId: school.poolId, actorOrganizationId: exploitantPool.organizationId, comment: "Test" });
       }
       await refreshInspectionStatus(inspection.id);
       assert.equal((await prisma.inspection.findUniqueOrThrow({ where: { id: inspection.id } })).status, "EN_COURS", "fiche renvoyée : visite de nouveau en cours");
     });
   } else {
-    console.log("  --  exploitant IPP de démonstration absent : étape ignorée");
+    console.log("  --  exploitant IPP ou exploitant de POOL de démonstration absent : étape ignorée");
   }
 
-  if (exploitantIpp && otherInspector) {
+  if (exploitantIpp && exploitantPool && otherInspector) {
     await step("resoumettre : réservé à l'auteur, pas à un autre inspecteur du POOL", async () => {
       const other = await loadUserAccess(otherInspector.id, { viewMode: null });
       await assert.rejects(

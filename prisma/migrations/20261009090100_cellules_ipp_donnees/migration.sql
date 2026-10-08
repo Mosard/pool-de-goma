@@ -7,7 +7,7 @@
 INSERT INTO "Permission" ("id", "key", "label", "category") VALUES
   ('perm_reports_route_ipp', 'reports.route_ipp', 'Secrétariat de l''IPP : recevoir les rapports et les envoyer à une cellule', 'Circuit de validation'),
   ('perm_reports_review_cell', 'reports.review_cell', 'Exploiter les rapports affectés à sa cellule et préparer ses synthèses', 'Circuit de validation'),
-  ('perm_reports_sign_cell', 'reports.sign_cell', 'Signer et transmettre à l''IPP les rapports et synthèses de sa cellule (IPA)', 'Circuit de validation')
+  ('perm_reports_sign_cell', 'reports.sign_cell', 'Valider et transmettre à l''IPP les rapports et synthèses de sa cellule (IPA)', 'Circuit de validation')
 ON CONFLICT ("key") DO NOTHING;
 
 -- 2. Fonction « Exploitant de l'IPP » : rattachement obligatoire à une cellule.
@@ -26,14 +26,44 @@ ON CONFLICT ("key") DO NOTHING;
 
 -- 4. Retraits autorisés (remplacent la décision Q8 du 2026-10-07) :
 --    exploitant de l'IPP : review_pool (tous les POOL), ai.analyze (Q8), review_province (D8) ;
---    IPA : review_province (D4, il ne voit que sa cellule).
+--    IPA : review_province (D4, il ne voit que sa cellule) ;
+--    Agent IPP : review_province (décision du 2026-10-09 : il ne lit plus toute la province).
 DELETE FROM "RolePermission" rp
 USING "RoleDefinition" r, "Permission" p
 WHERE rp."roleId" = r."id" AND rp."permissionId" = p."id"
   AND (
     (r."key" = 'exploitant_ipp' AND p."key" IN ('reports.review_pool', 'reports.review_province', 'ai.analyze'))
-    OR (r."key" = 'ipa' AND p."key" = 'reports.review_province')
+    OR (r."key" IN ('ipa', 'agent_ipp') AND p."key" = 'reports.review_province')
   );
+
+-- 4 bis. Ancien circuit retiré (décision du 2026-10-09) : plus de transmission
+--    du POOL au bureau IPP, ni de validation, rejet ou clôture par l'IPP dans
+--    le circuit du POOL. La remontée à l'IPP passe par le secrétariat, la
+--    cellule (validation de l'IPA) puis la signature de l'IPP. Les rapports
+--    déjà à ces statuts les gardent (historique), sans transition possible.
+DELETE FROM "WorkflowTransition" t
+USING "WorkflowStatus" f, "WorkflowStatus" s
+WHERE t."fromStatusId" = f."id" AND t."toStatusId" = s."id"
+  AND (f."key", s."key") IN (
+    ('EN_EXPLOITATION', 'TRANSMIS'),
+    ('TRANSMIS', 'EN_ATTENTE_VALIDATION'),
+    ('EN_ATTENTE_VALIDATION', 'VALIDE'),
+    ('EN_ATTENTE_VALIDATION', 'REJETE'),
+    ('REJETE', 'A_CORRIGER'),
+    ('VALIDE', 'CLOTURE')
+  );
+
+-- Le POOL termine lui-même son exploitation (En exploitation → Clôturé).
+INSERT INTO "WorkflowTransition" ("id", "fromStatusId", "toStatusId", "label", "allowedPermissionKey")
+SELECT 'wt_pool_exploitation_terminee', f."id", s."id", 'Exploitation terminée (POOL)', 'reports.review_pool'
+FROM "WorkflowStatus" f, "WorkflowStatus" s
+WHERE f."key" = 'EN_EXPLOITATION' AND s."key" = 'CLOTURE'
+ON CONFLICT ("fromStatusId", "toStatusId") DO NOTHING;
+
+-- reports.validate sert désormais à la signature de l'IPP principal (branche IPP).
+UPDATE "Permission"
+SET "label" = 'Signer les rapports et synthèses validés et transmis par les cellules (IPP)'
+WHERE "key" = 'reports.validate';
 
 -- 5. Nouvelles permissions des fonctions. Les permissions de cellule ne valent
 --    que pour la cellule de la personne (src/lib/permissions.ts).

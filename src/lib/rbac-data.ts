@@ -36,10 +36,10 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.INSPECTIONS_CONDUCT, label: "Réaliser des inspections et soumettre des rapports", category: "Inspections" },
   { key: PERMISSIONS.REPORTS_REVIEW_POOL, label: "Exploiter les rapports au niveau du pool", category: "Circuit de validation" },
   { key: PERMISSIONS.REPORTS_REVIEW_PROVINCE, label: "Exploiter les rapports au niveau du bureau IPP", category: "Circuit de validation" },
-  { key: PERMISSIONS.REPORTS_VALIDATE, label: "Valider ou rejeter un rapport", category: "Circuit de validation" },
+  { key: PERMISSIONS.REPORTS_VALIDATE, label: "Signer les rapports et synthèses validés et transmis par les cellules (IPP)", category: "Circuit de validation" },
   { key: PERMISSIONS.REPORTS_ROUTE_IPP, label: "Secrétariat de l'IPP : recevoir les rapports et les envoyer à une cellule", category: "Circuit de validation" },
   { key: PERMISSIONS.REPORTS_REVIEW_CELL, label: "Exploiter les rapports affectés à sa cellule et préparer ses synthèses", category: "Circuit de validation" },
-  { key: PERMISSIONS.REPORTS_SIGN_CELL, label: "Signer et transmettre à l'IPP les rapports et synthèses de sa cellule (IPA)", category: "Circuit de validation" },
+  { key: PERMISSIONS.REPORTS_SIGN_CELL, label: "Valider et transmettre à l'IPP les rapports et synthèses de sa cellule (IPA)", category: "Circuit de validation" },
   { key: PERMISSIONS.AUDIT_VIEW, label: "Consulter le journal d'audit", category: "Administration" },
   { key: PERMISSIONS.FORM_TEMPLATES_MANAGE, label: "Gérer les catégories et fiches d'inspection", category: "Administration" },
   { key: PERMISSIONS.PUBLICATION_MANAGE, label: "Autoriser la publication publique des profils (nom, fonction, photo)", category: "Publication" },
@@ -80,9 +80,10 @@ export const IPA_CELL_BOUND_KEYS: readonly string[] = [...CELL_PERMISSION_KEYS, 
 // review_pool sur tous les POOL) ne peut pas leur être redonné individuellement.
 export const CELL_BOUND_ROLE_KEYS: readonly string[] = [ROLE_KEYS.EXPLOITANT_IPP, ROLE_KEYS.IPA];
 
-// Décision D7 : dans la branche IPP, l'IPP principal ne lit que les rapports
-// signés et transmis par une cellule (et l'historique antérieur). Ses vues de
-// pilotage chiffrées et ses autres pouvoirs ne changent pas.
+// Décision D7 (précisée le 2026-10-09) : dans la branche IPP, l'IPP principal
+// ne lit que les rapports validés et transmis par une cellule (qu'il signe) et
+// l'historique antérieur. Ses vues de pilotage chiffrées, son analyse IA et ses
+// autres pouvoirs ne changent pas.
 export const SIGNED_ONLY_READER_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP];
 
 // Motif de fin d'une affectation (Assignment.endReason).

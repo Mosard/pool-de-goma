@@ -14,17 +14,21 @@ import {
 } from "@/lib/rbac-data";
 import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 
-export type IppStageKey = "AU_SECRETARIAT" | "AFFECTE" | "EXPLOITE" | "SIGNE";
+export type IppStageKey = "AU_SECRETARIAT" | "AFFECTE" | "EXPLOITE" | "VALIDE" | "SIGNE";
 
 export const IPP_STAGE_LABELS: Record<IppStageKey, string> = {
   AU_SECRETARIAT: "Au secrétariat de l'IPP",
   AFFECTE: "Envoyé à la cellule",
-  EXPLOITE: "Exploité, à signer par l'IPA",
-  SIGNE: "Signé et transmis à l'IPP",
+  EXPLOITE: "Exploité, à valider par l'IPA",
+  VALIDE: "Validé par l'IPA, transmis à l'IPP pour signature",
+  SIGNE: "Signé par l'IPP",
 };
 
 /** Stades où la cellule destinataire voit le rapport. */
-export const CELL_VISIBLE_STAGES: readonly IppStageKey[] = ["AFFECTE", "EXPLOITE", "SIGNE"];
+export const CELL_VISIBLE_STAGES: readonly IppStageKey[] = ["AFFECTE", "EXPLOITE", "VALIDE", "SIGNE"];
+
+/** Stades où l'IPP principal lit le rapport (validé et transmis par la cellule, puis signé). */
+export const IPP_VISIBLE_STAGES: readonly IppStageKey[] = ["VALIDE", "SIGNE"];
 
 export type IppTrackInfo = { stage: IppStageKey; cellId: string | null; legacy: boolean; organizationId: string };
 
@@ -70,7 +74,15 @@ export function bindRolePermissions(p: {
   return out;
 }
 
-const PROVINCIAL_REVIEW_KEYS: readonly string[] = [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_REVIEW_POOL];
+// Toute permission qui, à portée organisation, ouvrirait la lecture des rapports
+// de la province (canReadReport, scopeWhere) : jamais pour une personne
+// rattachée à une cellule, sauf si une autre de ses fonctions la donne.
+const PROVINCIAL_REVIEW_KEYS: readonly string[] = [
+  PERMISSIONS.REPORTS_REVIEW_PROVINCE,
+  PERMISSIONS.REPORTS_REVIEW_POOL,
+  PERMISSIONS.REPORTS_VALIDATE,
+  PERMISSIONS.ASSIGNMENTS_MANAGE,
+];
 
 /** Fonction rattachée à une cellule (exploitant de l'IPP, IPA), hors Super Admin. */
 export function isCellBound(roles: { key: string }[]): boolean {
@@ -147,7 +159,7 @@ export function canReadReport(actor: CellActor, scope: ReportScopeLike, track: I
   if (scope.poolId && held.some((x) => x.poolId === scope.poolId)) return true;
   if (held.some((x) => x.poolId === null)) {
     if (opts.visit || !readsSignedOnly(actor.roles)) return true;
-    if (track && (track.stage === "SIGNE" || track.legacy)) return true;
+    if (track && (IPP_VISIBLE_STAGES.includes(track.stage) || track.legacy)) return true;
   }
   if (!track || track.organizationId !== org) return false;
   if (holdsRouteIpp(actor, org)) return true;
@@ -171,7 +183,7 @@ export function canWorkOnReport(actor: CellActor, scope: ReportScopeLike, track:
 
 // ─── Branche IPP : étapes ──────────────────────────────────────────────────
 
-export type TrackAction = "assign" | "reassign" | "exploit" | "return" | "sign";
+export type TrackAction = "assign" | "reassign" | "exploit" | "return" | "validate" | "sign" | "refuse";
 
 export const TRACK_ACTIONS: Record<
   TrackAction,
@@ -179,16 +191,27 @@ export const TRACK_ACTIONS: Record<
 > = {
   assign: { from: ["AU_SECRETARIAT"], to: "AFFECTE", label: "Envoyer à la cellule", commentRequired: false, audit: "report.ipp_assign" },
   reassign: { from: ["AFFECTE", "EXPLOITE"], to: "AFFECTE", label: "Réaffecter à une autre cellule", commentRequired: true, audit: "report.ipp_reassign" },
-  exploit: { from: ["AFFECTE"], to: "EXPLOITE", label: "Exploitation terminée (à signer)", commentRequired: false, audit: "report.ipp_exploit" },
+  exploit: { from: ["AFFECTE"], to: "EXPLOITE", label: "Exploitation terminée (à valider par l'IPA)", commentRequired: false, audit: "report.ipp_exploit" },
   return: { from: ["EXPLOITE"], to: "AFFECTE", label: "Renvoyer à la cellule", commentRequired: true, audit: "report.ipp_return" },
-  sign: { from: ["EXPLOITE"], to: "SIGNE", label: "Signer et transmettre à l'IPP", commentRequired: false, audit: "report.ipp_sign" },
+  validate: { from: ["EXPLOITE"], to: "VALIDE", label: "Valider et transmettre à l'IPP", commentRequired: false, audit: "report.ipp_validate" },
+  sign: { from: ["VALIDE"], to: "SIGNE", label: "Signer (IPP)", commentRequired: false, audit: "report.ipp_sign" },
+  refuse: { from: ["VALIDE"], to: "AFFECTE", label: "Renvoyer à la cellule (IPP)", commentRequired: true, audit: "report.ipp_refuse" },
 };
+
+/** Signature de l'IPP principal : `reports.validate` à portée organisation (hors cellule). */
+export function holdsIppSignature(actor: Pick<CellActor, "permissions">, organizationId: string): boolean {
+  return actor.permissions.some(
+    (p) => p.permissionKey === PERMISSIONS.REPORTS_VALIDATE && !p.cellId && p.poolId === null && p.organizationId === organizationId
+  );
+}
 
 /**
  * L'acteur peut-il faire cette étape ? Secrétariat : envoyer et réaffecter
- * (jamais après la signature) ; exploitant de la cellule : terminer
- * l'exploitation ; IPA de la cellule : renvoyer, signer. Le Super Admin
- * (assistance technique) peut tout faire, tracé à son nom.
+ * (jamais après la validation) ; exploitant de la cellule : terminer
+ * l'exploitation ; IPA de la cellule (chef de cellule) : renvoyer à la
+ * cellule, valider et transmettre à l'IPP ; IPP principal : signer, ou
+ * renvoyer à la cellule. Le Super Admin (assistance technique) peut tout
+ * faire, tracé à son nom.
  */
 export function canActOnTrack(actor: CellActor, track: IppTrackInfo, action: TrackAction): boolean {
   if (track.organizationId !== actor.organizationId) return false;
@@ -201,8 +224,11 @@ export function canActOnTrack(actor: CellActor, track: IppTrackInfo, action: Tra
     case "exploit":
       return holdsCell(actor, PERMISSIONS.REPORTS_REVIEW_CELL, track.cellId);
     case "return":
-    case "sign":
+    case "validate":
       return holdsCell(actor, PERMISSIONS.REPORTS_SIGN_CELL, track.cellId);
+    case "sign":
+    case "refuse":
+      return holdsIppSignature(actor, track.organizationId);
   }
 }
 

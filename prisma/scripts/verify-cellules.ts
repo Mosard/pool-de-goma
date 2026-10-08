@@ -107,9 +107,9 @@ async function main() {
     assert.equal((await prisma.report.findUniqueOrThrow({ where: { id: r1.id }, include: { status: true } })).status.key, S.SOUMIS);
   });
 
-  await check("Avant affectation : secrétariat et POOL lisent ; aucune cellule, pas l'IPP (D7), pas un compte sans cellule", async () => {
-    for (const u of [secretaire, exploitPoolA, chefA, inspA, agentIpp]) assert.ok(await reads(u.id, r1.id), u.name);
-    for (const u of [exploitC1, exploitC2, sansCellule, ipa1, ipp]) assert.equal(await reads(u.id, r1.id), false, u.name);
+  await check("Avant affectation : secrétariat et POOL lisent ; aucune cellule, pas l'IPP (D7), pas l'Agent IPP, pas un compte sans cellule", async () => {
+    for (const u of [secretaire, exploitPoolA, chefA, inspA]) assert.ok(await reads(u.id, r1.id), u.name);
+    for (const u of [exploitC1, exploitC2, sansCellule, ipa1, ipp, agentIpp]) assert.equal(await reads(u.id, r1.id), false, u.name);
   });
 
   await check("Envoi à une cellule : réservé au secrétariat, tracé (auteur, date, cellule), audité, notifié à la seule cellule", async () => {
@@ -142,7 +142,7 @@ async function main() {
     await assert.rejects(() => loadReportPdfSource(subjectC2, r1.id), PdfAccessError, "PDF refusé à l'autre cellule");
     await loadReportPdfSource(await loadExportSubject(exploitC1.id), r1.id);
     await refused(() => applyTrackAction(exploitC2.id, r1.id, { action: "exploit" }), "exploiter le rapport d'une autre cellule");
-    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "sign" }), "signer pour une autre cellule");
+    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "validate" }), "valider pour une autre cellule");
     await refused(() => applyTrackAction(sansCellule.id, r1.id, { action: "exploit" }), "sans cellule");
   });
 
@@ -156,26 +156,46 @@ async function main() {
     assert.ok(await reads(exploitC2.id, r1.id));
   });
 
-  await check("Exploitation, renvoi par l'IPA (motif), signature par SON IPA : l'IPP lit alors le rapport et est prévenu", async () => {
-    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "sign" }), "pas encore exploité");
+  await check("Exploitation, renvoi par l'IPA (motif), validation par SON IPA et transmission : l'IPP lit alors le rapport et est prévenu", async () => {
+    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "validate" }), "pas encore exploité");
     await applyTrackAction(exploitC2.id, r1.id, { action: "exploit" });
-    await refused(() => applyTrackAction(exploitC2.id, r1.id, { action: "sign" }), "l'exploitant ne signe pas");
+    await refused(() => applyTrackAction(exploitC2.id, r1.id, { action: "validate" }), "l'exploitant ne valide pas");
     await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "return" }), "motif obligatoire");
     await applyTrackAction(ipa2.id, r1.id, { action: "return", comment: "Compléter l'analyse." });
     await applyTrackAction(exploitC2.id, r1.id, { action: "exploit" });
-    assert.equal(await reads(ipp.id, r1.id), false, "D7 : pas avant la signature");
-    await refused(() => applyTrackAction(ipa1.id, r1.id, { action: "sign" }), "IPA d'une autre cellule");
-    await applyTrackAction(ipa2.id, r1.id, { action: "sign" });
+    assert.equal(await reads(ipp.id, r1.id), false, "D7 : pas avant la validation de l'IPA");
+    await refused(() => applyTrackAction(ipa1.id, r1.id, { action: "validate" }), "IPA d'une autre cellule");
+    await refused(() => applyTrackAction(ipp.id, r1.id, { action: "sign" }), "l'IPP ne signe qu'après la validation de l'IPA");
+    await applyTrackAction(ipa2.id, r1.id, { action: "validate" });
     const t = await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r1.id } });
-    assert.deepEqual([t.stage, t.signedById], ["SIGNE", ipa2.id]);
+    assert.deepEqual([t.stage, t.validatedById], ["VALIDE", ipa2.id]);
+    assert.ok(t.validatedAt);
+    assert.ok(await reads(ipp.id, r1.id), "transmis : l'IPP le lit pour le signer");
+    assert.equal(await notif(ipp.id, "report.ipp_validate"), 1);
+    await refused(() => applyTrackAction(secretaire.id, r1.id, { action: "reassign", cellId: c1.id, comment: "trop tard" }), "jamais après la validation");
+  });
+
+  await check("Signature par l'IPP principal (seul) : renvoi possible avec motif ; la cellule est prévenue", async () => {
+    for (const u of [ipa2, exploitC2, agentIpp, secretaire]) await refused(() => applyTrackAction(u.id, r1.id, { action: "sign" }), `${u.name} ne signe pas`);
+    await refused(() => applyTrackAction(ipp.id, r1.id, { action: "refuse" }), "renvoi de l'IPP : motif obligatoire");
+    await applyTrackAction(ipp.id, r1.id, { action: "refuse", comment: "Préciser les recommandations." });
+    assert.equal((await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r1.id } })).stage, "AFFECTE");
+    assert.equal(await reads(ipp.id, r1.id), false, "renvoyé à la cellule : plus visible de l'IPP");
+    await applyTrackAction(exploitC2.id, r1.id, { action: "exploit" });
+    await applyTrackAction(ipa2.id, r1.id, { action: "validate" });
+    await applyTrackAction(ipp.id, r1.id, { action: "sign" });
+    const t = await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r1.id } });
+    assert.deepEqual([t.stage, t.signedById], ["SIGNE", ipp.id]);
     assert.ok(t.signedAt);
-    assert.ok(await reads(ipp.id, r1.id), "D3 : l'IPP lit ce qui est signé");
-    assert.equal(await notif(ipp.id, "report.ipp_sign"), 1);
-    await refused(() => applyTrackAction(secretaire.id, r1.id, { action: "reassign", cellId: c1.id, comment: "trop tard" }), "jamais après la signature");
+    assert.ok(await notif(exploitC2.id, "report.ipp_sign"), "la cellule est prévenue de la signature");
+    assert.ok(await notif(ipa2.id, "report.ipp_sign"));
+    assert.ok(await reads(ipp.id, r1.id));
+    assert.equal(await reads(exploitC1.id, r1.id), false, "jamais l'autre cellule");
   });
 
   await check("Traçabilité : chaque transmission a son entrée (étape, cellule, auteur, date) et son audit", async () => {
-    const who = (id: string) => (id === secretaire.id ? "secr" : id === ipa2.id ? "ipa2" : id === exploitC2.id ? "exp2" : id === inspA.id ? "insp" : id);
+    const who = (id: string) =>
+      id === secretaire.id ? "secr" : id === ipa2.id ? "ipa2" : id === exploitC2.id ? "exp2" : id === inspA.id ? "insp" : id === ipp.id ? "ipp" : id;
     const cellOf = (id: string | null) => (id === c1.id ? "C1" : id === c2.id ? "C2" : null);
     const ev = await prisma.reportIppEvent.findMany({ where: { reportId: r1.id }, orderBy: { createdAt: "asc" } });
     assert.deepEqual(
@@ -187,13 +207,28 @@ async function main() {
         ["EXPLOITE", "C2", "exp2"],
         ["AFFECTE", "C2", "ipa2"],
         ["EXPLOITE", "C2", "exp2"],
-        ["SIGNE", "C2", "ipa2"],
+        ["VALIDE", "C2", "ipa2"],
+        ["AFFECTE", "C2", "ipp"],
+        ["EXPLOITE", "C2", "exp2"],
+        ["VALIDE", "C2", "ipa2"],
+        ["SIGNE", "C2", "ipp"],
       ]
     );
     const audits = await prisma.auditLog.findMany({ where: { entityId: r1.id, action: { startsWith: "report.ipp_" } }, orderBy: { createdAt: "asc" } });
     assert.deepEqual(
       audits.map((a) => a.action),
-      ["report.ipp_assign", "report.ipp_reassign", "report.ipp_exploit", "report.ipp_return", "report.ipp_exploit", "report.ipp_sign"]
+      [
+        "report.ipp_assign",
+        "report.ipp_reassign",
+        "report.ipp_exploit",
+        "report.ipp_return",
+        "report.ipp_exploit",
+        "report.ipp_validate",
+        "report.ipp_refuse",
+        "report.ipp_exploit",
+        "report.ipp_validate",
+        "report.ipp_sign",
+      ]
     );
   });
 
@@ -207,7 +242,23 @@ async function main() {
       applyTransition({ reportId: r2.id, toStatusKey: S.RECU, actorId: exploitPoolA.id, actorPermissions: pool.permissions, actorPoolId: pA.id, actorOrganizationId: org.id })
     );
     assert.equal((await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r2.id } })).stage, "AU_SECRETARIAT", "branche IPP inchangée");
-    assert.equal(await reads(ipp.id, r2.id), false, "D7 : r2 pas signé");
+    assert.equal(await reads(ipp.id, r2.id), false, "D7 : r2 pas transmis");
+    // Ancien circuit retiré (2026-10-09) : plus de transmission au bureau IPP ; le POOL termine lui-même.
+    const move = (to: string) =>
+      applyTransition({ reportId: r1.id, toStatusKey: to, actorId: exploitPoolA.id, actorPermissions: pool.permissions, actorPoolId: pA.id, actorOrganizationId: org.id });
+    await move(S.EN_EXPLOITATION);
+    await assert.rejects(() => move(S.TRANSMIS), /Transition non autorisée/, "plus de transmission au bureau IPP");
+    for (const [from, to] of [
+      [S.TRANSMIS, S.EN_ATTENTE_VALIDATION],
+      [S.EN_ATTENTE_VALIDATION, S.VALIDE],
+      [S.EN_ATTENTE_VALIDATION, S.REJETE],
+      [S.VALIDE, S.CLOTURE],
+    ]) {
+      const n = await prisma.workflowTransition.count({ where: { fromStatus: { key: from }, toStatus: { key: to } } });
+      assert.equal(n, 0, `${from} → ${to} retirée`);
+    }
+    await move(S.CLOTURE);
+    assert.equal((await prisma.report.findUniqueOrThrow({ where: { id: r1.id }, include: { status: true } })).status.key, S.CLOTURE, "Exploitation terminée (POOL)");
   });
 
   await check("Gérer les accès : cellule obligatoire, une seule ; jamais d'accès provincial pour une personne rattachée à une cellule", async () => {

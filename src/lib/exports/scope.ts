@@ -7,7 +7,7 @@ import type { Prisma } from "@prisma/client";
 import { readableCells, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
-import { CELL_VISIBLE_STAGES, holdsRouteIpp, readsSignedOnly } from "@/lib/cells/rules";
+import { CELL_VISIBLE_STAGES, IPP_VISIBLE_STAGES, holdsRouteIpp, readsSignedOnly } from "@/lib/cells/rules";
 
 /** Permissions qui donnent accès aux rapports des autres (exploiter, valider). */
 export const REVIEW_KEYS: readonly string[] = [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE];
@@ -59,7 +59,7 @@ export function scopeWhere(subject: ExportSubject): Prisma.ReportWhereInput {
   if (held.some((p) => p.poolId === null)) {
     visible.push(
       readsSignedOnly(subject.roles)
-        ? { AND: [reportsOfOrganization(org), { ippTrack: { is: { OR: [{ stage: "SIGNE" }, { legacy: true }] } } }] }
+        ? { AND: [reportsOfOrganization(org), { ippTrack: { is: { OR: [{ stage: { in: [...IPP_VISIBLE_STAGES] } }, { legacy: true }] } } }] }
         : reportsOfOrganization(org)
     );
   }

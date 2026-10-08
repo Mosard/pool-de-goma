@@ -398,6 +398,7 @@ model User {
   cellLed                 Cell?                    @relation("CellIpa")
   ippEvents               ReportIppEvent[]         @relation("IppEventActor")
   ippTracksSigned         ReportIppTrack[]         @relation("IppSignedBy")
+  ippTracksValidated      ReportIppTrack[]         @relation("IppValidatedBy")
 
   @@index([organizationId])
   @@index([poolId])
@@ -726,9 +727,11 @@ enum IppStage {
   AU_SECRETARIAT
   // Envoyé par le secrétariat à une cellule.
   AFFECTE
-  // Exploitation terminée par la cellule, en attente de la signature de l'IPA.
+  // Exploitation terminée par la cellule, en attente de la validation de l'IPA.
   EXPLOITE
-  // Signé par l'IPA et transmis à l'IPP (décision D3).
+  // Validé par l'IPA (chef de cellule) et transmis à l'IPP pour signature.
+  VALIDE
+  // Signé par l'IPP principal.
   SIGNE
 }
 
@@ -747,6 +750,11 @@ model ReportIppTrack {
   arrivedAt      DateTime     @default(now())
   assignedAt     DateTime?
   exploitedAt    DateTime?
+  // Validation par l'IPA (chef de cellule) et transmission à l'IPP.
+  validatedAt    DateTime?
+  validatedById  String?
+  validatedBy    User?        @relation("IppValidatedBy", fields: [validatedById], references: [id])
+  // Signature par l'IPP principal.
   signedAt       DateTime?
   signedById     String?
   signedBy       User?        @relation("IppSignedBy", fields: [signedById], references: [id])
@@ -997,7 +1005,8 @@ enum SynthesisStatus {
   SOUMIS
   A_CORRIGER
   VALIDE
-  // Synthèse de cellule signée par l'IPA et transmise à l'IPP (décision D3).
+  // Synthèse de cellule signée par l'IPP principal, après validation de l'IPA
+  // (statut VALIDE : validée par l'IPA et transmise à l'IPP).
   SIGNE
 }
 

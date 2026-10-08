@@ -112,7 +112,7 @@ function includeCheck(actor: SynthesisActor, s: IncludeScope, r: ReportWithScope
 export async function eligibleReports(actor: SynthesisActor, target: SynthesisTarget) {
   if (!canAuthorTarget(actor, target)) throw new ForbiddenError();
   const where: Prisma.ReportWhereInput = target.cellId
-    ? { ippTrack: { is: { organizationId: actor.organizationId, cellId: target.cellId, stage: { in: ["EXPLOITE", "SIGNE"] } } } }
+    ? { ippTrack: { is: { organizationId: actor.organizationId, cellId: target.cellId, stage: { in: ["EXPLOITE", "VALIDE", "SIGNE"] } } } }
     : {
         AND: [target.poolId ? reportsOfPool(target.poolId) : reportsOfOrganization(actor.organizationId)],
         status: { key: { in: [...EXPLOITED_REPORT_STATUSES] } },
@@ -331,7 +331,7 @@ export async function transitionSynthesis(actor: SynthesisActor, id: string, toS
     await prisma.$transaction([
       prisma.synthesis.update({
         where: { id },
-        data: { status: toStatus, ...(toStatus === "VALIDE" || toStatus === "SIGNE" ? { validatedAt: now } : {}) },
+        data: { status: toStatus, ...(toStatus === "VALIDE" ? { validatedAt: now } : {}) },
       }),
       prisma.synthesisStatusHistory.create({
         data: { synthesisId: id, fromStatus: from, toStatus, changedById: actor.id, comment: note, version },
@@ -375,23 +375,41 @@ export async function transitionSynthesis(actor: SynthesisActor, id: string, toS
           toStatus === "A_CORRIGER"
             ? `Correction demandée — ${label}`
             : toStatus === "SIGNE"
-              ? `Synthèse signée et transmise à l'IPP — ${label}`
-              : `Synthèse validée — ${label}`,
+              ? `Synthèse signée par l'IPP — ${label}`
+              : s.cellId
+                ? `Synthèse validée par l'IPA et transmise à l'IPP — ${label}`
+                : `Synthèse validée — ${label}`,
         body: note ?? `Statut : ${SYNTHESIS_STATUS_LABELS[toStatus]}.`,
         data: { synthesisId: id },
       });
     }
-    // D3 : une synthèse de cellule signée remonte à l'IPP principal.
-    if (toStatus === "SIGNE") {
+    // Synthèse de cellule validée par l'IPA : transmise à l'IPP principal pour signature.
+    if (s.cellId && toStatus === "VALIDE") {
       const ipps = await prisma.user.findMany({
         where: { organizationId: s.organizationId, status: "ACTIVE", isDemo: s.isDemo, id: { not: actor.id }, roles: { some: { role: { key: ROLE_KEYS.IPP } } } },
         select: { id: true },
       });
       await Promise.all(
         ipps.map((u) =>
-          notify({ userId: u.id, event: "synthesis.signed", title: `Synthèse signée par la cellule ${s.cell?.code ?? ""} — ${label}`, body: "Synthèse de cellule signée par l'IPA et transmise à l'IPP.", data: { synthesisId: id } })
+          notify({
+            userId: u.id,
+            event: "synthesis.transmitted",
+            title: `Synthèse à signer — cellule ${s.cell?.code ?? ""} — ${label}`,
+            body: "Synthèse de cellule validée par l'IPA et transmise pour signature.",
+            data: { synthesisId: id },
+          })
         )
       );
+    }
+    // Signée ou renvoyée par l'IPP : l'IPA de la cellule est prévenu.
+    if (s.cellId && from === "VALIDE" && s.cell?.ipaId && s.cell.ipaId !== actor.id) {
+      await notify({
+        userId: s.cell.ipaId,
+        event: toStatus === "SIGNE" ? "synthesis.signed" : "synthesis.ipp_return",
+        title: toStatus === "SIGNE" ? `Synthèse signée par l'IPP — ${label}` : `Synthèse renvoyée par l'IPP — ${label}`,
+        body: note ?? `Statut : ${SYNTHESIS_STATUS_LABELS[toStatus]}.`,
+        data: { synthesisId: id },
+      });
     }
   }
   return { status: toStatus, number, version };

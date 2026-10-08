@@ -148,7 +148,11 @@ export default async function RapportDetailPage({
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-gray-900">Circuit de l&apos;IPP</h3>
-            <Badge color={report.ippTrack.stage === "SIGNE" ? "green" : report.ippTrack.stage === "AU_SECRETARIAT" ? "orange" : "blue"}>
+            <Badge
+              color={
+                report.ippTrack.stage === "SIGNE" ? "green" : report.ippTrack.stage === "AU_SECRETARIAT" || report.ippTrack.stage === "VALIDE" ? "orange" : "blue"
+              }
+            >
               {IPP_STAGE_LABELS[report.ippTrack.stage]}
             </Badge>
           </div>

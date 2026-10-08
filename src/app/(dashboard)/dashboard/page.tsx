@@ -180,22 +180,24 @@ async function SynthesesCard({ scope, actor }: { scope: DashboardScope; actor: S
   const cellIpa = scope.kind === "exploitation_cellule" && scope.roleKey === "ipa";
   const cards = validator
     ? [
-        { label: "Synthèses à valider", value: c.submitted, hint: "Soumises, décision attendue" },
+        { label: "Synthèses de cellule à signer", value: c.toSign, hint: "Validées par l'IPA, transmises à l'IPP" },
+        { label: "Synthèses de POOL à valider", value: c.submitted },
         { label: "Renvoyées pour correction", value: c.toFix },
-        { label: "Validées ou signées", value: c.validated, hint: "Synthèses de cellule : signées par l'IPA" },
+        { label: "Validées ou signées", value: c.validated },
       ]
     : cellIpa
       ? [
-          { label: "Synthèses à signer", value: c.submitted, hint: "Soumises par la cellule" },
+          { label: "Synthèses à valider", value: c.submitted, hint: "Soumises par la cellule" },
           { label: "Renvoyées à la cellule", value: c.toFix },
-          { label: "Signées et transmises à l'IPP", value: c.validated },
+          { label: "Transmises à l'IPP", value: c.toSign, hint: "En attente de sa signature" },
+          { label: "Signées par l'IPP", value: c.validated },
         ]
     : scope.kind === "exploitation_cellule"
       ? [
           { label: "Mes brouillons", value: c.myDrafts },
           { label: "Mes synthèses à corriger", value: c.myToFix },
-          { label: "Soumises à l'IPA", value: c.submitted, hint: "En attente de signature" },
-          { label: "Signées et transmises à l'IPP", value: c.validated },
+          { label: "Soumises à l'IPA", value: c.submitted, hint: "En attente de sa validation" },
+          { label: "Signées par l'IPP", value: c.validated, hint: c.toSign ? `${c.toSign} transmise(s), en attente de signature` : undefined },
         ]
     : scope.kind === "exploitation_provinciale"
       ? [
@@ -249,15 +251,14 @@ async function PilotageProvincial({ scope, poolId, inspectorId }: { scope: Dashb
       />
       <ScopeBanner scope={scope} perimeter="tous les POOL de l'Inspection" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={FileCheck2} label={label("a_valider")} value={data.buckets.a_valider} hint="Décision de l'IPP attendue" />
-        <StatCard icon={Inbox} label={label("en_circuit")} value={data.buckets.en_circuit} />
-        <StatCard icon={FileCheck2} label={label("valides")} value={data.buckets.valides} />
+        {/* Branche IPP : ce que les cellules ont validé et transmis à l'IPP, à signer. */}
+        <StatCard icon={FileCheck2} label="Rapports à signer" value={data.toSign} hint="Validés par l'IPA d'une cellule" />
+        <StatCard icon={FileCheck2} label="Rapports signés" value={data.signed} />
+        <StatCard icon={Inbox} label={label("en_circuit")} value={data.buckets.en_circuit} hint="Exploitation au POOL" />
+        <StatCard icon={Inbox} label="Rapports reçus (total)" value={data.received} />
         <StatCard icon={ClipboardList} label="Inspections réalisées" value={data.realizedInspections} />
         <StatCard icon={School} label="Écoles actives" value={data.schools} />
         <StatCard icon={Users} label="Comptes actifs" value={data.activeUsers} />
-        <StatCard icon={FileCheck2} label={label("rejetes")} value={data.buckets.rejetes} />
-        <StatCard icon={Inbox} label="Rapports reçus (total)" value={data.received} />
-        <StatCard icon={FileCheck2} label="Signés par les cellules" value={data.signedFromCells} hint="Signés par l'IPA, transmis à l'IPP" />
       </div>
       {data.buckets.corrections > 0 && (
         <Card className="flex items-center gap-3 border-amber-200 bg-amber-50">
@@ -461,7 +462,7 @@ async function Cellule({ scope }: { scope: DashboardScope }) {
   return (
     <>
       <PageHeader
-        title={ipa ? "Ma cellule — signatures" : "Exploitation de la cellule"}
+        title={ipa ? "Ma cellule — validations" : "Exploitation de la cellule"}
         description={`Rapports envoyés par le secrétariat de l'IPP à la ${cellLabel}.${data.cell?.ipa ? ` IPA : ${data.cell.ipa.name}.` : ""}`}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -473,12 +474,12 @@ async function Cellule({ scope }: { scope: DashboardScope }) {
       <ScopeBanner scope={scope} perimeter={`${cellLabel} (rapports affectés uniquement)`} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={Inbox} label="En exploitation" value={data.affected} hint="Envoyés par le secrétariat" />
-        <StatCard icon={FileCheck2} label="À signer par l'IPA" value={data.toSign} />
-        <StatCard icon={FileCheck2} label="Signés et transmis à l'IPP" value={data.signed} />
-        <StatCard icon={ClipboardList} label="Mes étapes (30 jours)" value={data.myActions} />
+        <StatCard icon={FileCheck2} label="À valider par l'IPA" value={data.toValidate} />
+        <StatCard icon={FileCheck2} label="Transmis à l'IPP" value={data.transmitted} hint="En attente de sa signature" />
+        <StatCard icon={FileCheck2} label="Signés par l'IPP" value={data.signed} hint={`Mes étapes (30 jours) : ${data.myActions}`} />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReportMiniList title="À signer (exploitation terminée)" rows={data.toSignList} empty="Aucun rapport en attente de signature." />
+        <ReportMiniList title="À valider (exploitation terminée)" rows={data.toValidateList} empty="Aucun rapport en attente de validation." />
         <ReportMiniList title="Derniers rapports reçus par la cellule" rows={data.latestAffected} empty="Aucun rapport en cours dans la cellule." />
       </div>
     </>

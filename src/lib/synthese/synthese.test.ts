@@ -123,14 +123,16 @@ test("Lecture : POOL par le POOL et la province (plus l'IPA) ; cellule par sa ce
   assert.ok(canRead(exploitA, poolSynth("BROUILLON")));
   assert.equal(canRead(chefA, poolSynth("BROUILLON")), false);
   assert.equal(canRead(ipp, poolSynth("BROUILLON")), false);
-  for (const a of [chefA, agentIpp, ipp, superAdmin]) assert.ok(canRead(a, poolSynth("SOUMIS")), a.id);
-  for (const a of [exploitB, inspA, informaticien, ipaC1, exploitC1]) assert.equal(canRead(a, poolSynth("SOUMIS")), false, a.id);
+  for (const a of [chefA, ipp, superAdmin]) assert.ok(canRead(a, poolSynth("SOUMIS")), a.id);
+  for (const a of [exploitB, inspA, informaticien, ipaC1, exploitC1, agentIpp]) assert.equal(canRead(a, poolSynth("SOUMIS")), false, a.id);
 
   assert.equal(canRead(exploitC1b, cellSynth("BROUILLON")), false, "brouillon privé à l'auteur");
   for (const a of [exploitC1b, ipaC1, superAdmin]) assert.ok(canRead(a, cellSynth("SOUMIS")), a.id);
   for (const a of [exploitC2, ipaC2, ipp, agentIpp, chefA, exploitSansCellule]) assert.equal(canRead(a, cellSynth("SOUMIS")), false, a.id);
-  assert.ok(canRead(ipp, cellSynth("SIGNE")), "D3 : l'IPP lit la synthèse signée");
+  assert.ok(canRead(ipp, cellSynth("VALIDE")), "validée par l'IPA et transmise : l'IPP la lit pour la signer");
+  assert.ok(canRead(ipp, cellSynth("SIGNE")));
   assert.equal(canRead(ipaC2, cellSynth("SIGNE")), false, "jamais une autre cellule");
+  assert.equal(canRead(agentIpp, cellSynth("SIGNE")), false, "Agent IPP : plus de portée provinciale");
 
   for (const a of [ipp, superAdmin]) assert.ok(canRead(a, provSynth("SOUMIS")), a.id);
   for (const a of [ipaC1, exploitC1, agentIpp, chefA]) assert.equal(canRead(a, provSynth("SOUMIS")), false, a.id);
@@ -155,8 +157,8 @@ test("Circuit POOL : renvoi par le niveau provincial, validation par l'IPP ; plu
     availableTransitions(exploitA, poolSynth("BROUILLON")).map((t) => t.to),
     ["SOUMIS"]
   );
-  for (const a of [agentIpp, ipp, superAdmin]) assert.ok(canReturn(a, poolSynth("SOUMIS")), a.id);
-  for (const a of [exploitA, chefA, exploitB, ipaC1]) assert.equal(canReturn(a, poolSynth("SOUMIS")), false, a.id);
+  for (const a of [ipp, superAdmin]) assert.ok(canReturn(a, poolSynth("SOUMIS")), a.id);
+  for (const a of [exploitA, chefA, exploitB, ipaC1, agentIpp]) assert.equal(canReturn(a, poolSynth("SOUMIS")), false, a.id);
   assert.equal(findTransition("SOUMIS", "A_CORRIGER")?.commentRequired, true);
   assert.deepEqual(
     availableTransitions(exploitA, poolSynth("A_CORRIGER")).map((t) => [t.to, t.label]),
@@ -169,27 +171,37 @@ test("Circuit POOL : renvoi par le niveau provincial, validation par l'IPP ; plu
   assert.equal(findTransition("BROUILLON", "VALIDE"), null);
 });
 
-test("Circuit cellule (D3, D6) : soumise par la cellule, renvoyée ou signée par SON IPA, puis lue par l'IPP", () => {
+test("Circuit cellule (2026-10-09) : soumise par la cellule ; SON IPA renvoie ou valide et transmet ; l'IPP signe ou renvoie", () => {
   assert.deepEqual(
     availableTransitions(exploitC1, cellSynth("BROUILLON")).map((t) => t.to),
     ["SOUMIS"]
   );
   assert.deepEqual(
     availableTransitions(ipaC1, cellSynth("SOUMIS")).map((t) => t.to),
-    ["A_CORRIGER", "SIGNE"]
+    ["A_CORRIGER", "VALIDE"]
   );
   for (const a of [ipaC2, ipp, agentIpp, exploitC1b, exploitC1]) {
-    assert.equal(canSign(a, cellSynth("SOUMIS")), false, a.id);
+    assert.equal(canValidate(a, cellSynth("SOUMIS")), false, a.id);
     assert.equal(canReturn(a, cellSynth("SOUMIS")), false, a.id);
   }
-  assert.equal(canValidate(ipp, cellSynth("SOUMIS")), false, "une synthèse de cellule ne se « valide » pas, elle se signe");
-  assert.ok(canSign(superAdmin, cellSynth("SOUMIS")), "assistance technique");
+  assert.equal(canSign(ipp, cellSynth("SOUMIS")), false, "pas avant la validation de l'IPA");
+  // Validée et transmise : l'IPP principal signe ou renvoie (motif obligatoire).
+  assert.deepEqual(
+    availableTransitions(ipp, cellSynth("VALIDE")).map((t) => [t.to, t.commentRequired]),
+    [
+      ["SIGNE", false],
+      ["A_CORRIGER", true],
+    ]
+  );
+  for (const a of [ipaC1, ipaC2, agentIpp, exploitC1, exploitC1b]) assert.equal(canSign(a, cellSynth("VALIDE")), false, a.id);
+  assert.ok(canSign(superAdmin, cellSynth("VALIDE")), "assistance technique");
   assert.deepEqual(
     availableTransitions(exploitC1, cellSynth("A_CORRIGER")).map((t) => t.to),
     ["SOUMIS"],
     "resoumission par l'auteur"
   );
-  assert.equal(availableTransitions(ipaC1, cellSynth("SIGNE")).length, 0, "signée : fin du circuit");
+  assert.equal(availableTransitions(ipp, cellSynth("SIGNE")).length, 0, "signée : fin du circuit");
+  assert.equal(canSign(ipp, poolSynth("VALIDE")), false, "une synthèse de POOL validée est terminée");
 });
 
 test("Synthèse provinciale de l'ancien circuit : renvoi et validation par l'IPP et le Super Admin seulement", () => {
@@ -205,7 +217,8 @@ test("Audit : une action par étape", () => {
   assert.equal(auditActionFor("SOUMIS", "A_CORRIGER"), "synthesis.return");
   assert.equal(auditActionFor("A_CORRIGER", "SOUMIS"), "synthesis.resubmit");
   assert.equal(auditActionFor("SOUMIS", "VALIDE"), "synthesis.validate");
-  assert.equal(auditActionFor("SOUMIS", "SIGNE"), "synthesis.sign");
+  assert.equal(auditActionFor("VALIDE", "SIGNE"), "synthesis.sign");
+  assert.equal(auditActionFor("VALIDE", "A_CORRIGER"), "synthesis.ipp_return");
 });
 
 test("Numéro officiel et versions (Q7) : POOL, cellule ou IPP", () => {

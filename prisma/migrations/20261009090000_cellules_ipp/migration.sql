@@ -3,7 +3,7 @@
 -- docs/exploitants-ipp-cellules.md. Additif ; aucune cellule n est creee.
 
 -- CreateEnum
-CREATE TYPE "IppStage" AS ENUM ('AU_SECRETARIAT', 'AFFECTE', 'EXPLOITE', 'SIGNE');
+CREATE TYPE "IppStage" AS ENUM ('AU_SECRETARIAT', 'AFFECTE', 'EXPLOITE', 'VALIDE', 'SIGNE');
 
 -- AlterEnum
 ALTER TYPE "RoleScope" ADD VALUE 'CELL';
@@ -48,6 +48,8 @@ CREATE TABLE "ReportIppTrack" (
     "arrivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "assignedAt" TIMESTAMP(3),
     "exploitedAt" TIMESTAMP(3),
+    "validatedAt" TIMESTAMP(3),
+    "validatedById" TEXT,
     "signedAt" TIMESTAMP(3),
     "signedById" TEXT,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -111,6 +113,9 @@ ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_organizationId_fkey"
 
 -- AddForeignKey
 ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_cellId_fkey" FOREIGN KEY ("cellId") REFERENCES "Cell"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_validatedById_fkey" FOREIGN KEY ("validatedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

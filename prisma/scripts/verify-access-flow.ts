@@ -57,28 +57,38 @@ async function main() {
   });
 
   await step("IPP : retrait individuel d'une permission héritée et ajout d'une autre, avec audit", async () => {
+    // Étape rejouable sur la même base locale : on part d'un compte sans ajustement.
+    await prisma.userPermission.deleteMany({ where: { userId: exploitantIpp.id } });
     const before = await auditCount();
     const res = await applyAccessChanges(ipp.id, exploitantIpp.id, {
       ...NOTHING,
       adjustments: [
         { permissionKey: PERMISSIONS.AI_ANALYZE, poolId: null, effect: "REVOKE" },
-        { permissionKey: PERMISSIONS.REPORTS_VALIDATE, poolId: null, effect: "GRANT" },
+        // Permission sans rapport avec la lecture des rapports : un exploitant de cellule peut la recevoir.
+        { permissionKey: PERMISSIONS.AUDIT_VIEW, poolId: null, effect: "GRANT" },
       ],
     });
     assert.equal(res.changed, 2);
     const { permissions } = await loadUserAccess(exploitantIpp.id, { viewMode: null });
     assert.ok(!hasPermission(permissions, PERMISSIONS.AI_ANALYZE), "retrait appliqué au calcul des droits");
-    assert.ok(hasPermission(permissions, PERMISSIONS.REPORTS_VALIDATE), "ajout appliqué");
-    assert.ok(hasPermission(permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE), "le reste de la fonction est intact");
+    assert.ok(hasPermission(permissions, PERMISSIONS.AUDIT_VIEW), "ajout appliqué");
+    // Depuis les cellules (2026-10-08) : l'exploitant de l'IPP n'a aucun accès provincial.
+    assert.ok(!hasPermission(permissions, PERMISSIONS.REPORTS_REVIEW_PROVINCE), "aucun accès provincial pour un exploitant de l'IPP");
     assert.equal(await auditCount(), before + 2);
     const last = await prisma.auditLog.findFirstOrThrow({ where: { action: "user.permission_grant", entityId: exploitantIpp.id }, orderBy: { createdAt: "desc" } });
     assert.equal(last.actorId, ipp.id);
-    assert.deepEqual(last.newValue, { permissionKey: PERMISSIONS.REPORTS_VALIDATE, poolId: null, effect: "GRANT" });
+    assert.deepEqual(last.newValue, { permissionKey: PERMISSIONS.AUDIT_VIEW, poolId: null, effect: "GRANT" });
+  });
+
+  await step("cellules : aucun ajout individuel ne redonne la lecture provinciale à un exploitant de l'IPP", async () => {
+    for (const key of [PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_VALIDATE, PERMISSIONS.ASSIGNMENTS_MANAGE]) {
+      await refused(applyAccessChanges(ipp.id, exploitantIpp.id, { ...NOTHING, adjustments: [{ permissionKey: key, poolId: null, effect: "GRANT" }] }));
+    }
   });
 
   await step("notifications : les ajustements individuels sont pris en compte", async () => {
-    const validators = await usersHoldingPermission({ permissionKey: PERMISSIONS.REPORTS_VALIDATE, organizationId: ipp.organizationId });
-    assert.ok(validators.includes(exploitantIpp.id), "ajout individuel");
+    const auditors = await usersHoldingPermission({ permissionKey: PERMISSIONS.AUDIT_VIEW, organizationId: ipp.organizationId });
+    assert.ok(auditors.includes(exploitantIpp.id), "ajout individuel");
     const analysts = await usersHoldingPermission({ permissionKey: PERMISSIONS.AI_ANALYZE, organizationId: ipp.organizationId });
     assert.ok(!analysts.includes(exploitantIpp.id), "retrait individuel");
   });
@@ -86,8 +96,7 @@ async function main() {
   await step("annulation des ajustements : retour exact aux droits de la fonction", async () => {
     await applyAccessChanges(ipp.id, exploitantIpp.id, NOTHING);
     const { permissions } = await loadUserAccess(exploitantIpp.id, { viewMode: null });
-    assert.ok(hasPermission(permissions, PERMISSIONS.AI_ANALYZE));
-    assert.ok(!hasPermission(permissions, PERMISSIONS.REPORTS_VALIDATE));
+    assert.ok(!hasPermission(permissions, PERMISSIONS.AUDIT_VIEW));
     assert.equal(await prisma.userPermission.count({ where: { userId: exploitantIpp.id } }), 0);
   });
 
@@ -143,7 +152,7 @@ async function main() {
   });
 
   await step("compte suspendu : aucun droit, ajustements compris", async () => {
-    await applyAccessChanges(ipp.id, exploitantIpp.id, { ...NOTHING, adjustments: [{ permissionKey: PERMISSIONS.REPORTS_VALIDATE, poolId: null, effect: "GRANT" }] });
+    await applyAccessChanges(ipp.id, exploitantIpp.id, { ...NOTHING, adjustments: [{ permissionKey: PERMISSIONS.AUDIT_VIEW, poolId: null, effect: "GRANT" }] });
     await prisma.user.update({ where: { id: exploitantIpp.id }, data: { status: "SUSPENDED" } });
     const { permissions } = await loadUserAccess(exploitantIpp.id, { viewMode: null });
     assert.equal(permissions.length, 0);

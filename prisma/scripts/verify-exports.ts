@@ -42,8 +42,14 @@ async function main() {
       assert.ok(rows.length > 0 && rows.every((r) => r.pool === poolName), "rapports de son POOL seulement");
     }
   });
-  await step("exploitant IPP et IPP : toute la province (plusieurs POOL)", async () => {
-    for (const u of [exploitantIpp, ipp]) assert.ok(new Set((await all(u)).rows.map((r) => r.pool)).size > 1);
+  await step("cellules (2026-10-08/09) : exploitant IPP sans cellule → rien ; IPP → seulement ce que les cellules ont transmis, et l'historique", async () => {
+    assert.equal((await all(exploitantIpp)).rows.length, 0, "aucun accès provincial de repli");
+    const visible = await prisma.report.findMany({
+      where: { ippTrack: { is: { OR: [{ stage: { in: ["VALIDE", "SIGNE"] } }, { legacy: true }] } } },
+      select: { id: true },
+    });
+    const allowed = new Set(visible.map((r) => r.id));
+    assert.ok((await all(ipp)).rows.every((r) => allowed.has(r.id)), "l'IPP ne liste aucun rapport non transmis");
   });
   await step("démonstration et officiel séparés", async () => {
     const official = await prisma.user.findFirst({ where: { isDemo: false, status: "ACTIVE" } });
@@ -61,11 +67,12 @@ async function main() {
     assert.equal(buf.subarray(0, 2).toString(), "PK");
   });
   await step("PDF (préparation) : version de fiche du rapport, accès refusé hors périmètre", async () => {
-    const r = await prisma.report.findFirstOrThrow({ where: { formId: { not: null } }, include: { form: { include: { formTemplate: true } } } });
+    // Fiche d'un rapport du POOL du chef (l'IPP ne lit plus que ce que les cellules transmettent).
+    const r = await prisma.report.findFirst({ where: { formId: { not: null }, poolId: goma }, include: { form: { include: { formTemplate: true } } } });
     const legacy = await prisma.report.findFirst({ where: { inspectionId: { not: null }, inspection: { school: { poolId: goma } } } });
     const chefSubject = await loadExportSubject(chef);
-    {
-      const pdf = await loadReportPdfSource(await loadExportSubject(ipp), r.id);
+    if (r) {
+      const pdf = await loadReportPdfSource(chefSubject, r.id);
       assert.equal(pdf.version, `${r.form!.formTemplate.code} v${r.form!.formTemplate.version}`);
     }
     if (legacy) assert.equal((await loadReportPdfSource(chefSubject, legacy.id)).version, "ancien format");

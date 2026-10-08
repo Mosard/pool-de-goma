@@ -181,15 +181,16 @@ async function main() {
     const versions = await prisma.synthesisVersion.findMany({ where: { synthesisId: synthId } });
     assert.equal(versions.length, 1);
     assert.equal((versions[0].sources as unknown[]).length, 2);
-    for (const u of [agentIpp, ipp]) assert.equal(await notificationsOf(u.id, "synthesis.submitted"), 1, u.name);
-    for (const u of [exploitIpp, ipa]) assert.equal(await notificationsOf(u.id, "synthesis.submitted"), 0, `${u.name} : hors de son périmètre`);
+    assert.equal(await notificationsOf(ipp.id, "synthesis.submitted"), 1);
+    for (const u of [exploitIpp, ipa, agentIpp]) assert.equal(await notificationsOf(u.id, "synthesis.submitted"), 0, `${u.name} : hors de son périmètre`);
     assert.equal(await notificationsOf(exploitA.id, "synthesis.submitted"), 0, "l'auteur n'est pas notifié de sa propre soumission");
     await refused(() => updateSynthesis(aExploitA, synthId, { title: "Modifiée après soumission", sections: FULL }), "soumise : plus modifiable");
   });
 
   await check("Lecture après soumission : POOL A et niveau provincial ; pas le POOL B", async () => {
-    for (const a of [aChefA, aAgentIpp, aIpp]) assert.ok(await getSynthesis(a, synthId), a.id);
+    for (const a of [aChefA, aIpp]) assert.ok(await getSynthesis(a, synthId), a.id);
     for (const a of [aExploitIpp, aIpa]) assert.equal(await getSynthesis(a, synthId), null, `${a.id} : seulement sa cellule`);
+    assert.equal(await getSynthesis(aAgentIpp, synthId), null, "Agent IPP : ne lit plus la province (2026-10-09)");
     assert.equal(await getSynthesis(aExploitB, synthId), null);
     assert.equal(await getSynthesis(aInspA, synthId), null);
     assert.ok(!(await listSyntheses(aExploitB)).some((s) => s.id === synthId));
@@ -204,8 +205,9 @@ async function main() {
   await check("Renvoi pour correction : motif obligatoire, jamais par l'auteur, auteur notifié", async () => {
     await refused(() => transitionSynthesis(aExploitA, synthId, "A_CORRIGER", "auto-renvoi"));
     await refused(() => transitionSynthesis(aChefA, synthId, "A_CORRIGER", "pas le niveau provincial"));
-    await refused(() => transitionSynthesis(aAgentIpp, synthId, "A_CORRIGER", "  "), "motif vide");
-    await transitionSynthesis(aAgentIpp, synthId, "A_CORRIGER", "Préciser les constats par école.");
+    await refused(() => transitionSynthesis(aAgentIpp, synthId, "A_CORRIGER", "Agent IPP"), "Agent IPP : plus habilité");
+    await refused(() => transitionSynthesis(aIpp, synthId, "A_CORRIGER", "  "), "motif vide");
+    await transitionSynthesis(aIpp, synthId, "A_CORRIGER", "Préciser les constats par école.");
     assert.equal(await notificationsOf(exploitA.id, "synthesis.needs_correction"), 1);
   });
 
@@ -264,27 +266,31 @@ async function main() {
     await refused(() => createSynthesis(aExploitA, { title: "Forgée", poolId: null, cellId: cell.id, reportIds: [rA1.id] }), "pas de sa cellule");
   });
 
-  await check("Synthèse de cellule : soumise à SON IPA (numéro au sigle de la cellule), signée par lui, puis lue par l'IPP", async () => {
+  await check("Synthèse de cellule : soumise à SON IPA (numéro au sigle de la cellule), validée et transmise par lui, signée par l'IPP", async () => {
     const id = await createSynthesis(aExploitIpp, { title: "Synthèse de la cellule", poolId: null, cellId: cell.id, reportIds: [rA1.id, rB1.id] });
     await updateSynthesis(aExploitIpp, id, { title: "Synthèse de la cellule", sections: FULL });
     const ippBefore = await notificationsOf(ipp.id, "synthesis.submitted");
     const r = await transitionSynthesis(aExploitIpp, id, "SOUMIS");
     assert.equal(r.number, `61/${cell.code}/SYN.001/${new Date().getFullYear()}`);
     assert.equal(await notificationsOf(ipa.id, "synthesis.submitted"), 1, "l'IPA de la cellule est prévenu");
-    assert.equal(await notificationsOf(ipp.id, "synthesis.submitted"), ippBefore, "l'IPP n'est pas prévenu avant la signature");
+    assert.equal(await notificationsOf(ipp.id, "synthesis.submitted"), ippBefore, "l'IPP n'est pas prévenu avant la validation de l'IPA");
     assert.ok(await getSynthesis(aIpa, id));
-    for (const a of [aIpp, aAgentIpp, aChefA]) assert.equal(await getSynthesis(a, id), null, `${a.id} : pas avant la signature`);
-    for (const a of [aIpp, aAgentIpp, aExploitA]) await refused(() => transitionSynthesis(a, id, "SIGNE"), a.id);
-    await refused(() => transitionSynthesis(aExploitIpp, id, "SIGNE"), "jamais l'auteur");
-    await refused(() => transitionSynthesis(aIpp, id, "VALIDE"), "une synthèse de cellule se signe");
-    await transitionSynthesis(aIpa, id, "SIGNE");
-    const s = await prisma.synthesis.findUniqueOrThrow({ where: { id } });
-    assert.equal(s.status, "SIGNE");
-    assert.ok(s.validatedAt);
-    assert.ok(await getSynthesis(aIpp, id), "D3 : l'IPP lit la synthèse signée");
-    assert.equal(await notificationsOf(ipp.id, "synthesis.signed"), 1);
+    for (const a of [aIpp, aAgentIpp, aChefA]) assert.equal(await getSynthesis(a, id), null, `${a.id} : pas avant la validation de l'IPA`);
+    for (const a of [aIpp, aAgentIpp, aExploitA]) await refused(() => transitionSynthesis(a, id, "VALIDE"), `${a.id} ne valide pas pour la cellule`);
+    await refused(() => transitionSynthesis(aExploitIpp, id, "VALIDE"), "jamais l'auteur");
+    // L'IPA (chef de cellule) valide et transmet à l'IPP.
+    await transitionSynthesis(aIpa, id, "VALIDE");
+    assert.ok((await prisma.synthesis.findUniqueOrThrow({ where: { id } })).validatedAt);
+    assert.ok(await getSynthesis(aIpp, id), "transmise : l'IPP la lit pour la signer");
+    assert.equal(await notificationsOf(ipp.id, "synthesis.transmitted"), 1);
+    await refused(() => transitionSynthesis(aIpa, id, "SIGNE"), "l'IPA ne signe pas : c'est l'IPP");
+    await refused(() => transitionSynthesis(aAgentIpp, id, "SIGNE"));
+    await refused(() => transitionSynthesis(aIpp, id, "A_CORRIGER", " "), "renvoi de l'IPP : motif obligatoire");
+    await transitionSynthesis(aIpp, id, "SIGNE");
+    assert.equal((await prisma.synthesis.findUniqueOrThrow({ where: { id } })).status, "SIGNE");
+    assert.equal(await notificationsOf(ipa.id, "synthesis.signed"), 1, "l'IPA est prévenu de la signature");
     const actions = (await auditActions(id)).filter((a) => a !== "synthesis.update");
-    assert.deepEqual(actions, ["synthesis.create", "synthesis.submit", "synthesis.sign"]);
+    assert.deepEqual(actions, ["synthesis.create", "synthesis.submit", "synthesis.validate", "synthesis.sign"]);
   });
 
   await check("Un même rapport dans plusieurs synthèses (Q8)", async () => {
@@ -297,15 +303,17 @@ async function main() {
       return loadSynthesisCounts(scope, a);
     };
     // POOL A : 1 synthèse validée ; la synthèse de cellule n'est pas du POOL.
-    assert.deepEqual(await count(aChefA), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
-    assert.deepEqual(await count(aExploitB), { total: 0, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 0 }, "rien du POOL A");
+    const zero = { total: 0, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, toSign: 0, validated: 0 };
+    assert.deepEqual(await count(aChefA), { ...zero, total: 1, validated: 1 });
+    assert.deepEqual(await count(aExploitB), zero, "rien du POOL A");
     // IPP : la synthèse du POOL A (validée) et celle de la cellule (signée).
-    assert.deepEqual(await count(aIpp), { total: 2, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 2 });
+    assert.deepEqual(await count(aIpp), { ...zero, total: 2, validated: 2 });
     // Cellule : sa seule synthèse (signée), jamais celle du POOL.
-    assert.deepEqual(await count(aExploitIpp), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
-    assert.deepEqual(await count(aIpa), { total: 1, myDrafts: 0, myToFix: 0, submitted: 0, toFix: 0, validated: 1 });
-    // Agent IPP : ne lit pas la synthèse de cellule.
-    assert.equal((await count(aAgentIpp)).total, 1);
+    assert.deepEqual(await count(aExploitIpp), { ...zero, total: 1, validated: 1 });
+    assert.deepEqual(await count(aIpa), { ...zero, total: 1, validated: 1 });
+    // Agent IPP : plus de tableau de rapports ni de synthèses (2026-10-09).
+    const agentScope = resolveDashboardScopes({ id: aAgentIpp.id, organizationId: aAgentIpp.organizationId, isDemo: aAgentIpp.isDemo, roles: aAgentIpp.roles, permissions: aAgentIpp.permissions })[0];
+    assert.equal(agentScope.kind, "aucun");
     // Un inspecteur n'a pas de compteur de synthèses.
     const insp = resolveDashboardScopes({ id: aInspA.id, organizationId: aInspA.organizationId, isDemo: aInspA.isDemo, roles: aInspA.roles, permissions: aInspA.permissions })[0];
     await assert.rejects(() => loadSynthesisCounts(insp, aInspA));

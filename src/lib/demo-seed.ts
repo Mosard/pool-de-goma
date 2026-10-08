@@ -60,7 +60,8 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   // Décisions du 2026-10-08 (remplacent Q8) : uniquement les rapports affectés à sa cellule.
   [ROLE_KEYS.EXPLOITANT_IPP]: [PERMISSIONS.REPORTS_REVIEW_CELL],
   [ROLE_KEYS.SECRETAIRE_IPP]: [PERMISSIONS.REPORTS_ROUTE_IPP],
-  [ROLE_KEYS.AGENT_IPP]: [PERMISSIONS.REPORTS_REVIEW_PROVINCE],
+  // 2026-10-09 : l'Agent IPP ne lit plus toute la province.
+  [ROLE_KEYS.AGENT_IPP]: [],
   [ROLE_KEYS.AGENT_POOL]: [],
   [ROLE_KEYS.SECRETAIRE_POOL]: [PERMISSIONS.SCHOOLS_MANAGE],
   [ROLE_KEYS.INFORMATICIEN]: [
@@ -113,12 +114,9 @@ const WORKFLOW_TRANSITIONS: { from: string; to: string; label: string; permissio
   { from: WORKFLOW_STATUS_KEYS.RECU, to: WORKFLOW_STATUS_KEYS.EN_EXPLOITATION, label: "Démarrer l'exploitation", permission: PERMISSIONS.REPORTS_REVIEW_POOL },
   { from: WORKFLOW_STATUS_KEYS.EN_EXPLOITATION, to: WORKFLOW_STATUS_KEYS.A_CORRIGER, label: "Renvoyer pour correction", permission: PERMISSIONS.REPORTS_REVIEW_POOL },
   { from: WORKFLOW_STATUS_KEYS.A_CORRIGER, to: WORKFLOW_STATUS_KEYS.SOUMIS, label: "Resoumettre", permission: PERMISSIONS.INSPECTIONS_CONDUCT },
-  { from: WORKFLOW_STATUS_KEYS.EN_EXPLOITATION, to: WORKFLOW_STATUS_KEYS.TRANSMIS, label: "Transmettre au bureau IPP", permission: PERMISSIONS.REPORTS_REVIEW_POOL },
-  { from: WORKFLOW_STATUS_KEYS.TRANSMIS, to: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION, label: "Finaliser l'exploitation IPP", permission: PERMISSIONS.REPORTS_REVIEW_PROVINCE },
-  { from: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION, to: WORKFLOW_STATUS_KEYS.VALIDE, label: "Valider", permission: PERMISSIONS.REPORTS_VALIDATE },
-  { from: WORKFLOW_STATUS_KEYS.EN_ATTENTE_VALIDATION, to: WORKFLOW_STATUS_KEYS.REJETE, label: "Rejeter", permission: PERMISSIONS.REPORTS_VALIDATE },
-  { from: WORKFLOW_STATUS_KEYS.REJETE, to: WORKFLOW_STATUS_KEYS.A_CORRIGER, label: "Renvoyer pour correction", permission: PERMISSIONS.REPORTS_REVIEW_PROVINCE },
-  { from: WORKFLOW_STATUS_KEYS.VALIDE, to: WORKFLOW_STATUS_KEYS.CLOTURE, label: "Clôturer", permission: PERMISSIONS.REPORTS_VALIDATE },
+  // Ancien circuit retiré (2026-10-09) : le POOL termine lui-même son exploitation ;
+  // la remontée à l'IPP passe par le secrétariat, la cellule et la signature de l'IPP.
+  { from: WORKFLOW_STATUS_KEYS.EN_EXPLOITATION, to: WORKFLOW_STATUS_KEYS.CLOTURE, label: "Exploitation terminée (POOL)", permission: PERMISSIONS.REPORTS_REVIEW_POOL },
 ];
 
 // Fiches provisoires (§10, §24) — véritables modèles à fournir plus tard.

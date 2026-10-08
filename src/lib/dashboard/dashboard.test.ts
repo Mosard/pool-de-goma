@@ -85,8 +85,12 @@ test("Secrétaire de l'IPP : vue du secrétariat, aucun POOL entier", () => {
   assert.equal(scopeCoversPool(s, poolA), false);
 });
 
-test("Agent IPP (sans vue dédiée) : classé par ses permissions, jamais en pilotage", () => {
-  assert.equal(only(resolveDashboardScopes(subject({ role: ROLE_KEYS.AGENT_IPP }))).kind, "exploitation_provinciale");
+test("Agent IPP (2026-10-09) : ne lit plus toute la province, aucun tableau de rapports", () => {
+  assert.equal(only(resolveDashboardScopes(subject({ role: ROLE_KEYS.AGENT_IPP }))).kind, "aucun");
+});
+
+test("Fonction provinciale créée dans Paramètres avec lecture provinciale : classée par ses permissions, jamais en pilotage", () => {
+  assert.equal(only(resolveDashboardScopes(subject({ role: "conseiller", permissions: ["reports.review_province"] }))).kind, "exploitation_provinciale");
 });
 
 test("Informaticien : administration, aucune vue de rapports", () => {
