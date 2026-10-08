@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { Button, Card, Input, Label, Select, FieldError } from "@/components/ui";
+import { useActionState, useState } from "react";
+import { Button, Card, Input, Label, Select, Textarea, FieldError } from "@/components/ui";
+import { isSecondaryType } from "@/lib/school-fields";
 import type { SchoolFormState } from "./actions";
 
 const initialState: SchoolFormState = {};
@@ -23,9 +24,15 @@ export function SchoolForm({
     director?: string | null;
     phone?: string | null;
     type?: string | null;
+    approvalDecree?: string | null;
+    classCount?: number | null;
+    teacherCount?: number | null;
+    options?: string | null;
   };
 }) {
   const [state, formAction, pending] = useActionState(action, initialState);
+  // Les options organisées ne concernent que les écoles secondaires.
+  const [type, setType] = useState(defaultValues?.type ?? "");
 
   return (
     <Card>
@@ -63,7 +70,13 @@ export function SchoolForm({
           </div>
           <div>
             <Label htmlFor="type">Type</Label>
-            <Input id="type" name="type" placeholder="Primaire / Secondaire" defaultValue={defaultValues?.type ?? ""} />
+            <Input
+              id="type"
+              name="type"
+              placeholder="Maternelle / Primaire / Secondaire"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="director">Directeur</Label>
@@ -77,6 +90,50 @@ export function SchoolForm({
             <Label htmlFor="address">Adresse</Label>
             <Input id="address" name="address" defaultValue={defaultValues?.address ?? ""} />
           </div>
+          <div>
+            <Label htmlFor="approvalDecree">Arrêté d&apos;agrément</Label>
+            <Input id="approvalDecree" name="approvalDecree" defaultValue={defaultValues?.approvalDecree ?? ""} />
+            <FieldError message={state.errors?.approvalDecree} />
+          </div>
+          <div>
+            <Label htmlFor="classCount">Nombre de classes</Label>
+            <Input
+              id="classCount"
+              name="classCount"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              defaultValue={defaultValues?.classCount ?? ""}
+            />
+            <FieldError message={state.errors?.classCount} />
+          </div>
+          <div>
+            <Label htmlFor="teacherCount">Nombre d&apos;enseignants</Label>
+            <Input
+              id="teacherCount"
+              name="teacherCount"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              defaultValue={defaultValues?.teacherCount ?? ""}
+            />
+            <FieldError message={state.errors?.teacherCount} />
+          </div>
+          {isSecondaryType(type) && (
+            <div className="sm:col-span-2">
+              <Label htmlFor="options">Options organisées</Label>
+              <Textarea
+                id="options"
+                name="options"
+                rows={2}
+                placeholder="Séparées par des virgules, ex. : Pédagogie générale, Commerciale et gestion, Scientifique"
+                defaultValue={defaultValues?.options ?? ""}
+              />
+              <FieldError message={state.errors?.options} />
+            </div>
+          )}
         </div>
         {state.formError && <FieldError message={state.formError} />}
         <Button type="submit" disabled={pending}>

@@ -440,13 +440,22 @@ model School {
   poolId     String
   pool       Pool     @relation(fields: [poolId], references: [id])
   name       String
-  code       String   @unique
+  // Une école est identifiée par « code du POOL + code de l'école » (jamais
+  // par son nom) : le même code peut exister dans deux POOL différents.
+  code       String
   province   String
   territoire String
   address    String?
   director   String?
   phone      String?
   type       String?
+  // Fiche administrative (docs/import-ecoles-excel.md) : jamais publiée.
+  approvalDecree String?
+  classCount     Int?
+  teacherCount   Int?
+  // Options organisées, écoles secondaires seulement : texte libre séparé
+  // par des virgules (pas de liste imposée pour l'instant).
+  options        String?
   active     Boolean  @default(true)
   // École de démonstration (seed) : jamais publiée.
   isDemo     Boolean  @default(false)
@@ -456,6 +465,7 @@ model School {
   assignments Assignment[]
   inspections Inspection[]
 
+  @@unique([poolId, code])
   @@index([poolId])
   @@index([province, territoire])
 }

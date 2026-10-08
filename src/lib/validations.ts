@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { USERNAME_PATTERN, USERNAME_RULE } from "@/lib/activation-token";
+import { COUNT_INVALID, OPTIONS_SECONDARY_ONLY, isSecondaryType, normalizeOptions, parseCount } from "@/lib/school-fields";
 
 const usernameField = z.string().trim().toLowerCase().regex(USERNAME_PATTERN, USERNAME_RULE);
 const newPasswordField = z.string().min(8, "8 caractères minimum").max(128, "128 caractères maximum");
@@ -36,17 +37,48 @@ export const functionSchema = z.object({
   scope: z.enum(["PROVINCE", "POOL"]),
 });
 
-export const schoolSchema = z.object({
-  poolId: z.string().min(1, "Pool requis"),
-  name: z.string().min(2, "Nom requis"),
-  code: z.string().min(2, "Code requis"),
-  province: z.string().min(2, "Province requise"),
-  territoire: z.string().min(2, "Territoire requis"),
-  address: z.string().optional().or(z.literal("")),
-  director: z.string().optional().or(z.literal("")),
-  phone: z.string().optional().or(z.literal("")),
-  type: z.string().optional().or(z.literal("")),
-});
+// Nombre de classes / d'enseignants : vide = non renseigné (null).
+const schoolCountField = z
+  .string()
+  .nullish()
+  .transform((v, ctx) => {
+    const n = parseCount(v);
+    if (n === "invalid") {
+      ctx.addIssue({ code: "custom", message: COUNT_INVALID });
+      return z.NEVER;
+    }
+    return n;
+  });
+
+export const schoolSchema = z
+  .object({
+    poolId: z.string().min(1, "Pool requis"),
+    name: z.string().min(2, "Nom requis"),
+    code: z.string().trim().min(2, "Code requis"),
+    province: z.string().min(2, "Province requise"),
+    territoire: z.string().min(2, "Territoire requis"),
+    address: z.string().optional().or(z.literal("")),
+    director: z.string().optional().or(z.literal("")),
+    phone: z.string().optional().or(z.literal("")),
+    type: z.string().optional().or(z.literal("")),
+    approvalDecree: z
+      .string()
+      .trim()
+      .max(200, "200 caractères maximum")
+      .nullish()
+      .transform((v) => v || null),
+    classCount: schoolCountField,
+    teacherCount: schoolCountField,
+    // Absent du formulaire quand l'école n'est pas secondaire.
+    options: z
+      .string()
+      .max(1000, "1000 caractères maximum")
+      .nullish()
+      .transform((v) => normalizeOptions(v)),
+  })
+  .superRefine((v, ctx) => {
+    if (v.options && !isSecondaryType(v.type)) ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_SECONDARY_ONLY });
+  });
 
 export const userSchema = z.object({
   name: z.string().min(2, "Nom requis"),

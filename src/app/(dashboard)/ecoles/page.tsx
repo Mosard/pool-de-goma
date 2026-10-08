@@ -25,9 +25,18 @@ export default async function EcolesPage() {
         description={`${schools.length} école(s) enregistrée(s)`}
         actions={
           hasPermissionAnyPool(user.permissions, PERMISSIONS.SCHOOLS_MANAGE) ? (
-            <Link href="/ecoles/nouveau">
-              <Button>Nouvelle école</Button>
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              {/* Lien direct (pas de navigation client) : téléchargement du fichier. */}
+              <a href="/ecoles/canevas.xlsx" download>
+                <Button variant="ghost">Télécharger le canevas</Button>
+              </a>
+              <Link href="/ecoles/import">
+                <Button variant="secondary">Importer un fichier</Button>
+              </Link>
+              <Link href="/ecoles/nouveau">
+                <Button>Nouvelle école</Button>
+              </Link>
+            </div>
           ) : undefined
         }
       />

@@ -6,6 +6,7 @@ import { SchoolForm } from "../school-form";
 import { updateSchoolAction } from "../actions";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermission } from "@/lib/permissions";
+import { isSecondaryType } from "@/lib/school-fields";
 
 export default async function EcoleDetailPage({
   params,
@@ -55,6 +56,12 @@ export default async function EcoleDetailPage({
             <div><dt className="text-gray-500">Territoire</dt><dd className="font-medium">{school.territoire}</dd></div>
             <div><dt className="text-gray-500">Type</dt><dd className="font-medium">{school.type ?? "—"}</dd></div>
             <div><dt className="text-gray-500">Directeur</dt><dd className="font-medium">{school.director ?? "—"}</dd></div>
+            <div><dt className="text-gray-500">Arrêté d&apos;agrément</dt><dd className="font-medium">{school.approvalDecree ?? "—"}</dd></div>
+            <div><dt className="text-gray-500">Nombre de classes</dt><dd className="font-medium">{school.classCount ?? "—"}</dd></div>
+            <div><dt className="text-gray-500">Nombre d&apos;enseignants</dt><dd className="font-medium">{school.teacherCount ?? "—"}</dd></div>
+            {isSecondaryType(school.type) && (
+              <div className="sm:col-span-2"><dt className="text-gray-500">Options organisées</dt><dd className="font-medium">{school.options ?? "—"}</dd></div>
+            )}
           </dl>
         </Card>
       )}
