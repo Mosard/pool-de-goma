@@ -5,14 +5,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, User as UserIcon, LogOut } from "lucide-react";
 import { clsx } from "clsx";
-import { NAV_ITEMS, isNavItemVisible, myPoolItem } from "./nav-items";
+import { NAV_ITEMS, isNavItemActive, isNavItemVisible, myPoolItem, navItemHref } from "./nav-items";
 import type { SessionPermission } from "@/lib/permission-checks";
 import { signOutAction } from "@/app/(dashboard)/actions";
 
-export function MobileNav({ permissions, myPoolHref }: { permissions: SessionPermission[]; myPoolHref?: string | null }) {
+export function MobileNav({
+  permissions,
+  roleKeys,
+  myPoolHref,
+}: {
+  permissions: SessionPermission[];
+  roleKeys: string[];
+  myPoolHref?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const items = NAV_ITEMS.filter((item) => isNavItemVisible(item, permissions));
+  const ctx = { permissions, roleKeys };
+  const items = NAV_ITEMS.filter((item) => isNavItemVisible(item, ctx));
   if (myPoolHref) items.splice(1, 0, myPoolItem(myPoolHref));
 
   return (
@@ -41,12 +50,13 @@ export function MobileNav({ permissions, myPoolHref }: { permissions: SessionPer
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
             {items.map((item) => {
-              const active = pathname.startsWith(item.href);
+              const active = isNavItemActive(item, pathname);
               const Icon = item.icon;
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
+                  key={item.label}
+                  href={navItemHref(item, ctx)}
+                  aria-current={active ? "page" : undefined}
                   onClick={() => setOpen(false)}
                   className={clsx(
                     "flex min-h-[48px] items-center gap-3 rounded-xl px-4 text-base font-medium",

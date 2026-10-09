@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Sidebar, Topbar } from "@/components/nav";
 import { SIDEBAR_COOKIE } from "@/components/nav-items";
+import { SectionTabs } from "@/components/section-tabs";
 import { IPP_VIEW_MODE_EXTRA_ROLE_KEYS, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { ViewModeBar } from "./view-mode-bar";
 import { cellRoleSuffix } from "@/lib/cells/rules";
@@ -40,6 +41,12 @@ export default async function DashboardLayout({
   const roleLabels = session.user.roles.map((r) => {
     const suffix = cellRoleSuffix(r);
     return suffix ? `${r.label} — ${suffix}` : r.label;
+  });
+  const roleKeys = session.user.roles.map((r) => r.key);
+  // Espace Exploitation : fonction et cellule des IPA et exploitants de l'IPP, même sans rapport.
+  const cellContext = session.user.roles.flatMap((r) => {
+    const suffix = cellRoleSuffix(r);
+    return suffix ? [`${r.label} — ${suffix}`] : [];
   });
   // Chef de POOL sans accès aux Paramètres : lien direct vers la fiche de son POOL.
   const chiefPoolId = session.user.roles.find((r) => r.key === "chef_pool")?.poolId ?? null;
@@ -80,6 +87,7 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen w-full bg-gray-50">
       <Sidebar
         permissions={session.user.permissions}
+        roleKeys={roleKeys}
         myPoolHref={myPoolHref}
         initialCollapsed={(await cookies()).get(SIDEBAR_COOKIE)?.value === "collapsed"}
       />
@@ -92,6 +100,7 @@ export default async function DashboardLayout({
           roleLabels={roleLabels}
           notifications={notifications}
           permissions={session.user.permissions}
+          roleKeys={roleKeys}
           photoUrl={currentUser?.photoUrl}
           myPoolHref={myPoolHref}
         />
@@ -108,7 +117,10 @@ export default async function DashboardLayout({
             cells={cells}
           />
         )}
-        <main className="min-w-0 flex-1 p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-6">
+          <SectionTabs permissions={session.user.permissions} roleKeys={roleKeys} context={cellContext} />
+          {children}
+        </main>
       </div>
     </div>
   );

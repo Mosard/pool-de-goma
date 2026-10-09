@@ -10,20 +10,23 @@ import type { SessionPermission } from "@/lib/permission-checks";
 import { NotificationBell, type NotificationItem } from "./notifications-bell";
 import { MobileNav } from "./mobile-nav";
 import { Avatar } from "./ui";
-import { NAV_ITEMS, SIDEBAR_COOKIE, isNavItemVisible, myPoolItem } from "./nav-items";
+import { NAV_ITEMS, SIDEBAR_COOKIE, isNavItemActive, isNavItemVisible, myPoolItem, navItemHref } from "./nav-items";
 
 export function Sidebar({
   permissions,
+  roleKeys,
   myPoolHref,
   initialCollapsed = false,
 }: {
   permissions: SessionPermission[];
+  roleKeys: string[];
   myPoolHref?: string | null;
   initialCollapsed?: boolean;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
-  const items = NAV_ITEMS.filter((item) => isNavItemVisible(item, permissions));
+  const ctx = { permissions, roleKeys };
+  const items = NAV_ITEMS.filter((item) => isNavItemVisible(item, ctx));
   if (myPoolHref) items.splice(1, 0, myPoolItem(myPoolHref));
 
   const toggle = () => {
@@ -57,12 +60,13 @@ export function Sidebar({
       </div>
       <nav className={clsx("flex-1 space-y-1 overflow-y-auto py-4", collapsed ? "px-2" : "px-3")}>
         {items.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active = isNavItemActive(item, pathname);
           const Icon = item.icon;
           return (
             <Link
-              key={item.href}
-              href={item.href}
+              key={item.label}
+              href={navItemHref(item, ctx)}
+              aria-current={active ? "page" : undefined}
               aria-label={collapsed ? item.label : undefined}
               title={collapsed ? item.label : undefined}
               className={clsx(
@@ -88,6 +92,7 @@ export function Topbar({
   roleLabels,
   notifications,
   permissions,
+  roleKeys,
   photoUrl,
   myPoolHref,
 }: {
@@ -95,13 +100,14 @@ export function Topbar({
   roleLabels: string[];
   notifications: NotificationItem[];
   permissions: SessionPermission[];
+  roleKeys: string[];
   photoUrl?: string | null;
   myPoolHref?: string | null;
 }) {
   return (
     <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 sm:px-6">
       <div className="flex items-center gap-3">
-        <MobileNav permissions={permissions} myPoolHref={myPoolHref} />
+        <MobileNav permissions={permissions} roleKeys={roleKeys} myPoolHref={myPoolHref} />
         <Avatar name={name} src={photoUrl} className="hidden sm:flex" />
         <div>
           <p className="text-sm font-semibold text-gray-900">{name}</p>

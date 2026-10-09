@@ -5,6 +5,7 @@ import { Card, PageHeader, Badge, EmptyState } from "@/components/ui";
 import { NewInspectionForm } from "./new-inspection-form";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
+import { canReadScope } from "@/lib/fiches/report-scope";
 
 const STATUS_COLOR: Record<string, "gray" | "blue" | "green" | "orange"> = {
   PLANIFIEE: "gray",
@@ -22,15 +23,20 @@ export default async function InspectionsPage() {
   const superAdminFull = Boolean(user.isSuperAdmin && !user.viewMode);
   const isProvinceScoped = user.permissions.some((p) => p.poolId === null);
 
-  const inspections = await prisma.inspection.findMany({
+  const candidates = await prisma.inspection.findMany({
     where: isInspector && !superAdminFull
       ? { inspectorId: user.id }
       : isProvinceScoped
         ? { school: { pool: { organizationId: user.organizationId } } }
         : { school: { poolId: user.poolId ?? "__none__" } },
     orderBy: { updatedAt: "desc" },
-    include: { school: true, inspector: true },
+    include: { school: { include: { pool: { select: { organizationId: true } } } }, inspector: true },
   });
+  // Même règle que la page d'une inspection : une permission provinciale
+  // quelconque (cellule, secrétariat, médias…) ne suffit pas à lire les visites.
+  const inspections = candidates.filter((i) =>
+    canReadScope(user, { poolId: i.school.poolId, organizationId: i.school.pool.organizationId, authorId: i.inspectorId }, null, { visit: true })
+  );
 
   let assignedSchools: { id: string; name: string }[] = [];
   if (isInspector && user.isSuperAdmin) {
@@ -54,7 +60,7 @@ export default async function InspectionsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Inspections & fiches" description="Suivi des inspections et remplissage des fiches" />
+      <PageHeader title="Inspection et fiches" description="Suivi des inspections et remplissage des fiches" />
 
       {isInspector && <NewInspectionForm schools={assignedSchools} />}
 
