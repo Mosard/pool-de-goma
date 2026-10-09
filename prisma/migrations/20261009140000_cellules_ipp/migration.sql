@@ -1,9 +1,9 @@
 -- Cellules de l IPP, branche IPP des rapports (secretariat, affectation,
--- signature de l IPA) et rattachement des fonctions a une cellule.
+-- validation et signature portées par la synthèse) et rattachement des fonctions à une cellule.
 -- docs/exploitants-ipp-cellules.md. Additif ; aucune cellule n est creee.
 
 -- CreateEnum
-CREATE TYPE "IppStage" AS ENUM ('AU_SECRETARIAT', 'AFFECTE', 'EXPLOITE', 'VALIDE', 'SIGNE');
+CREATE TYPE "IppStage" AS ENUM ('AU_SECRETARIAT', 'AFFECTE', 'EXPLOITE');
 
 -- AlterEnum
 ALTER TYPE "RoleScope" ADD VALUE 'CELL';
@@ -48,10 +48,6 @@ CREATE TABLE "ReportIppTrack" (
     "arrivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "assignedAt" TIMESTAMP(3),
     "exploitedAt" TIMESTAMP(3),
-    "validatedAt" TIMESTAMP(3),
-    "validatedById" TEXT,
-    "signedAt" TIMESTAMP(3),
-    "signedById" TEXT,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ReportIppTrack_pkey" PRIMARY KEY ("id")
@@ -115,10 +111,8 @@ ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_organizationId_fkey"
 ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_cellId_fkey" FOREIGN KEY ("cellId") REFERENCES "Cell"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_validatedById_fkey" FOREIGN KEY ("validatedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ReportIppTrack" ADD CONSTRAINT "ReportIppTrack_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ReportIppEvent" ADD CONSTRAINT "ReportIppEvent_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "Report"("id") ON DELETE CASCADE ON UPDATE CASCADE;

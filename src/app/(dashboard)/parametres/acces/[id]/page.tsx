@@ -61,7 +61,7 @@ export default async function CompteAccesPage({ params }: { params: Promise<{ id
           userRoleId: r.id,
           roleKey: r.role.key,
           // « Exploitant de l'IPP — cellule IPAF », ou « — cellule à choisir » (aucun accès tant qu'elle manque).
-          label: r.role.scope === "CELL" ? `${r.role.label} — ${r.cell ? `cellule ${r.cell.code}` : "cellule à choisir"}` : r.role.label,
+          label: r.role.scope === "CELL" ? `${r.role.label} — ${r.cell ? `cellule ${r.cell.code}` : "en attente d'affectation (Direction)"}` : r.role.label,
           poolId: r.poolId,
           removable: !ROLES_MANAGED_ELSEWHERE.includes(r.role.key) && canGrantRole(actor.roles, r.role.key, r.poolId),
           reason: ROLES_MANAGED_ELSEWHERE.includes(r.role.key) ? "Se gère depuis la fiche du POOL." : "Fonction que vous ne pouvez pas retirer.",

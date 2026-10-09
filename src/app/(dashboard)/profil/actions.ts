@@ -21,7 +21,7 @@ export async function updateProfileAction(
   formData: FormData
 ): Promise<ProfileFormState> {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user || session.user.awaitingCell) redirect("/login");
 
   const parsed = profileSchema.safeParse({
     prenom: formData.get("prenom"),
@@ -72,7 +72,7 @@ export async function updatePhotoAction(
   formData: FormData
 ): Promise<PhotoFormState> {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user || session.user.awaitingCell) redirect("/login");
 
   const file = formData.get("photo");
   if (!(file instanceof File) || file.size === 0) {
@@ -141,7 +141,7 @@ export async function updatePublicationConsentAction(
   formData: FormData
 ): Promise<ConsentFormState> {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user || session.user.awaitingCell) redirect("/login");
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { status: true } });
   if (user?.status !== "ACTIVE") return { formError: "Compte inactif." };

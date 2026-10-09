@@ -366,7 +366,7 @@ export async function saveReservedPartAction(formId: string, payload: string): P
   // Exploitants du POOL ou de la cellule destinataire (règle centrale, droits relus en base).
   const actor = await loadCellActor(user.id);
   const scope = { poolId: pool.id, organizationId: pool.organizationId, authorId: formAuthorId(form) };
-  const canTreat = canWorkOnReport(actor, scope, trackInfo(form.report.ippTrack));
+  const canTreat = canWorkOnReport(actor, scope, trackInfo(form.report.ippTrack, form.report.synthesisSources));
   if (!canTreat || formAuthorId(form) === user.id) return { ok: false, error: "Action non autorisée." };
   const refusal = await demoRefusal(user.id, formIsDemo(form));
   if (refusal) return { ok: false, error: refusal };

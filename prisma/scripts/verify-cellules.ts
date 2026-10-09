@@ -1,10 +1,11 @@
 // Vérification sur base des cellules de l'IPP et de la branche IPP des
 // rapports (décisions du 2026-10-08, docs/exploitants-ipp-cellules.md § 6) :
 // arrivée au secrétariat à la soumission, envoi, réaffectation, exploitation,
-// renvoi, signature par l'IPA ; isolation entre cellules par APPEL DIRECT aux
+// réouverture, transmission par synthèse ; isolation entre cellules par APPEL DIRECT aux
 // fonctions serveur (lecture, listes, export, PDF, étapes) ; aucun accès sans
 // cellule ; traçabilité de chaque transmission ; branche POOL indépendante ;
-// « Gérer les accès ».
+// « Gérer les accès » ; affectations depuis la Direction (avant, après,
+// deux cellules, changement, retrait — décisions du 2026-10-09).
 //
 // À lancer UNIQUEMENT sur une base locale jetable, migrée et seedée.
 // Usage : POSTGRES_URL=<url locale> npx tsx prisma/scripts/verify-cellules.ts
@@ -19,6 +20,9 @@ import { PdfAccessError, loadReportPdfSource } from "../../src/lib/exports/repor
 import { applyTransition } from "../../src/lib/workflow";
 import { applyAccessChanges } from "../../src/lib/access-admin";
 import { resolveDashboardScopes } from "../../src/lib/dashboard/scope";
+import { loadCellule } from "../../src/lib/dashboard/data";
+import { setCellIpa, setExploitantCell } from "../../src/lib/cells/assignments";
+import { cellAssignmentLabel } from "../../src/lib/cells/rules";
 
 const url = process.env.POSTGRES_URL ?? "";
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
@@ -142,7 +146,7 @@ async function main() {
     await assert.rejects(() => loadReportPdfSource(subjectC2, r1.id), PdfAccessError, "PDF refusé à l'autre cellule");
     await loadReportPdfSource(await loadExportSubject(exploitC1.id), r1.id);
     await refused(() => applyTrackAction(exploitC2.id, r1.id, { action: "exploit" }), "exploiter le rapport d'une autre cellule");
-    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "validate" }), "valider pour une autre cellule");
+    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "return", comment: "x" }), "rouvrir pour une autre cellule");
     await refused(() => applyTrackAction(sansCellule.id, r1.id, { action: "exploit" }), "sans cellule");
   });
 
@@ -156,46 +160,31 @@ async function main() {
     assert.ok(await reads(exploitC2.id, r1.id));
   });
 
-  await check("Exploitation, renvoi par l'IPA (motif), validation par SON IPA et transmission : l'IPP lit alors le rapport et est prévenu", async () => {
-    await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "validate" }), "pas encore exploité");
+  await check("Exploitation, réouverture par l'IPA (motif) ; l'IPP ne lit le rapport qu'une fois source d'une synthèse validée et transmise", async () => {
     await applyTrackAction(exploitC2.id, r1.id, { action: "exploit" });
-    await refused(() => applyTrackAction(exploitC2.id, r1.id, { action: "validate" }), "l'exploitant ne valide pas");
     await refused(() => applyTrackAction(ipa2.id, r1.id, { action: "return" }), "motif obligatoire");
     await applyTrackAction(ipa2.id, r1.id, { action: "return", comment: "Compléter l'analyse." });
     await applyTrackAction(exploitC2.id, r1.id, { action: "exploit" });
-    assert.equal(await reads(ipp.id, r1.id), false, "D7 : pas avant la validation de l'IPA");
-    await refused(() => applyTrackAction(ipa1.id, r1.id, { action: "validate" }), "IPA d'une autre cellule");
-    await refused(() => applyTrackAction(ipp.id, r1.id, { action: "sign" }), "l'IPP ne signe qu'après la validation de l'IPA");
-    await applyTrackAction(ipa2.id, r1.id, { action: "validate" });
-    const t = await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r1.id } });
-    assert.deepEqual([t.stage, t.validatedById], ["VALIDE", ipa2.id]);
-    assert.ok(t.validatedAt);
-    assert.ok(await reads(ipp.id, r1.id), "transmis : l'IPP le lit pour le signer");
-    assert.equal(await notif(ipp.id, "report.ipp_validate"), 1);
-    await refused(() => applyTrackAction(secretaire.id, r1.id, { action: "reassign", cellId: c1.id, comment: "trop tard" }), "jamais après la validation");
-  });
-
-  await check("Signature par l'IPP principal (seul) : renvoi possible avec motif ; la cellule est prévenue", async () => {
-    for (const u of [ipa2, exploitC2, agentIpp, secretaire]) await refused(() => applyTrackAction(u.id, r1.id, { action: "sign" }), `${u.name} ne signe pas`);
-    await refused(() => applyTrackAction(ipp.id, r1.id, { action: "refuse" }), "renvoi de l'IPP : motif obligatoire");
-    await applyTrackAction(ipp.id, r1.id, { action: "refuse", comment: "Préciser les recommandations." });
-    assert.equal((await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r1.id } })).stage, "AFFECTE");
-    assert.equal(await reads(ipp.id, r1.id), false, "renvoyé à la cellule : plus visible de l'IPP");
-    await applyTrackAction(exploitC2.id, r1.id, { action: "exploit" });
-    await applyTrackAction(ipa2.id, r1.id, { action: "validate" });
-    await applyTrackAction(ipp.id, r1.id, { action: "sign" });
-    const t = await prisma.reportIppTrack.findUniqueOrThrow({ where: { reportId: r1.id } });
-    assert.deepEqual([t.stage, t.signedById], ["SIGNE", ipp.id]);
-    assert.ok(t.signedAt);
-    assert.ok(await notif(exploitC2.id, "report.ipp_sign"), "la cellule est prévenue de la signature");
-    assert.ok(await notif(ipa2.id, "report.ipp_sign"));
-    assert.ok(await reads(ipp.id, r1.id));
+    assert.equal(await reads(ipp.id, r1.id), false, "D7 : pas avant la transmission par la cellule");
+    // Synthèse de la cellule 2 validée par son IPA (circuit testé dans verify-synthese-flow.ts).
+    await prisma.synthesis.create({
+      data: {
+        organizationId: org.id,
+        cellId: c2.id,
+        authorId: exploitC2.id,
+        title: "Synthèse de test",
+        status: "VALIDE",
+        validatedAt: new Date(),
+        sources: { create: [{ reportId: r1.id, snapshot: {} }] },
+      },
+    });
+    assert.ok(await reads(ipp.id, r1.id), "transmis : l'IPP le lit");
     assert.equal(await reads(exploitC1.id, r1.id), false, "jamais l'autre cellule");
+    await refused(() => applyTrackAction(secretaire.id, r1.id, { action: "reassign", cellId: c1.id, comment: "trop tard" }), "verrouillé par la synthèse");
   });
 
   await check("Traçabilité : chaque transmission a son entrée (étape, cellule, auteur, date) et son audit", async () => {
-    const who = (id: string) =>
-      id === secretaire.id ? "secr" : id === ipa2.id ? "ipa2" : id === exploitC2.id ? "exp2" : id === inspA.id ? "insp" : id === ipp.id ? "ipp" : id;
+    const who = (id: string) => (id === secretaire.id ? "secr" : id === ipa2.id ? "ipa2" : id === exploitC2.id ? "exp2" : id === inspA.id ? "insp" : id);
     const cellOf = (id: string | null) => (id === c1.id ? "C1" : id === c2.id ? "C2" : null);
     const ev = await prisma.reportIppEvent.findMany({ where: { reportId: r1.id }, orderBy: { createdAt: "asc" } });
     assert.deepEqual(
@@ -207,28 +196,12 @@ async function main() {
         ["EXPLOITE", "C2", "exp2"],
         ["AFFECTE", "C2", "ipa2"],
         ["EXPLOITE", "C2", "exp2"],
-        ["VALIDE", "C2", "ipa2"],
-        ["AFFECTE", "C2", "ipp"],
-        ["EXPLOITE", "C2", "exp2"],
-        ["VALIDE", "C2", "ipa2"],
-        ["SIGNE", "C2", "ipp"],
       ]
     );
     const audits = await prisma.auditLog.findMany({ where: { entityId: r1.id, action: { startsWith: "report.ipp_" } }, orderBy: { createdAt: "asc" } });
     assert.deepEqual(
       audits.map((a) => a.action),
-      [
-        "report.ipp_assign",
-        "report.ipp_reassign",
-        "report.ipp_exploit",
-        "report.ipp_return",
-        "report.ipp_exploit",
-        "report.ipp_validate",
-        "report.ipp_refuse",
-        "report.ipp_exploit",
-        "report.ipp_validate",
-        "report.ipp_sign",
-      ]
+      ["report.ipp_assign", "report.ipp_reassign", "report.ipp_exploit", "report.ipp_return", "report.ipp_exploit"]
     );
   });
 
@@ -290,6 +263,126 @@ async function main() {
     const nobody = await user("Exploitant sans cellule 2", [{ role: ROLE_KEYS.EXPLOITANT_IPP }]);
     assert.deepEqual(await kinds(nobody.id), [["aucun", null]]);
     assert.deepEqual((await loadUserAccess(nobody.id, { viewMode: null })).permissions, [], "aucune permission de repli");
+  });
+
+  // ── Affectations depuis la Direction (décisions du 2026-10-09) ─────────────
+  const informaticien = await user("Informaticien", [{ role: ROLE_KEYS.INFORMATICIEN }]);
+  const ipaX = await user("IPA X", [{ role: ROLE_KEYS.IPA }]);
+  const expX = await user("Exploitant X", [{ role: ROLE_KEYS.EXPLOITANT_IPP }]);
+  const c3 = await prisma.cell.create({ data: { organizationId: org.id, code: `Z${RUN}`.toUpperCase(), name: "Cellule Évaluation" } });
+  const poste = await prisma.directionAttribution.create({ data: { organizationId: org.id, label: `Évaluation ${RUN}`, position: 90, cellId: c3.id } });
+  const asIpp = { id: ipp.id, organizationId: org.id };
+  const access = (id: string) => loadUserAccess(id, { viewMode: null });
+  const kindsOf = async (id: string) => {
+    const a = await access(id);
+    return resolveDashboardScopes({ id, organizationId: org.id, isDemo: false, roles: a.roles, permissions: a.permissions });
+  };
+  const rowsOf = async (id: string) => (await loadReportRows(await loadExportSubject(id), {}, 100)).map((r) => r.id);
+  const pdfRefused = async (id: string, reportId: string) =>
+    assert.rejects(async () => loadReportPdfSource(await loadExportSubject(id), reportId), PdfAccessError);
+
+  await check("Avant affectation : IPA et exploitant validés mais en attente — aucun droit, aucun espace, aucun appel direct", async () => {
+    for (const u of [ipaX, expX]) {
+      const a = await access(u.id);
+      assert.equal(a.awaitingCell, true, u.name);
+      assert.deepEqual(a.permissions, [], `${u.name} : aucune permission (ni provinciale ni de secours)`);
+      assert.deepEqual((await kindsOf(u.id)).map((s) => s.kind), ["aucun"], `${u.name} : aucun tableau de bord métier`);
+      for (const r of [r1, r2]) assert.equal(await reads(u.id, r.id), false);
+      assert.deepEqual(await rowsOf(u.id), [], "liste et export : rien");
+      await pdfRefused(u.id, r1.id);
+      await refused(() => applyTrackAction(u.id, r1.id, { action: "exploit" }));
+    }
+    // Les exploitants de POOL ne sont jamais concernés.
+    assert.equal((await access(exploitPoolA.id)).awaitingCell, false);
+  });
+
+  await check("Habilitations : l'informaticien affecte un exploitant mais pas un IPA ; jamais soi-même ; un IPA, une cellule ; cellule active", async () => {
+    const asInfo = { id: informaticien.id, organizationId: org.id };
+    await refused(() => setCellIpa(asInfo, { cellId: c3.id, ipaId: ipaX.id, via: "direction" }), "IPA ← IPP, Super Admin");
+    await refused(() => setCellIpa(asIpp, { cellId: c3.id, ipaId: ipa1.id, via: "direction" }), "IPA 1 dirige déjà la cellule 1");
+    await refused(() => setExploitantCell({ id: expX.id, organizationId: org.id }, { userId: expX.id, cellId: c3.id, via: "direction" }), "soi-même");
+    await refused(() => setExploitantCell(asIpp, { userId: chefA.id, cellId: c3.id, via: "direction" }), "pas exploitant de l'IPP");
+    const archived = await prisma.cell.create({ data: { organizationId: org.id, code: `W${RUN}`.toUpperCase(), name: "Cellule archivée", active: false } });
+    await refused(() => setExploitantCell(asIpp, { userId: expX.id, cellId: archived.id, via: "direction" }), "cellule archivée");
+    assert.equal((await access(expX.id)).awaitingCell, true, "rien n'a changé");
+  });
+
+  await check("Après affectation depuis la Direction : droits réels, cellule visible même sans rapport, historique et poste public suivis", async () => {
+    await setCellIpa(asIpp, { cellId: c3.id, ipaId: ipaX.id, via: "direction" });
+    await setExploitantCell({ id: informaticien.id, organizationId: org.id }, { userId: expX.id, cellId: c3.id, via: "direction" });
+    for (const [u, label] of [
+      [ipaX, "IPA — Responsable de la cellule Évaluation"],
+      [expX, "Exploitant — Cellule Évaluation"],
+    ] as const) {
+      const a = await access(u.id);
+      assert.equal(a.awaitingCell, false, u.name);
+      const role = a.roles.find((r) => r.cellId === c3.id)!;
+      assert.equal(cellAssignmentLabel(role), label);
+      const scopes = await kindsOf(u.id);
+      assert.deepEqual(scopes.map((s) => [s.kind, s.cellId]), [["exploitation_cellule", c3.id]]);
+      const data = await loadCellule(scopes[0]);
+      assert.equal(data.cell?.name, "Cellule Évaluation", "la cellule apparaît sans aucun rapport");
+      assert.equal(data.affected + data.exploited, 0, "aucun rapport reçu");
+      assert.deepEqual(await rowsOf(u.id), [], "aucun rapport des autres cellules");
+      assert.equal(await reads(u.id, r1.id), false, "pas le rapport de la cellule 2");
+    }
+    assert.ok((await access(expX.id)).permissions.every((p) => p.cellId === c3.id), "toutes les permissions de l'exploitant sont bornées à SA cellule");
+    const term = await prisma.cellIpaAssignment.findFirstOrThrow({ where: { cellId: c3.id, endedAt: null } });
+    assert.deepEqual([term.ipaId, term.assignedById, term.via], [ipaX.id, ipp.id, "direction"]);
+    assert.equal((await prisma.directionAttribution.findUniqueOrThrow({ where: { id: poste.id } })).holderId, ipaX.id, "poste public relié : titulaire = IPA");
+    assert.equal(await prisma.auditLog.count({ where: { entityId: c3.id, action: "cell.ipa_assign", actorId: ipp.id } }), 1);
+    assert.equal(await prisma.auditLog.count({ where: { entityId: expX.id, action: "user.cell_assign", actorId: informaticien.id } }), 1);
+    assert.equal(await notif(expX.id, "user.cell_assign"), 1);
+    assert.equal(await notif(ipaX.id, "cell.ipa_assign"), 1);
+  });
+
+  await check("Deux cellules : l'exploitant ne voit que sa cellule ; un changement d'affectation retire l'ancien accès dès la requête suivante", async () => {
+    // Rapport de la cellule 3 (r2, encore au secrétariat) : la cellule 3 le voit, la 2 jamais.
+    await applyTrackAction(secretaire.id, r2.id, { action: "assign", cellId: c3.id });
+    assert.ok(await reads(expX.id, r2.id));
+    assert.ok(await reads(ipaX.id, r2.id));
+    assert.deepEqual(await rowsOf(expX.id), [r2.id]);
+    for (const u of [exploitC2, ipa2]) assert.equal(await reads(u.id, r2.id), false, `${u.name} : pas la cellule 3`);
+    assert.equal(await reads(expX.id, r1.id), false, "pas le rapport de la cellule 2");
+    assert.equal(await notif(exploitC2.id, "report.ipp_assign"), 0, "notification limitée à la cellule destinataire");
+    assert.equal(await notif(expX.id, "report.ipp_assign"), 1);
+    // Changement de cellule : 3 → 2.
+    await setExploitantCell(asIpp, { userId: expX.id, cellId: c2.id, via: "direction" });
+    assert.equal(await reads(expX.id, r2.id), false, "ancienne cellule : accès retiré");
+    assert.ok(await reads(expX.id, r1.id), "nouvelle cellule : accès ouvert");
+    assert.deepEqual(await rowsOf(expX.id), [r1.id]);
+    await pdfRefused(expX.id, r2.id);
+    await refused(() => applyTrackAction(expX.id, r2.id, { action: "exploit" }), "plus d'action sur l'ancienne cellule");
+    assert.equal(await prisma.userRole.count({ where: { userId: expX.id, role: { key: ROLE_KEYS.EXPLOITANT_IPP } } }), 1, "une seule cellule");
+  });
+
+  await check("Retrait : compte de nouveau en attente ; aucun accès restant, y compris par appel direct (lecture, liste, PDF, étape)", async () => {
+    await setExploitantCell(asIpp, { userId: expX.id, cellId: null, via: "direction" });
+    await setCellIpa(asIpp, { cellId: c3.id, ipaId: null, via: "direction" });
+    for (const u of [expX, ipaX]) {
+      const a = await access(u.id);
+      assert.equal(a.awaitingCell, true, u.name);
+      assert.deepEqual(a.permissions, []);
+      for (const r of [r1, r2]) assert.equal(await reads(u.id, r.id), false, `${u.name} ${r.id}`);
+      assert.deepEqual(await rowsOf(u.id), []);
+      await pdfRefused(u.id, r2.id);
+      await refused(() => applyTrackAction(u.id, r2.id, { action: "exploit" }));
+    }
+    const ended = await prisma.cellIpaAssignment.findFirstOrThrow({ where: { cellId: c3.id, ipaId: ipaX.id } });
+    assert.ok(ended.endedAt);
+    assert.equal(ended.endedById, ipp.id);
+    assert.equal((await prisma.directionAttribution.findUniqueOrThrow({ where: { id: poste.id } })).holderId, null, "poste public libéré");
+    assert.equal(await prisma.userRole.count({ where: { userId: expX.id, role: { key: ROLE_KEYS.EXPLOITANT_IPP } } }), 1, "la fonction reste ; seule l'affectation est retirée");
+  });
+
+  await check("L'accès dépend de l'affectation enregistrée, pas de la présence de l'IPA ; cellule archivée : retour en attente", async () => {
+    await setExploitantCell(asIpp, { userId: expX.id, cellId: c3.id, via: "direction" });
+    assert.equal((await prisma.cell.findUniqueOrThrow({ where: { id: c3.id } })).ipaId, null);
+    assert.equal((await access(expX.id)).awaitingCell, false);
+    assert.ok(await reads(expX.id, r2.id), "l'exploitant travaille sans IPA désigné");
+    await prisma.cell.update({ where: { id: c3.id }, data: { active: false } });
+    assert.equal((await access(expX.id)).awaitingCell, true, "cellule archivée : en attente");
+    assert.equal(await reads(expX.id, r2.id), false);
   });
 
   console.log(`\n${passed} vérifications réussies.`);

@@ -20,6 +20,7 @@ import {
   loadSecretariat,
 } from "@/lib/dashboard/data";
 import { loadActor, type SynthesisActor } from "@/lib/synthese/server";
+import { cellAssignmentLabel, cellDisplayName } from "@/lib/cells/rules";
 
 // Tableau de bord : une section par fonction du compte connecté, chacune
 // limitée au périmètre décidé par resolveDashboardScopes (session côté
@@ -252,8 +253,8 @@ async function PilotageProvincial({ scope, poolId, inspectorId }: { scope: Dashb
       <ScopeBanner scope={scope} perimeter="tous les POOL de l'Inspection" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Branche IPP : ce que les cellules ont validé et transmis à l'IPP, à signer. */}
-        <StatCard icon={FileCheck2} label="Rapports à signer" value={data.toSign} hint="Validés par l'IPA d'une cellule" />
-        <StatCard icon={FileCheck2} label="Rapports signés" value={data.signed} />
+        <StatCard icon={FileCheck2} label="Synthèses à signer" value={data.toSign} hint="Validées par l'IPA d'une cellule" />
+        <StatCard icon={FileCheck2} label="Synthèses signées" value={data.signed} />
         <StatCard icon={Inbox} label={label("en_circuit")} value={data.buckets.en_circuit} hint="Exploitation au POOL" />
         <StatCard icon={Inbox} label="Rapports reçus (total)" value={data.received} />
         <StatCard icon={ClipboardList} label="Inspections réalisées" value={data.realizedInspections} />
@@ -458,11 +459,14 @@ function ReportMiniList({ title, rows, empty }: { title: string; rows: { id: str
 async function Cellule({ scope }: { scope: DashboardScope }) {
   const data = await loadCellule(scope);
   const ipa = scope.roleKey === "ipa";
-  const cellLabel = data.cell ? `cellule ${data.cell.code} — ${data.cell.name}` : "votre cellule";
+  const cellLabel = data.cell ? `cellule ${cellDisplayName(data.cell.name)} (${data.cell.code})` : "votre cellule";
+  // « IPA — Responsable de la cellule Évaluation » / « Exploitant — Cellule Évaluation ».
+  const assignment = cellAssignmentLabel({ key: scope.roleKey, cellName: data.cell?.name ?? null, cellCode: data.cell?.code ?? null }) ?? scope.roleLabel;
+  const nothingYet = data.affected + data.exploited === 0 && data.latestAffected.length === 0 && data.exploitedList.length === 0;
   return (
     <>
       <PageHeader
-        title={ipa ? "Ma cellule — validations" : "Exploitation de la cellule"}
+        title={assignment}
         description={`Rapports envoyés par le secrétariat de l'IPP à la ${cellLabel}.${data.cell?.ipa ? ` IPA : ${data.cell.ipa.name}.` : ""}`}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -471,15 +475,21 @@ async function Cellule({ scope }: { scope: DashboardScope }) {
           </div>
         }
       />
-      <ScopeBanner scope={scope} perimeter={`${cellLabel} (rapports affectés uniquement)`} />
+      <ScopeBanner scope={{ ...scope, roleLabel: assignment }} perimeter={`${cellLabel} (rapports affectés uniquement)`} />
+      {nothingYet && (
+        <Card className="text-sm text-gray-600">
+          <strong className="text-gray-900">Aucun rapport reçu</strong> pour le moment : les rapports apparaîtront ici dès que le
+          secrétariat de l&apos;IPP les enverra à la cellule.
+        </Card>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Inbox} label="En exploitation" value={data.affected} hint="Envoyés par le secrétariat" />
-        <StatCard icon={FileCheck2} label="À valider par l'IPA" value={data.toValidate} />
-        <StatCard icon={FileCheck2} label="Transmis à l'IPP" value={data.transmitted} hint="En attente de sa signature" />
-        <StatCard icon={FileCheck2} label="Signés par l'IPP" value={data.signed} hint={`Mes étapes (30 jours) : ${data.myActions}`} />
+        <StatCard icon={Inbox} label="En exploitation" value={data.affected} hint="Rapports envoyés par le secrétariat" />
+        <StatCard icon={FileCheck2} label="Rapports exploités" value={data.exploited} hint="À regrouper dans une synthèse" />
+        <StatCard icon={FileCheck2} label="Synthèses à valider (IPA)" value={data.synthesesToValidate} hint={`Transmises à l'IPP : ${data.transmitted}`} />
+        <StatCard icon={FileCheck2} label="Synthèses signées par l'IPP" value={data.signed} hint={`Mes étapes (30 jours) : ${data.myActions}`} />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReportMiniList title="À valider (exploitation terminée)" rows={data.toValidateList} empty="Aucun rapport en attente de validation." />
+        <ReportMiniList title="Exploités, à regrouper dans une synthèse" rows={data.exploitedList} empty="Aucun rapport exploité en attente." />
         <ReportMiniList title="Derniers rapports reçus par la cellule" rows={data.latestAffected} empty="Aucun rapport en cours dans la cellule." />
       </div>
     </>

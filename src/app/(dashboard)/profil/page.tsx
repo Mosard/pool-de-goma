@@ -5,6 +5,7 @@ import { Card, PageHeader } from "@/components/ui";
 import { ProfileForm } from "./profile-form";
 import { PhotoForm } from "./photo-form";
 import { ConsentForm } from "./consent-form";
+import { roleDisplayLabel } from "@/lib/cells/rules";
 
 export default async function ProfilPage() {
   const session = await auth();
@@ -15,6 +16,11 @@ export default async function ProfilPage() {
     include: { pool: true, roles: { include: { role: true } } },
   });
   if (!user) redirect("/login");
+  const poolNames = new Map(
+    (await prisma.pool.findMany({ where: { id: { in: session.user.roles.flatMap((r) => (r.poolId ? [r.poolId] : [])) } }, select: { id: true, name: true } })).map(
+      (p) => [p.id, p.name]
+    )
+  );
 
   return (
     <div className="space-y-6">
@@ -72,14 +78,21 @@ export default async function ProfilPage() {
       <Card>
         <h3 className="mb-3 text-sm font-semibold text-gray-900">Affectation</h3>
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-gray-500">Pool</dt>
-            <dd className="font-medium text-gray-900">{user.pool?.name ?? "Niveau provincial"}</dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Fonction(s)</dt>
+          <div className="sm:col-span-2">
+            <dt className="text-gray-500">Fonction(s) et périmètre</dt>
             <dd className="font-medium text-gray-900">
-              {user.roles.map((r) => r.role.label).join(", ") || "Aucune"}
+              {/* Rôles effectifs relus en base : la cellule affichée est celle qui borne les droits. */}
+              {session.user.roles.length === 0 ? (
+                "Aucune"
+              ) : (
+                <ul className="space-y-1">
+                  {session.user.roles.map((r, i) => (
+                    <li key={`${r.key}-${r.poolId ?? ""}-${r.cellId ?? ""}-${i}`}>
+                      {roleDisplayLabel(r, r.poolId ? poolNames.get(r.poolId) : null)}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </dd>
           </div>
         </dl>

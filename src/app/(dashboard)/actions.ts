@@ -10,7 +10,7 @@ export async function signOutAction() {
 
 export async function markNotificationReadAction(notificationId: string) {
   const session = await auth();
-  if (!session?.user) return;
+  if (!session?.user || session.user.awaitingCell) return;
 
   await prisma.notification.updateMany({
     where: { id: notificationId, userId: session.user.id },

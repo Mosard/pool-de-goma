@@ -3,6 +3,7 @@
 // contrôles se font ici, côté serveur, sur les droits de l'acteur relus en
 // base : jamais sur ce qu'envoie le navigateur.
 
+import { cellDisplayName } from "@/lib/cells/rules";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import {
@@ -14,7 +15,7 @@ import {
   type SessionRole,
 } from "@/lib/permissions";
 import { canGrantRole } from "@/lib/permission-checks";
-import { ASSIGNMENT_END_REASONS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
+import { ASSIGNMENT_END_REASONS, CELL_PERMISSION_KEYS, IPA_CELL_BOUND_KEYS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import {
   canAdjustPermission,
   canManageAccount,
@@ -119,15 +120,27 @@ export async function loadManageableAccount(actor: Actor, targetId: string) {
 
 /** Permissions de la cible venant de ses fonctions : une entrée par (permission, portée). */
 export async function inheritedPermissions(targetId: string) {
-  const userRoles = await prisma.userRole.findMany({
-    where: { userId: targetId },
-    select: { poolId: true, role: { select: { label: true, rolePermissions: { select: { permission: { select: { key: true } } } } } } },
-  });
-  const out = new Map<string, { permissionKey: string; poolId: string | null; roles: string[] }>();
+  const [userRoles, ipaCell] = await Promise.all([
+    prisma.userRole.findMany({
+      where: { userId: targetId },
+      select: {
+        poolId: true,
+        cell: { select: { name: true, active: true } },
+        role: { select: { key: true, label: true, rolePermissions: { select: { permission: { select: { key: true } } } } } },
+      },
+    }),
+    prisma.cell.findFirst({ where: { ipaId: targetId, active: true }, select: { name: true } }),
+  ]);
+  // `scopeLabel` : périmètre réel d'une permission de cellule (jamais « Tous les POOL »).
+  const out = new Map<string, { permissionKey: string; poolId: string | null; roles: string[]; scopeLabel?: string }>();
   for (const ur of userRoles) {
     for (const rp of ur.role.rolePermissions) {
-      const k = `${rp.permission.key}|${ur.poolId ?? ""}`;
-      const e = out.get(k) ?? { permissionKey: rp.permission.key, poolId: ur.poolId, roles: [] };
+      const key = rp.permission.key;
+      const cellBound = CELL_PERMISSION_KEYS.includes(key) || (ur.role.key === ROLE_KEYS.IPA && IPA_CELL_BOUND_KEYS.includes(key));
+      const cellName = ur.role.key === ROLE_KEYS.IPA ? ipaCell?.name : ur.cell?.active ? ur.cell.name : null;
+      const scopeLabel = cellBound ? (cellName ? `Cellule ${cellDisplayName(cellName)}` : "Aucune cellule : en attente d'affectation") : undefined;
+      const k = `${key}|${ur.poolId ?? ""}|${scopeLabel ?? ""}`;
+      const e = out.get(k) ?? { permissionKey: key, poolId: ur.poolId, roles: [], scopeLabel };
       e.roles.push(ur.role.label);
       out.set(k, e);
     }

@@ -8,7 +8,9 @@ import { SIDEBAR_COOKIE } from "@/components/nav-items";
 import { SectionTabs } from "@/components/section-tabs";
 import { IPP_VIEW_MODE_EXTRA_ROLE_KEYS, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
 import { ViewModeBar } from "./view-mode-bar";
-import { cellRoleSuffix } from "@/lib/cells/rules";
+import { AWAITING_CELL_MESSAGE, canReadReport, cellAssignmentLabel, roleDisplayLabel } from "@/lib/cells/rules";
+import { REPORT_SCOPE_INCLUDE, reportScope, reportTrack } from "@/lib/fiches/report-scope";
+import { signOutAction } from "./actions";
 
 // Extra safeguard: these pages already redirect to /login and are disallowed in robots.txt.
 export const metadata: Metadata = {
@@ -28,7 +30,7 @@ export default async function DashboardLayout({
       where: { userId: session.user.id, channel: "IN_APP", readAt: null },
       orderBy: { createdAt: "desc" },
       take: 20,
-      select: { id: true, title: true, body: true },
+      select: { id: true, title: true, body: true, payload: true },
     }),
     prisma.user.findUnique({ where: { id: session.user.id }, select: { photoUrl: true, status: true } }),
   ]);
@@ -37,17 +39,53 @@ export default async function DashboardLayout({
   // base pour qu'une suspension prenne effet immédiatement, pages comprises.
   if (!currentUser || currentUser.status !== "ACTIVE") redirect("/login?compte=inactif");
 
-  // « Exploitant de l'IPP — cellule IPAF » : le périmètre de cellule est explicite (ou « cellule à choisir »).
-  const roleLabels = session.user.roles.map((r) => {
-    const suffix = cellRoleSuffix(r);
-    return suffix ? `${r.label} — ${suffix}` : r.label;
-  });
+  // IPA ou exploitant de l'IPP sans cellule (session ouverte avant un retrait
+  // d'affectation) : seul le message d'attente, aucun menu ni page métier.
+  // Les droits sont déjà vides côté serveur (loadUserAccess), API comprises.
+  if (session.user.awaitingCell) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-md space-y-4 rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-gray-900">IPP Nord-Kivu 1</h1>
+          <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+            {AWAITING_CELL_MESSAGE}
+          </p>
+          <form action={signOutAction}>
+            <button type="submit" className="text-sm font-medium text-blue-600 hover:underline">
+              Se déconnecter
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Notification d'un rapport que le compte ne peut plus lire (changement ou
+  // retrait d'affectation, réaffectation du rapport) : masquée — même règle
+  // que la page du rapport, droits relus en base.
+  const reportIdOf = (payload: unknown) =>
+    payload && typeof payload === "object" && typeof (payload as { reportId?: unknown }).reportId === "string"
+      ? (payload as { reportId: string }).reportId
+      : null;
+  const notifiedReportIds = [...new Set(notifications.flatMap((n) => reportIdOf(n.payload) ?? []))];
+  const readable = new Set<string>();
+  if (notifiedReportIds.length > 0) {
+    const actor = { id: session.user.id, organizationId: session.user.organizationId, roles: session.user.roles, permissions: session.user.permissions };
+    const reports = await prisma.report.findMany({ where: { id: { in: notifiedReportIds } }, include: REPORT_SCOPE_INCLUDE });
+    for (const r of reports) if (canReadReport(actor, reportScope(r), reportTrack(r))) readable.add(r.id);
+  }
+  const visibleNotifications = notifications
+    .filter((n) => {
+      const reportId = reportIdOf(n.payload);
+      return !reportId || readable.has(reportId);
+    })
+    .map(({ id, title, body }) => ({ id, title, body }));
+
+  // Fonction et périmètre réels : « IPA — Responsable de la cellule Évaluation », « Exploitant — Cellule Évaluation ».
+  const roleLabels = session.user.roles.map((r) => roleDisplayLabel(r));
   const roleKeys = session.user.roles.map((r) => r.key);
   // Espace Exploitation : fonction et cellule des IPA et exploitants de l'IPP, même sans rapport.
-  const cellContext = session.user.roles.flatMap((r) => {
-    const suffix = cellRoleSuffix(r);
-    return suffix ? [`${r.label} — ${suffix}`] : [];
-  });
+  const cellContext = session.user.roles.flatMap((r) => cellAssignmentLabel(r) ?? []);
   // Chef de POOL sans accès aux Paramètres : lien direct vers la fiche de son POOL.
   const chiefPoolId = session.user.roles.find((r) => r.key === "chef_pool")?.poolId ?? null;
   const myPoolHref =
@@ -98,7 +136,7 @@ export default async function DashboardLayout({
         <Topbar
           name={session.user.name ?? ""}
           roleLabels={roleLabels}
-          notifications={notifications}
+          notifications={visibleNotifications}
           permissions={session.user.permissions}
           roleKeys={roleKeys}
           photoUrl={currentUser?.photoUrl}

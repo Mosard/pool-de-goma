@@ -95,9 +95,9 @@ export async function loadPilotageProvincial(scope: DashboardScope, now = new Da
     }),
     prisma.user.count({ where: { status: "ACTIVE", organizationId: org } }),
     prisma.school.groupBy({ by: ["poolId"], where: { active: true, pool: { organizationId: org } }, _count: { _all: true } }),
-    // Branche IPP : rapports validés par l'IPA d'une cellule et transmis à l'IPP (à signer), puis signés.
-    prisma.reportIppTrack.count({ where: { organizationId: org, stage: "VALIDE", report: demoWhere(scope.isDemo) } }),
-    prisma.reportIppTrack.count({ where: { organizationId: org, stage: "SIGNE", report: demoWhere(scope.isDemo) } }),
+    // Branche IPP : synthèses de cellule validées par l'IPA et transmises à l'IPP (à signer), puis signées.
+    prisma.synthesis.count({ where: { organizationId: org, cellId: { not: null }, status: "VALIDE", isDemo: scope.isDemo } }),
+    prisma.synthesis.count({ where: { organizationId: org, cellId: { not: null }, status: "SIGNE", isDemo: scope.isDemo } }),
   ]);
   return {
     toSign,
@@ -251,15 +251,15 @@ export async function loadSynthesisCounts(scope: DashboardScope, actor: Synthesi
 // ─── Cellule de l'IPP : exploitants et IPA (décisions du 2026-10-08) ──────
 
 /**
- * Activité de SA cellule : rapports affectés par le secrétariat, en cours,
- * exploités (à valider par l'IPA), validés et transmis à l'IPP, signés par
- * l'IPP. Aucun indicateur de l'IPP principal, aucun autre périmètre.
+ * Activité de SA cellule : rapports affectés par le secrétariat, exploités
+ * (prêts pour une synthèse), synthèses de la cellule transmises à l'IPP et
+ * signées. Aucun indicateur de l'IPP principal, aucun autre périmètre.
  */
 export async function loadCellule(scope: DashboardScope, now = new Date()) {
   assertKind(scope, "exploitation_cellule");
   const since = new Date(now.getTime() - 30 * 86_400_000);
   const where = reportsInScope(scope);
-  const [cell, byStage, toSign, latest, myActions] = await Promise.all([
+  const [cell, byStage, toSign, latest, myActions, cellSyntheses] = await Promise.all([
     prisma.cell.findFirst({ where: { id: scope.cellId!, organizationId: scope.organizationId }, select: { code: true, name: true, ipa: { select: { name: true } } } }),
     prisma.reportIppTrack.groupBy({ by: ["stage"], where: { report: where }, _count: { _all: true } }),
     prisma.report.findMany({
@@ -276,17 +276,25 @@ export async function loadCellule(scope: DashboardScope, now = new Date()) {
     }),
     // Étapes de la branche IPP faites par ce compte dans sa cellule sur 30 jours.
     prisma.reportIppEvent.count({ where: { actorId: scope.userId, createdAt: { gte: since }, cellId: scope.cellId } }),
+    // Synthèses collectives de la cellule (la validation et la signature portent sur elles).
+    prisma.synthesis.groupBy({
+      by: ["status"],
+      where: { organizationId: scope.organizationId, cellId: scope.cellId!, isDemo: scope.isDemo },
+      _count: { _all: true },
+    }),
   ]);
+  const synth = (k: string) => cellSyntheses.find((s) => s.status === k)?._count._all ?? 0;
   const stage = (k: string) => byStage.find((s) => s.stage === k)?._count._all ?? 0;
   const brief = (r: (typeof latest)[number]) => ({ id: r.id, title: reportScope(r).title, author: reportScope(r).authorName });
   return {
     cell,
     affected: stage("AFFECTE"),
-    toValidate: stage("EXPLOITE"),
-    transmitted: stage("VALIDE"),
-    signed: stage("SIGNE"),
+    exploited: stage("EXPLOITE"),
+    synthesesToValidate: synth("SOUMIS"),
+    transmitted: synth("VALIDE"),
+    signed: synth("SIGNE"),
     myActions,
-    toValidateList: toSign.map(brief),
+    exploitedList: toSign.map(brief),
     latestAffected: latest.map(brief),
   };
 }

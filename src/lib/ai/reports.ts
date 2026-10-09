@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { parseFieldsSchema, type FormFieldDef } from "@/lib/form-schema";
 import { WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
+import { CELL_VISIBLE_STAGES } from "@/lib/cells/rules";
 import { resolveFicheDef } from "@/lib/fiches/defs/index";
 import { flattenFiche, toFicheData } from "@/lib/fiches/flatten";
 
@@ -56,7 +57,7 @@ export async function loadAiReports(q: AiReportQuery): Promise<AiReport[]> {
   const rows = await prisma.report.findMany({
     where: {
       status: { key: { not: WORKFLOW_STATUS_KEYS.BROUILLON } },
-      ...(q.cellId ? { ippTrack: { is: { cellId: q.cellId, stage: { in: ["AFFECTE" as const, "EXPLOITE" as const, "VALIDE" as const, "SIGNE" as const] } } } } : {}),
+      ...(q.cellId ? { ippTrack: { is: { cellId: q.cellId, stage: { in: [...CELL_VISIBLE_STAGES] } } } } : {}),
       OR: [
         // Rapport d'inspection global (ancien circuit).
         {

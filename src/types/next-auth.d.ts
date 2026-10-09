@@ -13,6 +13,8 @@ declare module "next-auth" {
       isSuperAdmin?: boolean;
       /** Rôle réellement détenu autorisant « Voir comme » (Super Admin, IPP). */
       canViewAs?: boolean;
+      /** IPA ou exploitant de l'IPP sans cellule active : aucun espace de travail. */
+      awaitingCell?: boolean;
       /** Fonction simulée (« Voir comme »), sinon null. */
       viewMode?: {
         role: string;

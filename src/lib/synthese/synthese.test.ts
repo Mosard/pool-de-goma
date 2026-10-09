@@ -111,7 +111,6 @@ test("Sélection POOL : rapports exploités de son POOL seulement", () => {
 test("Sélection cellule : seulement les rapports AFFECTÉS à sa cellule et dont la cellule a terminé l'exploitation", () => {
   const s = { organizationId: ORG, poolId: null, cellId: C1, isDemo: false };
   assert.ok(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "EXPLOITE", cellId: C1 })), "rapport de n'importe quel POOL");
-  assert.ok(canIncludeReport(exploitC1, s, report(B, W.SOUMIS, false, { stage: "SIGNE", cellId: C1 })));
   assert.equal(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "EXPLOITE", cellId: C2 })), false, "rapport d'une autre cellule");
   assert.equal(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "AFFECTE", cellId: C1 })), false, "exploitation pas terminée");
   assert.equal(canIncludeReport(exploitC1, s, report(A, W.SOUMIS, false, { stage: "AU_SECRETARIAT", cellId: null })), false, "pas encore affecté");

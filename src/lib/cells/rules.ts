@@ -14,23 +14,52 @@ import {
 } from "@/lib/rbac-data";
 import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 
-export type IppStageKey = "AU_SECRETARIAT" | "AFFECTE" | "EXPLOITE" | "VALIDE" | "SIGNE";
+// Branche IPP d'un rapport SOURCE : secrétariat → cellule → exploité. La
+// validation (IPA) et la signature (IPP) portent sur la synthèse collective
+// qui regroupe les rapports exploités, jamais sur chaque rapport (2026-10-09).
+export type IppStageKey = "AU_SECRETARIAT" | "AFFECTE" | "EXPLOITE";
 
 export const IPP_STAGE_LABELS: Record<IppStageKey, string> = {
   AU_SECRETARIAT: "Au secrétariat de l'IPP",
   AFFECTE: "Envoyé à la cellule",
-  EXPLOITE: "Exploité, à valider par l'IPA",
-  VALIDE: "Validé par l'IPA, transmis à l'IPP pour signature",
-  SIGNE: "Signé par l'IPP",
+  EXPLOITE: "Exploité par la cellule",
 };
 
 /** Stades où la cellule destinataire voit le rapport. */
-export const CELL_VISIBLE_STAGES: readonly IppStageKey[] = ["AFFECTE", "EXPLOITE", "VALIDE", "SIGNE"];
+export const CELL_VISIBLE_STAGES: readonly IppStageKey[] = ["AFFECTE", "EXPLOITE"];
 
-/** Stades où l'IPP principal lit le rapport (validé et transmis par la cellule, puis signé). */
-export const IPP_VISIBLE_STAGES: readonly IppStageKey[] = ["VALIDE", "SIGNE"];
+/** Synthèse de cellule validée par l'IPA et transmise (puis signée) : l'IPP lit ses rapports sources. */
+export const TRANSMITTED_SYNTHESIS_STATUSES: readonly string[] = ["VALIDE", "SIGNE"];
 
-export type IppTrackInfo = { stage: IppStageKey; cellId: string | null; legacy: boolean; organizationId: string };
+/** Synthèse soumise, validée ou signée : ses rapports sources ne changent plus de cellule ni d'état. */
+export const LOCKING_SYNTHESIS_STATUSES: readonly string[] = ["SOUMIS", "VALIDE", "SIGNE"];
+
+/**
+ * `transmitted` : source d'une synthèse de cellule validée et transmise à l'IPP ;
+ * `locked` : source d'une synthèse de SA cellule soumise, validée ou signée.
+ * Calculés côté serveur (withSynthesisFlags), jamais reçus du navigateur.
+ */
+export type IppTrackInfo = {
+  stage: IppStageKey;
+  cellId: string | null;
+  legacy: boolean;
+  organizationId: string;
+  transmitted?: boolean;
+  locked?: boolean;
+};
+
+type SourceLink = { synthesis: { status: string; cellId: string | null } };
+
+/** Ajoute à la branche IPP d'un rapport ce que disent les synthèses qui le citent. */
+export function withSynthesisFlags(track: IppTrackInfo | null, sources: readonly SourceLink[] | null | undefined): IppTrackInfo | null {
+  if (!track) return null;
+  const cellSyntheses = (sources ?? []).map((s) => s.synthesis).filter((s) => s.cellId);
+  return {
+    ...track,
+    transmitted: cellSyntheses.some((s) => TRANSMITTED_SYNTHESIS_STATUSES.includes(s.status)),
+    locked: cellSyntheses.some((s) => s.cellId === track.cellId && LOCKING_SYNTHESIS_STATUSES.includes(s.status)),
+  };
+}
 
 export type CellActor = { id: string; organizationId: string; roles: SessionRole[]; permissions: SessionPermission[] };
 
@@ -118,7 +147,7 @@ export const POOL_READ_KEYS: readonly string[] = [
   PERMISSIONS.ASSIGNMENTS_MANAGE,
 ];
 
-/** D7 : l'IPP principal ne lit, dans la branche IPP, que ce que les cellules ont signé (et l'historique). */
+/** D7 : l'IPP principal ne lit, dans la branche IPP, que ce que les cellules lui ont transmis (et l'historique). */
 export function readsSignedOnly(roles: SessionRole[]): boolean {
   return !isSuperAdmin(roles) && roles.some((r) => SIGNED_ONLY_READER_ROLE_KEYS.includes(r.key));
 }
@@ -145,7 +174,8 @@ type ReportScopeLike = { poolId: string | null; organizationId: string | null; a
  *  - son auteur ;
  *  - branche POOL : une permission de lecture sur le POOL du rapport ;
  *  - portée organisation : toute l'organisation, sauf l'IPP principal (D7) qui
- *    ne lit que les rapports signés par une cellule et l'historique antérieur ;
+ *    ne lit que les rapports sources d'une synthèse de cellule validée et
+ *    transmise, et l'historique antérieur ;
  *  - secrétariat de l'IPP : tout rapport arrivé dans la branche IPP ;
  *  - cellule : seulement les rapports AFFECTÉS à sa cellule (et après).
  * `visit` : page d'une visite (inspection), hors branche IPP — la portée
@@ -159,7 +189,7 @@ export function canReadReport(actor: CellActor, scope: ReportScopeLike, track: I
   if (scope.poolId && held.some((x) => x.poolId === scope.poolId)) return true;
   if (held.some((x) => x.poolId === null)) {
     if (opts.visit || !readsSignedOnly(actor.roles)) return true;
-    if (track && (IPP_VISIBLE_STAGES.includes(track.stage) || track.legacy)) return true;
+    if (track && (track.transmitted || track.legacy)) return true;
   }
   if (!track || track.organizationId !== org) return false;
   if (holdsRouteIpp(actor, org)) return true;
@@ -183,7 +213,7 @@ export function canWorkOnReport(actor: CellActor, scope: ReportScopeLike, track:
 
 // ─── Branche IPP : étapes ──────────────────────────────────────────────────
 
-export type TrackAction = "assign" | "reassign" | "exploit" | "return" | "validate" | "sign" | "refuse";
+export type TrackAction = "assign" | "reassign" | "exploit" | "return";
 
 export const TRACK_ACTIONS: Record<
   TrackAction,
@@ -191,11 +221,8 @@ export const TRACK_ACTIONS: Record<
 > = {
   assign: { from: ["AU_SECRETARIAT"], to: "AFFECTE", label: "Envoyer à la cellule", commentRequired: false, audit: "report.ipp_assign" },
   reassign: { from: ["AFFECTE", "EXPLOITE"], to: "AFFECTE", label: "Réaffecter à une autre cellule", commentRequired: true, audit: "report.ipp_reassign" },
-  exploit: { from: ["AFFECTE"], to: "EXPLOITE", label: "Exploitation terminée (à valider par l'IPA)", commentRequired: false, audit: "report.ipp_exploit" },
-  return: { from: ["EXPLOITE"], to: "AFFECTE", label: "Renvoyer à la cellule", commentRequired: true, audit: "report.ipp_return" },
-  validate: { from: ["EXPLOITE"], to: "VALIDE", label: "Valider et transmettre à l'IPP", commentRequired: false, audit: "report.ipp_validate" },
-  sign: { from: ["VALIDE"], to: "SIGNE", label: "Signer (IPP)", commentRequired: false, audit: "report.ipp_sign" },
-  refuse: { from: ["VALIDE"], to: "AFFECTE", label: "Renvoyer à la cellule (IPP)", commentRequired: true, audit: "report.ipp_refuse" },
+  exploit: { from: ["AFFECTE"], to: "EXPLOITE", label: "Exploitation terminée", commentRequired: false, audit: "report.ipp_exploit" },
+  return: { from: ["EXPLOITE"], to: "AFFECTE", label: "Rouvrir l'exploitation", commentRequired: true, audit: "report.ipp_return" },
 };
 
 /** Signature de l'IPP principal : `reports.validate` à portée organisation (hors cellule). */
@@ -206,16 +233,16 @@ export function holdsIppSignature(actor: Pick<CellActor, "permissions">, organiz
 }
 
 /**
- * L'acteur peut-il faire cette étape ? Secrétariat : envoyer et réaffecter
- * (jamais après la validation) ; exploitant de la cellule : terminer
- * l'exploitation ; IPA de la cellule (chef de cellule) : renvoyer à la
- * cellule, valider et transmettre à l'IPP ; IPP principal : signer, ou
- * renvoyer à la cellule. Le Super Admin (assistance technique) peut tout
- * faire, tracé à son nom.
+ * L'acteur peut-il faire cette étape ? Secrétariat : envoyer et réaffecter ;
+ * exploitant de la cellule : terminer l'exploitation ; exploitant ou IPA de la
+ * cellule : la rouvrir (motif). Un rapport source d'une synthèse soumise,
+ * validée ou signée de sa cellule ne change plus de cellule ni d'état. Le
+ * Super Admin (assistance technique) peut tout faire, tracé à son nom.
  */
 export function canActOnTrack(actor: CellActor, track: IppTrackInfo, action: TrackAction): boolean {
   if (track.organizationId !== actor.organizationId) return false;
   if (!TRACK_ACTIONS[action].from.includes(track.stage)) return false;
+  if (track.locked && action !== "assign") return false;
   if (isSuperAdmin(actor.roles)) return true;
   switch (action) {
     case "assign":
@@ -224,11 +251,7 @@ export function canActOnTrack(actor: CellActor, track: IppTrackInfo, action: Tra
     case "exploit":
       return holdsCell(actor, PERMISSIONS.REPORTS_REVIEW_CELL, track.cellId);
     case "return":
-    case "validate":
-      return holdsCell(actor, PERMISSIONS.REPORTS_SIGN_CELL, track.cellId);
-    case "sign":
-    case "refuse":
-      return holdsIppSignature(actor, track.organizationId);
+      return isCellReader(actor, track.cellId);
   }
 }
 
@@ -236,9 +259,43 @@ export function availableTrackActions(actor: CellActor, track: IppTrackInfo): Tr
   return (Object.keys(TRACK_ACTIONS) as TrackAction[]).filter((a) => canActOnTrack(actor, track, a));
 }
 
-/** Périmètre affiché d'une fonction de cellule : « cellule IPAF », ou « cellule à choisir ». */
-export function cellRoleSuffix(role: { key: string; cellCode?: string | null }): string | null {
-  if (role.key !== ROLE_KEYS.EXPLOITANT_IPP && role.key !== ROLE_KEYS.IPA) return null;
-  if (role.cellCode) return `cellule ${role.cellCode}`;
-  return role.key === ROLE_KEYS.EXPLOITANT_IPP ? "cellule à choisir" : "sans cellule";
+// ─── Affectation à une cellule : accès et libellés (décisions du 2026-10-09) ─
+
+/**
+ * IPA ou exploitant de l'IPP sans cellule active : compte « en attente
+ * d'affectation ». La validation du compte ne suffit pas : sans affectation,
+ * AUCUN droit métier (loadUserAccess renvoie des permissions vides) et aucun
+ * espace de travail — jamais de repli provincial. Les exploitants de POOL ne
+ * sont pas concernés. Aucune exception pour un compte qui cumule une autre
+ * fonction (point signalé, docs/exploitants-ipp-cellules.md § 8).
+ */
+export function awaitingCellAssignment(roles: readonly { key: string; cellId?: string | null }[]): boolean {
+  return CELL_BOUND_ROLE_KEYS.some((key) => {
+    const held = roles.filter((r) => r.key === key);
+    return held.length > 0 && !held.some((r) => r.cellId);
+  });
+}
+
+export const AWAITING_CELL_MESSAGE = "Votre compte est en attente d'affectation à une cellule. Veuillez contacter l'administrateur.";
+
+/** Nom de la cellule sans « cellule » en tête : « Évaluation », « de l'IPAF ». */
+export function cellDisplayName(name: string): string {
+  return name.trim().replace(/^cellule\s+/i, "") || name.trim();
+}
+
+/**
+ * Fonction et cellule affichées : « IPA — Responsable de la cellule
+ * Évaluation », « Exploitant — Cellule Évaluation » ; sans cellule :
+ * « … — en attente d'affectation à une cellule ». null pour une autre fonction.
+ */
+export function cellAssignmentLabel(role: { key: string; cellName?: string | null; cellCode?: string | null }): string | null {
+  const cell = role.cellName ? cellDisplayName(role.cellName) : role.cellCode ?? null;
+  if (role.key === ROLE_KEYS.IPA) return cell ? `IPA — Responsable de la cellule ${cell}` : "IPA — en attente d'affectation à une cellule";
+  if (role.key === ROLE_KEYS.EXPLOITANT_IPP) return cell ? `Exploitant — Cellule ${cell}` : "Exploitant — en attente d'affectation à une cellule";
+  return null;
+}
+
+/** Libellé d'une fonction dans l'en-tête, le profil, les tableaux de bord : fonction et périmètre réel. */
+export function roleDisplayLabel(role: { key: string; label: string; cellName?: string | null; cellCode?: string | null }, poolName?: string | null): string {
+  return cellAssignmentLabel(role) ?? (poolName ? `${role.label} — POOL ${poolName}` : role.label);
 }

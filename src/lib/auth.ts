@@ -22,7 +22,10 @@ const providers: Provider[] = [
       const user = await verifyCredentials(parsed.data.identifier, parsed.data.password);
       if (!user) return null;
 
-      const { roles, permissions } = await loadUserAccess(user.id);
+      const { roles, permissions, awaitingCell } = await loadUserAccess(user.id, { viewMode: null });
+      // IPA ou exploitant de l'IPP sans cellule : identifiants justes, mais
+      // aucune session (loginAction affiche le message d'attente).
+      if (awaitingCell) return null;
 
       return {
         id: user.id,
@@ -60,7 +63,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (account?.provider === "google") {
         if (!user.email) return false;
         const dbUser = await prisma.user.findUnique({ where: { email: user.email.toLowerCase() } });
-        return Boolean(dbUser && dbUser.status === "ACTIVE");
+        if (!dbUser || dbUser.status !== "ACTIVE") return false;
+        if ((await loadUserAccess(dbUser.id, { viewMode: null })).awaitingCell) return "/login?compte=attente-cellule";
+        return true;
       }
       return true;
     },
@@ -100,6 +105,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.isSuperAdmin = access.superAdmin;
         session.user.canViewAs = access.canViewAs;
         session.user.viewMode = access.viewMode;
+        session.user.awaitingCell = access.awaitingCell;
       }
       return session;
     },

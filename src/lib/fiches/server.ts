@@ -7,6 +7,7 @@ import { OFFICIAL_FICHES, commonHeaderFields, resolveFicheDef } from "@/lib/fich
 import { formatReportNumber, initialsOf, schoolYearOf } from "@/lib/fiches/calculs";
 import type { FicheData, FicheDef, FicheScope, FicheValues, PrefillKey } from "@/lib/fiches/types";
 import { WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
+import { SYNTHESIS_LINKS_SELECT } from "@/lib/fiches/report-scope";
 
 // ---------------------------------------------------------------------------
 // Inscription des définitions officielles en base
@@ -110,6 +111,7 @@ export const FORM_INCLUDE = {
     include: {
       status: true,
       ippTrack: true,
+      synthesisSources: SYNTHESIS_LINKS_SELECT,
       comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
       statusHistory: { include: { changedBy: true }, orderBy: { createdAt: "asc" } },
     },

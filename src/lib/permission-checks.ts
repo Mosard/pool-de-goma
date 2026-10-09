@@ -9,7 +9,7 @@ import { CUSTOM_ROLE_GRANTORS, ROLE_GRANTORS, ROLE_KEYS, type PermissionKey, typ
  */
 export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string; cellId?: string | null };
 /** `cellId` : cellule de la fonction (exploitant de l'IPP), ou dont la personne est l'IPA responsable. */
-export type SessionRole = { key: string; label: string; poolId: string | null; cellId?: string | null; cellCode?: string | null };
+export type SessionRole = { key: string; label: string; poolId: string | null; cellId?: string | null; cellCode?: string | null; cellName?: string | null };
 
 /**
  * `poolId: null` sur une permission signifie une portée organisation (accès
