@@ -103,9 +103,7 @@ export default async function SecretariatPage() {
                 <th className="px-4 py-3">Cellule</th>
                 <th className="px-4 py-3">IPA responsable</th>
                 <th className="px-4 py-3 text-right">En exploitation</th>
-                <th className="px-4 py-3 text-right">À valider (IPA)</th>
-                <th className="px-4 py-3 text-right">Transmis à l&apos;IPP</th>
-                <th className="px-4 py-3 text-right">Signés (IPP)</th>
+                <th className="px-4 py-3 text-right">Exploités</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -118,8 +116,6 @@ export default async function SecretariatPage() {
                   <td className="px-4 py-3">{c.ipa?.name ?? "—"}</td>
                   <td className="px-4 py-3 text-right">{count(c.id, "AFFECTE")}</td>
                   <td className="px-4 py-3 text-right">{count(c.id, "EXPLOITE")}</td>
-                  <td className="px-4 py-3 text-right">{count(c.id, "VALIDE")}</td>
-                  <td className="px-4 py-3 text-right">{count(c.id, "SIGNE")}</td>
                 </tr>
               ))}
             </tbody>

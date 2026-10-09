@@ -3,7 +3,9 @@
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
-import { hasPendingRequestFor } from "@/lib/accounts";
+import { hasPendingRequestFor, verifyCredentials } from "@/lib/accounts";
+import { loadUserAccess } from "@/lib/permissions";
+import { AWAITING_CELL_MESSAGE } from "@/lib/cells/rules";
 
 export type LoginState = {
   errors?: { identifier?: string; password?: string };
@@ -40,6 +42,11 @@ export async function loginAction(
     return {};
   } catch (error) {
     if (error instanceof AuthError) {
+      // Identifiants justes, mais IPA ou exploitant de l'IPP sans cellule : seul ce message.
+      const user = await verifyCredentials(parsed.data.identifier, parsed.data.password);
+      if (user && (await loadUserAccess(user.id, { viewMode: null })).awaitingCell) {
+        return { formError: AWAITING_CELL_MESSAGE };
+      }
       // Seul l'auteur d'une demande en attente (qui connaît son mot de passe)
       // apprend qu'elle n'est pas encore validée ; sinon message neutre.
       if (await hasPendingRequestFor(parsed.data.identifier, parsed.data.password)) {

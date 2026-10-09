@@ -4,7 +4,7 @@
 // l'équipe métier (IPP, informaticien, Super Admin — permission pools.manage
 // sur toute l'organisation). Aucune cellule n'est créée par le code.
 // Contrôles serveur : droits relus en base, compte officiel, sigle unique,
-// IPA réel de l'organisation et responsable d'une seule cellule (D2).
+// IPA désigné par src/lib/cells/assignments.ts (même règle que la Direction).
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -13,7 +13,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { ForbiddenError, loadUserAccess, requireOfficialActor } from "@/lib/permissions";
-import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { PERMISSIONS } from "@/lib/rbac-data";
+import { setCellIpa } from "@/lib/cells/assignments";
 
 export type CellFormState = { error?: string; ok?: boolean };
 
@@ -27,18 +28,6 @@ async function requireCellManager() {
   if (!permissions.some((p) => p.permissionKey === PERMISSIONS.POOLS_MANAGE && p.poolId === null && !p.cellId)) throw new ForbiddenError();
   await requireOfficialActor(user.id);
   return user;
-}
-
-/** IPA choisi : compte officiel de l'organisation, qui exerce RÉELLEMENT la fonction d'IPA. */
-async function checkIpa(ipaId: string | null, organizationId: string, cellId: string | null): Promise<string | null> {
-  if (!ipaId) return null;
-  const ipa = await prisma.user.findFirst({
-    where: { id: ipaId, organizationId, isDemo: false, roles: { some: { role: { key: ROLE_KEYS.IPA } } } },
-    select: { id: true, cellLed: { select: { id: true, code: true } } },
-  });
-  if (!ipa) return "Cet IPA est introuvable, de démonstration, ou n'exerce pas la fonction d'IPP adjoint.";
-  if (ipa.cellLed && ipa.cellLed.id !== cellId) return `Cet IPA est déjà responsable de la cellule ${ipa.cellLed.code} : un IPA n'a qu'une cellule.`;
-  return null;
 }
 
 export async function saveCellAction(_prev: CellFormState, formData: FormData): Promise<CellFormState> {
@@ -58,33 +47,40 @@ export async function saveCellAction(_prev: CellFormState, formData: FormData): 
   const existing = cellId ? await prisma.cell.findFirst({ where: { id: cellId, organizationId: actor.organizationId } }) : null;
   if (cellId && !existing) return { error: "Cellule introuvable." };
   if (existing && !existing.active) return { error: "Cellule archivée : réactivez-la d'abord." };
-  const ipaError = await checkIpa(ipaId, actor.organizationId, cellId);
-  if (ipaError) return { error: ipaError };
 
+  let saved;
   try {
-    const saved = existing
-      ? await prisma.cell.update({ where: { id: existing.id }, data: { code, name, ipaId } })
-      : await prisma.cell.create({ data: { organizationId: actor.organizationId, code, name, ipaId } });
+    saved = existing
+      ? await prisma.cell.update({ where: { id: existing.id }, data: { code, name } })
+      : await prisma.cell.create({ data: { organizationId: actor.organizationId, code, name } });
     await logAudit({
       actorId: actor.id,
       organizationId: actor.organizationId,
       action: existing ? "cell.update" : "cell.create",
       entityType: "Cell",
       entityId: saved.id,
-      oldValue: existing ? { code: existing.code, name: existing.name, ipaId: existing.ipaId } : undefined,
-      newValue: { code, name, ipaId },
+      oldValue: existing ? { code: existing.code, name: existing.name } : undefined,
+      newValue: { code, name },
     });
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: "Ce sigle ou cet IPA est déjà utilisé par une autre cellule." };
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: "Ce sigle est déjà utilisé par une autre cellule." };
+    throw e;
+  }
+  // IPA responsable : même écriture que l'espace Direction (historique, poste public, droits).
+  try {
+    await setCellIpa(actor, { cellId: saved.id, ipaId, via: "cellules" });
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
     throw e;
   }
   revalidatePath("/parametres/cellules");
+  revalidatePath("/direction");
   return { ok: true };
 }
 
 /**
- * Archiver une cellule : elle ne reçoit plus de rapports, ses exploitants
- * perdent l'accès (permissions de cellule inactives) et son IPA est libéré.
+ * Archiver une cellule : elle ne reçoit plus de rapports, son IPA est libéré
+ * (historique fermé) et ses exploitants passent « en attente d'affectation ».
  * Rien n'est supprimé : rapports, historique et rattachements restent.
  */
 export async function setCellActiveAction(cellId: string, active: boolean) {
@@ -92,15 +88,17 @@ export async function setCellActiveAction(cellId: string, active: boolean) {
   const cell = await prisma.cell.findFirst({ where: { id: cellId, organizationId: actor.organizationId } });
   if (!cell) throw new ForbiddenError("Cellule introuvable.");
   if (cell.active === active) return;
-  await prisma.cell.update({ where: { id: cell.id }, data: { active, ...(active ? {} : { ipaId: null }) } });
+  if (!active && cell.ipaId) await setCellIpa(actor, { cellId: cell.id, ipaId: null, via: "cellules", reason: "Cellule archivée" });
+  await prisma.cell.update({ where: { id: cell.id }, data: { active } });
   await logAudit({
     actorId: actor.id,
     organizationId: actor.organizationId,
     action: active ? "cell.reactivate" : "cell.archive",
     entityType: "Cell",
     entityId: cell.id,
-    oldValue: { active: cell.active, ipaId: cell.ipaId },
-    newValue: { active, ipaId: active ? cell.ipaId : null },
+    oldValue: { active: cell.active },
+    newValue: { active },
   });
   revalidatePath("/parametres/cellules");
+  revalidatePath("/direction");
 }

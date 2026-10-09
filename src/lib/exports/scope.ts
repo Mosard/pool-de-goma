@@ -7,7 +7,7 @@ import type { Prisma } from "@prisma/client";
 import { readableCells, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { reportsOfAuthor, reportsOfOrganization, reportsOfPool } from "@/lib/fiches/report-scope";
-import { CELL_VISIBLE_STAGES, IPP_VISIBLE_STAGES, holdsRouteIpp, readsSignedOnly } from "@/lib/cells/rules";
+import { CELL_VISIBLE_STAGES, TRANSMITTED_SYNTHESIS_STATUSES, holdsRouteIpp, readsSignedOnly } from "@/lib/cells/rules";
 
 /** Permissions qui donnent accès aux rapports des autres (exploiter, valider). */
 export const REVIEW_KEYS: readonly string[] = [PERMISSIONS.REPORTS_REVIEW_POOL, PERMISSIONS.REPORTS_REVIEW_PROVINCE, PERMISSIONS.REPORTS_VALIDATE];
@@ -48,9 +48,9 @@ export function demoWhere(isDemo: boolean): Prisma.ReportWhereInput {
  * Rapports que la personne peut voir et exporter — même règle que la lecture
  * d'un rapport (canReadReport, src/lib/cells/rules.ts) : les siens ; ceux des
  * POOL qu'elle exploite ; toute l'organisation pour une portée provinciale
- * (l'IPP principal : seulement ce que les cellules ont signé, et
- * l'historique) ; le secrétariat : la branche IPP ; une cellule : les
- * rapports qui lui sont affectés.
+ * (l'IPP principal : seulement les rapports sources d'une synthèse de
+ * cellule validée et transmise, et l'historique) ; le secrétariat : la
+ * branche IPP ; une cellule : les rapports qui lui sont affectés.
  */
 export function scopeWhere(subject: ExportSubject): Prisma.ReportWhereInput {
   const org = subject.organizationId;
@@ -59,7 +59,17 @@ export function scopeWhere(subject: ExportSubject): Prisma.ReportWhereInput {
   if (held.some((p) => p.poolId === null)) {
     visible.push(
       readsSignedOnly(subject.roles)
-        ? { AND: [reportsOfOrganization(org), { ippTrack: { is: { OR: [{ stage: { in: [...IPP_VISIBLE_STAGES] } }, { legacy: true }] } } }] }
+        ? {
+            AND: [
+              reportsOfOrganization(org),
+              {
+                OR: [
+                  { synthesisSources: { some: { synthesis: { cellId: { not: null }, status: { in: [...TRANSMITTED_SYNTHESIS_STATUSES] as ("VALIDE" | "SIGNE")[] } } } } },
+                  { ippTrack: { is: { legacy: true } } },
+                ],
+              },
+            ],
+          }
         : reportsOfOrganization(org)
     );
   }

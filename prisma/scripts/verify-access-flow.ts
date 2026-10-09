@@ -59,6 +59,13 @@ async function main() {
   await step("IPP : retrait individuel d'une permission héritée et ajout d'une autre, avec audit", async () => {
     // Étape rejouable sur la même base locale : on part d'un compte sans ajustement.
     await prisma.userPermission.deleteMany({ where: { userId: exploitantIpp.id } });
+    // Décision du 2026-10-09 : sans cellule, un exploitant de l'IPP n'a aucun droit ; on le rattache à une cellule de test.
+    const testCell = await prisma.cell.upsert({
+      where: { organizationId_code: { organizationId: exploitantIpp.organizationId, code: "VERIF-ACCES" } },
+      update: { active: true },
+      create: { organizationId: exploitantIpp.organizationId, code: "VERIF-ACCES", name: "Cellule de vérification" },
+    });
+    await prisma.userRole.updateMany({ where: { userId: exploitantIpp.id, role: { key: ROLE_KEYS.EXPLOITANT_IPP } }, data: { cellId: testCell.id } });
     const before = await auditCount();
     const res = await applyAccessChanges(ipp.id, exploitantIpp.id, {
       ...NOTHING,

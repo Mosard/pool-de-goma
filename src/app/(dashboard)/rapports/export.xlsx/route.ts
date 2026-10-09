@@ -9,6 +9,8 @@ import { EXPORT_LIMIT, buildReportsWorkbook, loadExportSubject, loadReportRows, 
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return new Response("Connexion requise.", { status: 401 });
+  // IPA ou exploitant de l'IPP sans cellule : aucun accès métier, même par appel direct.
+  if (session.user.awaitingCell) return new Response("Compte en attente d'affectation à une cellule.", { status: 403 });
 
   const subject = await loadExportSubject(session.user.id);
   const raw = Object.fromEntries(new URL(request.url).searchParams.entries());

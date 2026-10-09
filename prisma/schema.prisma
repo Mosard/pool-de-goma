@@ -189,6 +189,10 @@ model DirectionAttribution {
   // Compte titulaire (rôle « ipa »). Vide : place non attribuée.
   holderId       String?
   holder         User?        @relation("DirectionHolder", fields: [holderId], references: [id], onDelete: SetNull)
+  // Poste relié à une cellule : le titulaire est l'IPA responsable de la
+  // cellule, recopié à chaque affectation (jamais saisi à la main).
+  cellId         String?      @unique
+  cell           Cell?        @relation(fields: [cellId], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -396,9 +400,10 @@ model User {
   synthesisVersions       SynthesisVersion[]
   // Cellule dont ce compte (IPA) est responsable : une seule (décision D2).
   cellLed                 Cell?                    @relation("CellIpa")
+  cellIpaTerms            CellIpaAssignment[]      @relation("CellIpaTermIpa")
+  cellIpaTermsGiven       CellIpaAssignment[]      @relation("CellIpaTermAssignedBy")
+  cellIpaTermsEnded       CellIpaAssignment[]      @relation("CellIpaTermEndedBy")
   ippEvents               ReportIppEvent[]         @relation("IppEventActor")
-  ippTracksSigned         ReportIppTrack[]         @relation("IppSignedBy")
-  ippTracksValidated      ReportIppTrack[]         @relation("IppValidatedBy")
 
   @@index([organizationId])
   @@index([poolId])
@@ -704,8 +709,9 @@ model Cell {
   // Sigle saisi par l'équipe métier (ex. « IPAF ») et intitulé affiché.
   code           String
   name           String
-  // IPA responsable, chef de cellule et signataire (décisions D2 et D6) :
-  // un IPA n'est responsable que d'une cellule.
+  // IPA responsable, chef de cellule (décisions D2 et D6) : un IPA n'est
+  // responsable que d'une cellule. État courant ; l'historique (auteur, dates)
+  // est dans CellIpaAssignment. Ne se modifie que par src/lib/cells/assignments.ts.
   ipaId          String?      @unique
   ipa            User?        @relation("CellIpa", fields: [ipaId], references: [id], onDelete: SetNull)
   active         Boolean      @default(true)
@@ -718,8 +724,35 @@ model Cell {
   ippEventsFrom ReportIppEvent[] @relation("IppEventFromCell")
   syntheses     Synthesis[]
   aiAnalyses    AiAnalysis[]
+  ipaTerms      CellIpaAssignment[]
+  // Poste de la Direction publique correspondant à la cellule : son titulaire
+  // est l'IPA responsable de la cellule.
+  direction     DirectionAttribution?
 
   @@unique([organizationId, code])
+}
+
+// Historique des responsabilités de cellule : une ligne par période pendant
+// laquelle un IPA a dirigé une cellule (jamais modifiée, sauf sa clôture).
+// L'historique ne donne aucun droit : seul Cell.ipaId compte.
+model CellIpaAssignment {
+  id           String    @id @default(cuid())
+  cellId       String
+  cell         Cell      @relation(fields: [cellId], references: [id], onDelete: Cascade)
+  ipaId        String
+  ipa          User      @relation("CellIpaTermIpa", fields: [ipaId], references: [id], onDelete: Cascade)
+  startedAt    DateTime  @default(now())
+  assignedById String?
+  assignedBy   User?     @relation("CellIpaTermAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  // Point d'entrée : « direction » (espace Direction), « cellules » (Paramètres) ou « reprise » (migration).
+  via          String
+  endedAt      DateTime?
+  endedById    String?
+  endedBy      User?     @relation("CellIpaTermEndedBy", fields: [endedById], references: [id], onDelete: SetNull)
+  endReason    String?
+
+  @@index([cellId, startedAt])
+  @@index([ipaId])
 }
 
 enum IppStage {
@@ -727,12 +760,10 @@ enum IppStage {
   AU_SECRETARIAT
   // Envoyé par le secrétariat à une cellule.
   AFFECTE
-  // Exploitation terminée par la cellule, en attente de la validation de l'IPA.
+  // Exploitation terminée par la cellule : le rapport peut entrer dans une
+  // synthèse collective. La validation (IPA) et la signature (IPP) portent sur
+  // la synthèse, jamais sur chaque rapport source (décision du 2026-10-09).
   EXPLOITE
-  // Validé par l'IPA (chef de cellule) et transmis à l'IPP pour signature.
-  VALIDE
-  // Signé par l'IPP principal.
-  SIGNE
 }
 
 model ReportIppTrack {
@@ -750,14 +781,6 @@ model ReportIppTrack {
   arrivedAt      DateTime     @default(now())
   assignedAt     DateTime?
   exploitedAt    DateTime?
-  // Validation par l'IPA (chef de cellule) et transmission à l'IPP.
-  validatedAt    DateTime?
-  validatedById  String?
-  validatedBy    User?        @relation("IppValidatedBy", fields: [validatedById], references: [id])
-  // Signature par l'IPP principal.
-  signedAt       DateTime?
-  signedById     String?
-  signedBy       User?        @relation("IppSignedBy", fields: [signedById], references: [id])
   updatedAt      DateTime     @updatedAt
 
   @@index([organizationId, stage])

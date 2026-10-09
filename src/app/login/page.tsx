@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { LoginForm } from "./login-form";
+import { AWAITING_CELL_MESSAGE } from "@/lib/cells/rules";
 
 export const metadata: Metadata = {
   title: "Connexion",
@@ -17,8 +18,9 @@ export default async function LoginPage({
   // Compte suspendu/désactivé dont le JWT est encore valide : le layout du
   // tableau de bord le renvoie ici — ne pas le rediriger à nouveau (boucle).
   const isInactive = compte === "inactif";
+  const awaitingCell = compte === "attente-cellule";
   const session = await auth();
-  if (session?.user && !isInactive) redirect("/dashboard");
+  if (session?.user && !isInactive && !awaitingCell) redirect("/dashboard");
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
@@ -32,6 +34,11 @@ export default async function LoginPage({
         {isInactive && (
           <p role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
             Ce compte n&apos;est pas actif. Contactez l&apos;administration de l&apos;Inspection.
+          </p>
+        )}
+        {awaitingCell && (
+          <p role="alert" className="mb-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+            {AWAITING_CELL_MESSAGE}
           </p>
         )}
         <LoginForm />

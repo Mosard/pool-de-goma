@@ -11,6 +11,9 @@ import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/p
 import { applyAdjustments, canAdjustPermission } from "@/lib/access-rules";
 import { scopeWhere } from "@/lib/exports/scope";
 import {
+  awaitingCellAssignment,
+  cellAssignmentLabel,
+  roleDisplayLabel,
   availableTrackActions,
   bindRolePermissions,
   canActOnTrack,
@@ -90,15 +93,19 @@ test("Ajustements : un ajout individuel ne redonne jamais d'accès provincial à
   assert.ok(canAdjustPermission(ipp, PERMISSIONS.REPORTS_REVIEW_PROVINCE, null, "GRANT", { roles: [{ key: ROLE_KEYS.CHARGE_MEDIAS }] }).ok, "autres fonctions inchangées");
 });
 
+const transmitted = (t: IppTrackInfo): IppTrackInfo => ({ ...t, transmitted: true });
+const locked = (t: IppTrackInfo): IppTrackInfo => ({ ...t, locked: true });
+
 test("Lecture : un exploitant ne lit que les rapports AFFECTÉS à sa cellule, jamais ceux d'une autre", () => {
   assert.ok(canReadReport(exploitC1, scope, track("AFFECTE", C1)));
-  assert.ok(canReadReport(exploitC1, scope, track("SIGNE", C1)));
+  assert.ok(canReadReport(exploitC1, scope, transmitted(track("EXPLOITE", C1))));
   assert.equal(canReadReport(exploitC1, scope, track("AFFECTE", C2)), false, "autre cellule");
   assert.equal(canReadReport(exploitC2, scope, track("EXPLOITE", C1)), false, "autre cellule");
+  assert.equal(canReadReport(exploitC2, scope, transmitted(track("EXPLOITE", C1))), false, "autre cellule, même transmis");
   assert.equal(canReadReport(exploitC1, scope, track("AU_SECRETARIAT", null)), false, "pas encore affecté");
   assert.equal(canReadReport(exploitC1, scope, null), false, "rapport hors branche IPP");
   assert.equal(canReadReport(exploitC1, { ...scope, organizationId: "autre-org" }, { ...track("AFFECTE", C1), organizationId: "autre-org" }), false);
-  for (const t of [track("AFFECTE", C1), track("SIGNE", C1), track("AU_SECRETARIAT", null, true)]) {
+  for (const t of [track("AFFECTE", C1), transmitted(track("EXPLOITE", C1)), track("AU_SECRETARIAT", null, true)]) {
     assert.equal(canReadReport(sansCellule, scope, t), false, "sans cellule : aucun accès de repli");
     assert.equal(canReadReport(ipaSansCellule, scope, t), false, "IPA sans cellule : aucun accès");
   }
@@ -106,22 +113,21 @@ test("Lecture : un exploitant ne lit que les rapports AFFECTÉS à sa cellule, j
   assert.equal(canReadReport(ipaC1, scope, track("EXPLOITE", C2)), false, "D4 : jamais une autre cellule");
 });
 
-test("Lecture : secrétariat (branche IPP), IPP (transmis par la cellule, signés, historique), Agent IPP plus rien, Super Admin tout", () => {
-  for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C2), track("SIGNE", C1)]) assert.ok(canReadReport(secretaire, scope, t));
+test("Lecture : secrétariat (branche IPP), IPP (sources d'une synthèse transmise, historique), Agent IPP plus rien, Super Admin tout", () => {
+  for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C2), track("EXPLOITE", C1)]) assert.ok(canReadReport(secretaire, scope, t));
   assert.equal(canReadReport(secretaire, scope, null), false, "hors branche IPP");
-  assert.ok(canReadReport(ipp, scope, track("VALIDE", C1)), "validé par l'IPA et transmis : l'IPP le lit pour le signer");
-  assert.ok(canReadReport(ipp, scope, track("SIGNE", C1)));
+  assert.ok(canReadReport(ipp, scope, transmitted(track("EXPLOITE", C1))), "source d'une synthèse validée par l'IPA et transmise");
   assert.ok(canReadReport(ipp, scope, track("AU_SECRETARIAT", null, true)), "historique antérieur");
   for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1)]) assert.equal(canReadReport(ipp, scope, t), false, t.stage);
   assert.ok(canReadReport(ipp, scope, null, { visit: true }), "pilotage : pages de visite");
-  for (const t of [track("AFFECTE", C1), track("SIGNE", C1), null]) {
+  for (const t of [track("AFFECTE", C1), transmitted(track("EXPLOITE", C1)), null]) {
     assert.equal(canReadReport(agentIpp, scope, t), false, "Agent IPP : ne lit plus toute la province (2026-10-09)");
     assert.ok(canReadReport(superAdmin, scope, t), "Super Admin : assistance technique");
   }
 });
 
 test("Branche POOL inchangée : exploitants et chef du POOL, auteur ; indépendante de la branche IPP", () => {
-  for (const t of [null, track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("SIGNE", C2)]) {
+  for (const t of [null, track("AU_SECRETARIAT", null), track("AFFECTE", C1), transmitted(track("EXPLOITE", C2))]) {
     assert.ok(canReadReport(exploitPoolA, scope, t), "exploitant du POOL");
     assert.ok(canReadReport(chefA, scope, t), "chef du POOL");
     assert.ok(canReadReport(inspA, scope, t), "auteur");
@@ -137,25 +143,21 @@ test("Exploiter (commenter, partie réservée) : POOL ou cellule destinataire ; 
   assert.equal(canWorkOnReport(sansCellule, scope, track("AFFECTE", C1)), false);
 });
 
-test("Étapes : secrétariat envoie et réaffecte ; exploitant termine ; l'IPA de SA cellule valide et transmet ; l'IPP signe ou renvoie", () => {
+test("Étapes : secrétariat envoie et réaffecte ; exploitant termine ; la cellule rouvre ; validation et signature portées par la synthèse", () => {
   assert.deepEqual(availableTrackActions(secretaire, track("AU_SECRETARIAT", null)), ["assign"]);
   assert.deepEqual(availableTrackActions(secretaire, track("AFFECTE", C1)), ["reassign"]);
-  for (const st of ["VALIDE", "SIGNE"] as const) assert.deepEqual(availableTrackActions(secretaire, track(st, C1)), [], `jamais après la validation (${st})`);
+  assert.deepEqual(availableTrackActions(secretaire, locked(track("EXPLOITE", C1))), [], "source d'une synthèse soumise : plus de réaffectation");
   assert.deepEqual(availableTrackActions(exploitC1, track("AFFECTE", C1)), ["exploit"]);
   assert.deepEqual(availableTrackActions(exploitC2, track("AFFECTE", C1)), [], "autre cellule");
-  assert.deepEqual(availableTrackActions(ipaC1, track("EXPLOITE", C1)), ["return", "validate"]);
-  assert.equal(canActOnTrack(ipaC1, track("EXPLOITE", C2), "validate"), false, "autre cellule");
-  assert.equal(canActOnTrack(exploitC1, track("EXPLOITE", C1), "validate"), false, "l'exploitant ne valide pas");
-  assert.equal(canActOnTrack(ipaC1, track("VALIDE", C1), "sign"), false, "l'IPA ne signe pas : c'est l'IPP");
-  assert.deepEqual(availableTrackActions(ipp, track("VALIDE", C1)), ["sign", "refuse"]);
-  assert.deepEqual(availableTrackActions(ipp, track("EXPLOITE", C1)), [], "pas avant la validation de l'IPA");
-  assert.deepEqual(availableTrackActions(ipp, track("SIGNE", C1)), [], "signé : fin du circuit");
+  assert.deepEqual(availableTrackActions(ipaC1, track("EXPLOITE", C1)), ["return"]);
+  assert.deepEqual(availableTrackActions(ipaC1, locked(track("EXPLOITE", C1))), [], "verrouillé par la synthèse");
+  assert.equal(canActOnTrack(ipaC1, track("EXPLOITE", C2), "return"), false, "autre cellule");
   for (const a of [agentIpp, exploitPoolA, sansCellule, ipaSansCellule]) {
-    for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1), track("VALIDE", C1)]) {
+    for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1)]) {
       assert.deepEqual(availableTrackActions(a, t), [], `${a.id} ${t.stage}`);
     }
   }
-  for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1)]) assert.deepEqual(availableTrackActions(ipp, t), [], `IPP ${t.stage}`);
+  for (const t of [track("AU_SECRETARIAT", null), track("AFFECTE", C1), track("EXPLOITE", C1)]) assert.deepEqual(availableTrackActions(ipp, t), [], `IPP ${t.stage}`);
   assert.equal(canActOnTrack(secretaire, { ...track("AU_SECRETARIAT", null), organizationId: "autre-org" }, "assign"), false);
 });
 
@@ -164,7 +166,29 @@ test("Listes et exports : même périmètre que la lecture (cellule, secrétaria
   assert.match(where(exploitC1), /"cellId":\{"in":\["cell-1"\]\}/);
   assert.doesNotMatch(where(exploitC1), /cell-2/);
   assert.doesNotMatch(where(sansCellule), /ippTrack/, "sans cellule : ses propres rapports seulement");
-  assert.match(where(ipp), /"stage":\{"in":\["VALIDE","SIGNE"\]\}/);
+  assert.match(where(ipp), /"synthesisSources":\{"some":\{"synthesis":\{"cellId":\{"not":null\},"status":\{"in":\["VALIDE","SIGNE"\]\}/);
   assert.match(where(secretaire), /"ippTrack":\{"isNot":null\}/);
   assert.equal(where(agentIpp), where({ ...agentIpp, permissions: [] }), "Agent IPP : plus de portée provinciale, ses propres rapports seulement");
+});
+
+test("Affectation obligatoire : IPA et exploitant de l'IPP sans cellule en attente ; exploitant de POOL jamais concerné", () => {
+  assert.equal(awaitingCellAssignment(sansCellule.roles), true);
+  assert.equal(awaitingCellAssignment(ipaSansCellule.roles), true);
+  assert.equal(awaitingCellAssignment(exploitC1.roles), false);
+  assert.equal(awaitingCellAssignment(ipaC1.roles), false);
+  for (const a of [exploitPoolA, chefA, inspA, secretaire, ipp, superAdmin, agentIpp]) assert.equal(awaitingCellAssignment(a.roles), false, a.id);
+  // Cumul : la fonction de cellule sans cellule bloque, même avec une autre fonction (point signalé, sans exception).
+  assert.equal(awaitingCellAssignment([...exploitPoolA.roles, ...sansCellule.roles]), true);
+  assert.equal(awaitingCellAssignment([...superAdmin.roles, ...ipaSansCellule.roles]), true);
+  // Plusieurs rattachements d'exploitant : une cellule suffit.
+  assert.equal(awaitingCellAssignment([...sansCellule.roles, ...exploitC1.roles]), false);
+});
+
+test("Libellés : fonction et cellule réelles, jamais « tous les POOL » pour une cellule", () => {
+  assert.equal(cellAssignmentLabel({ key: ROLE_KEYS.IPA, cellName: "Évaluation" }), "IPA — Responsable de la cellule Évaluation");
+  assert.equal(cellAssignmentLabel({ key: ROLE_KEYS.EXPLOITANT_IPP, cellName: "Cellule Évaluation" }), "Exploitant — Cellule Évaluation");
+  assert.equal(cellAssignmentLabel({ key: ROLE_KEYS.EXPLOITANT_IPP, cellName: "cellule de l'IPAF" }), "Exploitant — Cellule de l'IPAF");
+  assert.equal(cellAssignmentLabel({ key: ROLE_KEYS.IPA }), "IPA — en attente d'affectation à une cellule");
+  assert.equal(cellAssignmentLabel({ key: ROLE_KEYS.EXPLOITANT_POOL, cellName: "X" }), null);
+  assert.equal(roleDisplayLabel({ key: ROLE_KEYS.EXPLOITANT_POOL, label: "Exploitant de pool" }, "Goma"), "Exploitant de pool — POOL Goma");
 });

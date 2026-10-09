@@ -1,7 +1,8 @@
 import type { NextAuthConfig } from "next-auth";
 
-export type SessionRole = { key: string; label: string; poolId: string | null };
-export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string };
+// Mêmes formes que src/lib/permission-checks.ts (cellule comprise), sans l'importer (Edge).
+export type SessionRole = { key: string; label: string; poolId: string | null; cellId?: string | null; cellCode?: string | null; cellName?: string | null };
+export type SessionPermission = { permissionKey: string; poolId: string | null; organizationId: string; cellId?: string | null };
 
 // Edge-safe config: no providers, no Prisma/bcrypt. Used by middleware (Edge
 // runtime, 1MB size limit) to check session presence without pulling in the

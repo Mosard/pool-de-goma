@@ -13,6 +13,7 @@ import { REPORT_SCOPE_INCLUDE, reportScope, reportsOfOrganization, reportsOfPool
 import type { ViewMode } from "@/lib/view-mode";
 import { CURRENT_FORMAT_VERSION, missingSections, readContent, sanitizeContent } from "@/lib/synthese/format";
 import {
+  CELL_EXPLOITED_STAGES,
   EXPLOITED_REPORT_STATUSES,
   SYNTHESIS_STATUS_LABELS,
   SYNTHESIS_VALIDATOR_ROLE_KEYS,
@@ -112,7 +113,7 @@ function includeCheck(actor: SynthesisActor, s: IncludeScope, r: ReportWithScope
 export async function eligibleReports(actor: SynthesisActor, target: SynthesisTarget) {
   if (!canAuthorTarget(actor, target)) throw new ForbiddenError();
   const where: Prisma.ReportWhereInput = target.cellId
-    ? { ippTrack: { is: { organizationId: actor.organizationId, cellId: target.cellId, stage: { in: ["EXPLOITE", "VALIDE", "SIGNE"] } } } }
+    ? { ippTrack: { is: { organizationId: actor.organizationId, cellId: target.cellId, stage: { in: [...CELL_EXPLOITED_STAGES] as "EXPLOITE"[] } } } }
     : {
         AND: [target.poolId ? reportsOfPool(target.poolId) : reportsOfOrganization(actor.organizationId)],
         status: { key: { in: [...EXPLOITED_REPORT_STATUSES] } },

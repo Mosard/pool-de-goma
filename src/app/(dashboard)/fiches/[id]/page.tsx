@@ -22,7 +22,7 @@ export default async function FichePage({ params }: { params: Promise<{ id: stri
   const pool = formPool(form);
   const authorId = formAuthorId(form);
   // Règle centrale : la branche IPP du rapport (s'il existe) borne la lecture (cellule, IPP : signé seulement).
-  const track = trackInfo(form.report?.ippTrack);
+  const track = trackInfo(form.report?.ippTrack, form.report?.synthesisSources);
   if (!canReadScope(user, { poolId: pool?.id ?? null, organizationId: pool?.organizationId ?? null, authorId }, track)) notFound();
 
   const isAuthor = authorId === user.id;

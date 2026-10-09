@@ -11,7 +11,7 @@ import {
 import { canGrantRole, hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
 import { applyAdjustments } from "@/lib/access-rules";
-import { bindRolePermissions, withoutProvincialFallback } from "@/lib/cells/rules";
+import { awaitingCellAssignment, bindRolePermissions, withoutProvincialFallback } from "@/lib/cells/rules";
 
 // Fonctions pures réexportées (les composants client importent directement
 // permission-checks, ce module-ci lisant la base et les cookies).
@@ -43,6 +43,11 @@ export type UserAccess = {
   canViewAs: boolean;
   /** Fonction simulée (« Voir comme »), sinon null. */
   viewMode: ActiveViewMode | null;
+  /**
+   * IPA ou exploitant de l'IPP sans cellule active (awaitingCellAssignment) :
+   * aucune permission, aucun espace de travail, jusqu'à son affectation.
+   */
+  awaitingCell: boolean;
 };
 
 async function loadRealAccess(userId: string) {
@@ -55,21 +60,24 @@ async function loadRealAccess(userId: string) {
       where: { userId },
       include: {
         role: { include: { rolePermissions: { include: { permission: true } } } },
-        cell: { select: { id: true, code: true, active: true, organizationId: true } },
+        cell: { select: { id: true, code: true, name: true, active: true, organizationId: true } },
       },
     }),
     prisma.userPermission.findMany({ where: { userId }, select: { poolId: true, effect: true, permission: { select: { key: true } } } }),
     // Cellule dont la personne est l'IPA responsable (une seule, décision D2).
-    prisma.cell.findFirst({ where: { ipaId: userId, active: true, organizationId }, select: { id: true, code: true } }),
+    prisma.cell.findFirst({ where: { ipaId: userId, active: true, organizationId }, select: { id: true, code: true, name: true } }),
   ]);
 
   // Une cellule archivée ou d'une autre organisation ne rattache rien.
-  const usable = (c: { id: string; code: string; active: boolean; organizationId: string } | null) =>
+  const usable = (c: { id: string; code: string; name: string; active: boolean; organizationId: string } | null) =>
     c && c.active && c.organizationId === organizationId ? c : null;
   const roles: SessionRole[] = userRoles.map((ur) => {
     const cell = ur.role.key === ROLE_KEYS.IPA ? ipaCell : usable(ur.cell);
-    return { key: ur.role.key, label: ur.role.label, poolId: ur.poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null };
+    return { key: ur.role.key, label: ur.role.label, poolId: ur.poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null, cellName: cell?.name ?? null };
   });
+  // Sans affectation valide à une cellule : aucun droit, quelle que soit la
+  // fonction cumulée (relu à chaque requête : un retrait vaut immédiatement).
+  if (awaitingCellAssignment(roles)) return { organizationId, roles, permissions: [] as SessionPermission[], awaitingCell: true };
   // Permissions de cellule : uniquement pour la cellule de la personne (jamais de repli provincial).
   const fromRoles: SessionPermission[] = userRoles.flatMap((ur) =>
     bindRolePermissions({
@@ -89,7 +97,7 @@ async function loadRealAccess(userId: string) {
     organizationId
   );
   const permissions = withoutProvincialFallback(roles, fromRoles, adjusted);
-  return { organizationId, roles, permissions };
+  return { organizationId, roles, permissions, awaitingCell: false };
 }
 
 /**
@@ -105,7 +113,7 @@ async function simulateAccess(
   mode: ViewMode,
   organizationId: string,
   limitTo: SessionPermission[] | null
-): Promise<Omit<UserAccess, "superAdmin" | "canViewAs"> | null> {
+): Promise<Omit<UserAccess, "superAdmin" | "canViewAs" | "awaitingCell"> | null> {
   if (RESTRICTED_ROLE_KEYS.includes(mode.role)) return null;
   const role = await prisma.roleDefinition.findUnique({
     where: { key: mode.role },
@@ -146,7 +154,7 @@ async function simulateAccess(
     organizationId,
   }).filter((p) => !limitTo || ippExtra || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
   return {
-    roles: [{ key: role.key, label: role.label, poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null }],
+    roles: [{ key: role.key, label: role.label, poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null, cellName: cell?.name ?? null }],
     permissions,
     viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null, cellId: cell?.id ?? null, cellName: cell?.name ?? null },
   };
@@ -166,17 +174,18 @@ async function simulateAccess(
  */
 export async function loadUserAccess(userId: string, opts?: { viewMode?: ViewMode | null }): Promise<UserAccess> {
   const real = await loadRealAccess(userId);
-  if (!real) return { roles: [], permissions: [], superAdmin: false, canViewAs: false, viewMode: null };
+  if (!real) return { roles: [], permissions: [], superAdmin: false, canViewAs: false, viewMode: null, awaitingCell: false };
+  if (real.awaitingCell) return { roles: real.roles, permissions: [], superAdmin: false, canViewAs: false, viewMode: null, awaitingCell: true };
 
   const superAdmin = real.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
   const canViewAs = real.roles.some((r) => VIEW_MODE_HOLDER_ROLE_KEYS.includes(r.key));
-  const own = { roles: real.roles, permissions: real.permissions, superAdmin, canViewAs, viewMode: null };
+  const own = { roles: real.roles, permissions: real.permissions, superAdmin, canViewAs, viewMode: null, awaitingCell: false };
   if (!canViewAs) return own;
 
   const mode = opts && "viewMode" in opts ? opts.viewMode : await readViewMode();
   const simulated = mode ? await simulateAccess(mode, real.organizationId, superAdmin ? null : real.permissions) : null;
   if (!simulated) return own;
-  return { ...simulated, superAdmin, canViewAs };
+  return { ...simulated, superAdmin, canViewAs, awaitingCell: false };
 }
 
 /** Revérifie la permission côté serveur en interrogeant la base (ne jamais se fier uniquement au JWT). */

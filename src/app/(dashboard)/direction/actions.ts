@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireOfficialActor, requirePermission, requirePublicationAuthority } from "@/lib/permissions";
+import { ForbiddenError, requireOfficialActor, requirePermission, requirePublicationAuthority } from "@/lib/permissions";
+import { setCellIpa, setExploitantCell } from "@/lib/cells/assignments";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
 import { revalidatePublicPools } from "@/lib/public-pools";
@@ -18,7 +19,10 @@ import { CONFIRMED_IPPA_ATTRIBUTIONS } from "@/components/homepage/homepage-data
 //   direction.manage (IPP principal, Super Admin), compte officiel ;
 // - autorisation de publication (IPP principal ou adjoint) :
 //   requirePublicationAuthority (publication.manage + IPP, informaticien ou
-//   Super Admin, compte officiel), JAMAIS pour son propre compte.
+//   Super Admin, compte officiel), JAMAIS pour son propre compte ;
+// - affectation des IPA et des exploitants aux cellules : src/lib/cells/assignments.ts
+//   (mêmes relations que Paramètres › Cellules : Cell.ipaId, UserRole.cellId),
+//   qui déterminent les droits internes ; habilitation selon ROLE_GRANTORS.
 
 export type DirectionFormState = {
   errors?: Record<string, string>;
@@ -143,14 +147,32 @@ export async function updateAttributionAction(
   if (holderId && !(await findEligibleAdjoint(holderId, actor.organizationId))) {
     return { errors: { holderId: "Choisissez un compte officiel actif ayant la fonction d'IPP adjoint." } };
   }
+  // Poste relié à une cellule : son titulaire EST l'IPA responsable de la
+  // cellule (droits internes), écrit par setCellIpa. Sans cellule : affichage public seulement.
+  const cellId = String(formData.get("cellId") ?? "") || null;
+  if (cellId) {
+    const cell = await prisma.cell.findFirst({ where: { id: cellId, organizationId: actor.organizationId, active: true }, select: { id: true } });
+    if (!cell) return { errors: { cellId: "Cellule introuvable ou archivée." } };
+    const linked = await prisma.directionAttribution.findFirst({ where: { cellId, id: { not: attribution.id } }, select: { label: true } });
+    if (linked) return { errors: { cellId: `Cette cellule est déjà reliée au poste « ${linked.label} ».` } };
+  }
 
-  const data = { label: parsed.data.label, position: parsed.data.position, holderId };
+  const data = { label: parsed.data.label, position: parsed.data.position, holderId, cellId };
   try {
-    await prisma.directionAttribution.update({ where: { id: attribution.id }, data });
+    if (cellId) {
+      // D'abord l'affectation (tous les contrôles) ; le poste n'est relié qu'ensuite.
+      await setCellIpa(actor, { cellId, ipaId: holderId, via: "direction" });
+      await prisma.directionAttribution.update({ where: { id: attribution.id }, data });
+    } else {
+      await prisma.directionAttribution.update({ where: { id: attribution.id }, data });
+    }
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { errors: { label: "Cette attribution existe déjà." } };
+      return String(e.meta?.target ?? "").includes("cellId")
+        ? { errors: { cellId: "Cette cellule est déjà reliée à un autre poste." } }
+        : { errors: { label: "Cette attribution existe déjà." } };
     }
+    if (e instanceof ForbiddenError) return { formError: e.message };
     throw e;
   }
 
@@ -160,7 +182,7 @@ export async function updateAttributionAction(
     action: "direction.attribution_update",
     entityType: "DirectionAttribution",
     entityId: attribution.id,
-    oldValue: { label: attribution.label, position: attribution.position, holderId: attribution.holderId },
+    oldValue: { label: attribution.label, position: attribution.position, holderId: attribution.holderId, cellId: attribution.cellId },
     newValue: data,
   });
 
@@ -227,4 +249,44 @@ export async function updateDirectionAuthorizationAction(
 
   revalidatePath("/direction");
   return { success: true };
+}
+
+// ─── Affectations aux cellules (droits internes) ──────────────────────────
+
+async function assignmentActor() {
+  const actor = await currentActor();
+  await requireOfficialActor(actor.id);
+  return { id: actor.id, organizationId: actor.organizationId };
+}
+
+function revalidateAssignments() {
+  revalidateDirection();
+  revalidatePath("/parametres/cellules");
+  // Libellés de fonction (en-tête) et droits de la personne affectée : relus à sa prochaine requête.
+  revalidatePath("/", "layout");
+}
+
+async function runAssignment(fn: () => Promise<void>): Promise<DirectionFormState> {
+  try {
+    await fn();
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { formError: e.message };
+    throw e;
+  }
+  revalidateAssignments();
+  return { success: true };
+}
+
+/** IPA responsable d'une cellule (choix « — » : retrait). */
+export async function assignCellIpaAction(cellId: string, _prev: DirectionFormState, formData: FormData): Promise<DirectionFormState> {
+  const actor = await assignmentActor();
+  const ipaId = String(formData.get("ipaId") ?? "") || null;
+  return runAssignment(() => setCellIpa(actor, { cellId, ipaId, via: "direction" }));
+}
+
+/** Cellule d'un exploitant de l'IPP (choix « — » : retrait, le compte passe en attente d'affectation). */
+export async function assignExploitantAction(userId: string, _prev: DirectionFormState, formData: FormData): Promise<DirectionFormState> {
+  const actor = await assignmentActor();
+  const cellId = String(formData.get("cellId") ?? "") || null;
+  return runAssignment(() => setExploitantCell(actor, { userId, cellId, via: "direction" }));
 }

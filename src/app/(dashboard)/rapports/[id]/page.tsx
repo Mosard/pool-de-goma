@@ -49,7 +49,7 @@ export default async function RapportDetailPage({
   const user = session.user;
   const scope = reportScope(report);
   const statuses = await workflowStatusById();
-  // Règle centrale de lecture (POOL, secrétariat, cellule, IPP : signé seulement), droits relus en base.
+  // Règle centrale de lecture (POOL, secrétariat, cellule, IPP : sources d'une synthèse transmise), droits relus en base.
   const actor = await loadCellActor(user.id);
   const track = reportTrack(report);
   if (!canReadScope(actor, scope, track)) notFound();
@@ -150,7 +150,7 @@ export default async function RapportDetailPage({
             <h3 className="text-sm font-semibold text-gray-900">Circuit de l&apos;IPP</h3>
             <Badge
               color={
-                report.ippTrack.stage === "SIGNE" ? "green" : report.ippTrack.stage === "AU_SECRETARIAT" || report.ippTrack.stage === "VALIDE" ? "orange" : "blue"
+                report.ippTrack.stage === "EXPLOITE" ? "green" : report.ippTrack.stage === "AU_SECRETARIAT" ? "orange" : "blue"
               }
             >
               {IPP_STAGE_LABELS[report.ippTrack.stage]}

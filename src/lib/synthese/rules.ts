@@ -50,7 +50,7 @@ export const SYNTHESIS_VALIDATOR_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP, 
 export const EXPLOITED_REPORT_STATUSES: readonly string[] = [W.EN_EXPLOITATION, W.TRANSMIS, W.EN_ATTENTE_VALIDATION, W.VALIDE, W.CLOTURE];
 
 /** Synthèse de cellule : rapports dont la cellule a terminé l'exploitation (branche IPP). */
-export const CELL_EXPLOITED_STAGES: readonly string[] = ["EXPLOITE", "SIGNE"];
+export const CELL_EXPLOITED_STAGES: readonly string[] = ["EXPLOITE"];
 
 export const EDITABLE_STATUSES: readonly SynthesisStatusKey[] = ["BROUILLON", "A_CORRIGER"];
 

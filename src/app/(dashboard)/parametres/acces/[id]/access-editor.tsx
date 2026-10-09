@@ -27,7 +27,7 @@ type Props = {
     cells: { id: string; code: string; name: string }[];
   }[];
   catalog: { key: string; label: string; category: string }[];
-  inherited: { permissionKey: string; poolId: string | null; roles: string[] }[];
+  inherited: { permissionKey: string; poolId: string | null; roles: string[]; scopeLabel?: string }[];
   adjustments: Adjustment[];
 };
 
@@ -232,7 +232,7 @@ export function AccessEditor(p: Props) {
                                 onChange={(e) => setAdjustment(c.key, i.poolId, e.target.checked ? null : "REVOKE")}
                               />
                               <span>
-                                {scopeLabel(i.poolId)} — <span className="text-gray-500">héritée de la fonction ({i.roles.join(", ")})</span>
+                                {i.scopeLabel ?? scopeLabel(i.poolId)} — <span className="text-gray-500">héritée de la fonction ({i.roles.join(", ")})</span>
                                 {revoked && <span className="ml-1 rounded bg-red-50 px-1.5 text-xs text-red-700">retirée individuellement</span>}
                                 {!v.ok && <span className="block text-xs text-gray-400">{v.reason}</span>}
                               </span>

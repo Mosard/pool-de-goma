@@ -5,22 +5,27 @@
 
 import type { Prisma } from "@prisma/client";
 import type { SessionPermission, SessionRole } from "@/lib/permission-checks";
-import { canReadReport, type IppTrackInfo } from "@/lib/cells/rules";
+import { canReadReport, withSynthesisFlags, type IppTrackInfo } from "@/lib/cells/rules";
 
 const INSPECTION_INCLUDE = { include: { school: { include: { pool: true } }, inspector: true } } as const;
+
+/** Synthèses qui citent le rapport : transmission à l'IPP et verrouillage de la branche IPP. */
+export const SYNTHESIS_LINKS_SELECT = { select: { synthesis: { select: { status: true, cellId: true } } } } as const;
 
 export const REPORT_SCOPE_INCLUDE = {
   status: true,
   inspection: INSPECTION_INCLUDE,
   form: { include: { formTemplate: true, author: true, pool: true, inspection: INSPECTION_INCLUDE } },
-  // Branche IPP (secrétariat, cellule, signature) : nécessaire à la règle de lecture.
+  // Branche IPP (secrétariat, cellule) et synthèses qui le citent : nécessaires à la règle de lecture.
   ippTrack: true,
+  synthesisSources: SYNTHESIS_LINKS_SELECT,
 } satisfies Prisma.ReportInclude;
 
 /** Branche IPP d'un rapport chargé avec REPORT_SCOPE_INCLUDE. */
 export function reportTrack(report: ReportWithScope): IppTrackInfo | null {
   const t = report.ippTrack;
-  return t ? { stage: t.stage, cellId: t.cellId, legacy: t.legacy, organizationId: t.organizationId } : null;
+  const base = t ? { stage: t.stage, cellId: t.cellId, legacy: t.legacy, organizationId: t.organizationId } : null;
+  return withSynthesisFlags(base, report.synthesisSources);
 }
 
 export type ReportWithScope = Prisma.ReportGetPayload<{ include: typeof REPORT_SCOPE_INCLUDE }>;

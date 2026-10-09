@@ -1,6 +1,7 @@
 // Branche IPP des rapports, côté serveur (docs/exploitants-ipp-cellules.md § 6) :
 // arrivée au secrétariat dès la soumission, envoi à une cellule, réaffectation,
-// fin d'exploitation, renvoi et signature par l'IPA. Chaque étape est
+// fin d'exploitation et réouverture. La validation (IPA) et la signature (IPP)
+// portent sur la synthèse collective (src/lib/synthese). Chaque étape est
 // contrôlée sur les droits RELUS EN BASE (loadUserAccess), tracée
 // (ReportIppEvent : rapport, auteur, date, cellule) et auditée.
 
@@ -10,12 +11,13 @@ import { ForbiddenError, loadUserAccess, requireOfficialActorUnlessDemoTarget, u
 import { logAudit } from "@/lib/audit";
 import { notify } from "@/lib/notifications/dispatcher";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
-import { REPORT_SCOPE_INCLUDE, reportScope } from "@/lib/fiches/report-scope";
+import { REPORT_SCOPE_INCLUDE, reportScope, reportTrack } from "@/lib/fiches/report-scope";
 import {
   IPP_STAGE_LABELS,
   TRACK_ACTIONS,
   canActOnTrack,
   canReadReport,
+  withSynthesisFlags,
   type CellActor,
   type IppTrackInfo,
   type TrackAction,
@@ -33,15 +35,23 @@ export async function loadCellActor(userId: string, opts: { real?: boolean } = {
   return { id: userId, organizationId: user.organizationId, roles, permissions };
 }
 
-export function trackInfo(t: { stage: string; cellId: string | null; legacy: boolean; organizationId: string } | null | undefined): IppTrackInfo | null {
-  return t ? { stage: t.stage as IppTrackInfo["stage"], cellId: t.cellId, legacy: t.legacy, organizationId: t.organizationId } : null;
+/**
+ * Branche IPP d'un rapport, avec ce qu'en disent les synthèses qui le citent
+ * (`sources` : Report.synthesisSources chargé avec SYNTHESIS_LINKS_SELECT).
+ */
+export function trackInfo(
+  t: { stage: string; cellId: string | null; legacy: boolean; organizationId: string } | null | undefined,
+  sources: readonly { synthesis: { status: string; cellId: string | null } }[] | null | undefined
+): IppTrackInfo | null {
+  const base = t ? { stage: t.stage as IppTrackInfo["stage"], cellId: t.cellId, legacy: t.legacy, organizationId: t.organizationId } : null;
+  return withSynthesisFlags(base, sources);
 }
 
 /** Lecture d'un rapport par l'acteur (règle centrale), relue en base. */
 export async function canActorReadReport(actor: CellActor, reportId: string): Promise<boolean> {
-  const report = await prisma.report.findUnique({ where: { id: reportId }, include: { ...REPORT_SCOPE_INCLUDE, ippTrack: true } });
+  const report = await prisma.report.findUnique({ where: { id: reportId }, include: REPORT_SCOPE_INCLUDE });
   if (!report) return false;
-  return canReadReport(actor, reportScope(report), trackInfo(report.ippTrack));
+  return canReadReport(actor, reportScope(report), reportTrack(report));
 }
 
 /**
@@ -75,15 +85,6 @@ async function cellMembers(cellId: string, opts: { exploitants: boolean; ipa: bo
   return [...ids];
 }
 
-/** Comptes qui détiennent RÉELLEMENT la fonction d'IPP principal (lecture de ce qui est signé). */
-async function ippHolders(organizationId: string): Promise<string[]> {
-  const users = await prisma.user.findMany({
-    where: { organizationId, status: "ACTIVE", roles: { some: { role: { key: ROLE_KEYS.IPP } } } },
-    select: { id: true },
-  });
-  return users.map((u) => u.id);
-}
-
 /** Secrétaires de l'IPP (et tout détenteur effectif de reports.route_ipp). */
 export async function secretariatHolders(organizationId: string, isDemo: boolean): Promise<string[]> {
   return usersHoldingPermission({ permissionKey: PERMISSIONS.REPORTS_ROUTE_IPP, organizationId, where: { isDemo } });
@@ -99,10 +100,13 @@ export type TrackActionInput = { action: TrackAction; cellId?: string | null; co
  */
 export async function applyTrackAction(actorId: string, reportId: string, input: TrackActionInput) {
   const actor = await loadCellActor(actorId);
-  const report = await prisma.report.findUnique({ where: { id: reportId }, include: { ...REPORT_SCOPE_INCLUDE, ippTrack: true } });
+  const report = await prisma.report.findUnique({ where: { id: reportId }, include: REPORT_SCOPE_INCLUDE });
   if (!report?.ippTrack) throw new ForbiddenError("Rapport introuvable dans le circuit de l'IPP.");
   const scope = reportScope(report);
-  const track = trackInfo(report.ippTrack)!;
+  const track = reportTrack(report)!;
+  if (track.locked && input.action !== "assign") {
+    throw new ForbiddenError("Ce rapport fait partie d'une synthèse soumise, validée ou signée : il ne change plus de cellule ni d'état.");
+  }
   const rule = TRACK_ACTIONS[input.action];
   if (!rule || !canActOnTrack(actor, track, input.action)) throw new ForbiddenError("Étape non autorisée pour votre fonction ou pour ce stade.");
   await requireOfficialActorUnlessDemoTarget(actorId, scope.isDemo);
@@ -124,9 +128,6 @@ export async function applyTrackAction(actorId: string, reportId: string, input:
   if (input.action === "assign" || input.action === "reassign") Object.assign(data, { cellId, assignedAt: now, exploitedAt: null });
   if (input.action === "exploit") data.exploitedAt = now;
   if (input.action === "return") data.exploitedAt = null;
-  if (input.action === "validate") Object.assign(data, { validatedAt: now, validatedById: actorId });
-  if (input.action === "refuse") Object.assign(data, { exploitedAt: null, validatedAt: null, validatedById: null });
-  if (input.action === "sign") Object.assign(data, { signedAt: now, signedById: actorId });
 
   await prisma.$transaction(async (tx) => {
     // Garde contre une action concurrente : le stade et la cellule n'ont pas changé depuis la lecture.
@@ -159,10 +160,8 @@ export async function applyTrackAction(actorId: string, reportId: string, input:
   // Notifications limitées à la cellule concernée (jamais à toute la province).
   const title = `${scope.title} — ${IPP_STAGE_LABELS[rule.to]}`;
   let recipients: string[] = [];
-  if (["assign", "reassign", "return", "refuse", "sign"].includes(input.action)) recipients = await cellMembers(cellId!, { exploitants: true, ipa: true });
+  if (["assign", "reassign", "return"].includes(input.action)) recipients = await cellMembers(cellId!, { exploitants: true, ipa: true });
   if (input.action === "exploit") recipients = await cellMembers(cellId!, { exploitants: false, ipa: true });
-  // Validé par l'IPA : transmis à l'IPP principal pour signature.
-  if (input.action === "validate") recipients = await ippHolders(track.organizationId);
   for (const userId of recipients) {
     if (userId === actorId) continue;
     await notify({ userId, event: rule.audit, title, body: comment ?? rule.label, data: { reportId } });

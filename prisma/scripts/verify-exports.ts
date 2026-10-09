@@ -45,7 +45,7 @@ async function main() {
   await step("cellules (2026-10-08/09) : exploitant IPP sans cellule → rien ; IPP → seulement ce que les cellules ont transmis, et l'historique", async () => {
     assert.equal((await all(exploitantIpp)).rows.length, 0, "aucun accès provincial de repli");
     const visible = await prisma.report.findMany({
-      where: { ippTrack: { is: { OR: [{ stage: { in: ["VALIDE", "SIGNE"] } }, { legacy: true }] } } },
+      where: { OR: [{ synthesisSources: { some: { synthesis: { cellId: { not: null }, status: { in: ["VALIDE", "SIGNE"] } } } } }, { ippTrack: { is: { legacy: true } } }] },
       select: { id: true },
     });
     const allowed = new Set(visible.map((r) => r.id));
