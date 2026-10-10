@@ -119,7 +119,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
                         </span>
                       </span>
                       {canEnroll && !m.validTo && (
-                        <ActionForm action={endMappingAction.bind(null, m.id)} submit="Terminer" variant="ghost" className="flex flex-wrap items-end gap-2">
+                        <ActionForm action={endMappingAction.bind(null, m.id)} submit="Terminer" variant="ghost" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[30rem] sm:grid-cols-3">
                           <Input type="date" name="end" defaultValue={today} aria-label="Fin (exclue)" />
                           <Input name="reason" placeholder="Motif" aria-label="Motif" />
                         </ActionForm>

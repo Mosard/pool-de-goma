@@ -137,7 +137,7 @@ export default async function SettingsPage() {
           </ul>
         )}
         {canEdit && (
-          <ActionForm action={addCalendarDayAction} submit="Ajouter au calendrier" className="mt-3 flex flex-wrap items-end gap-3">
+          <ActionForm action={addCalendarDayAction} submit="Ajouter au calendrier" className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
             <Input type="date" name="date" required aria-label="Date" />
             <Input name="label" required placeholder="Motif (ex. décision de l'Inspection)" aria-label="Motif" />
           </ActionForm>
