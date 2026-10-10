@@ -5,7 +5,7 @@
 // Les actions serveur appliquent les mêmes règles sur les droits relus en base.
 
 import { canGrantRole, hasPermission, isChiefOf, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
-import { CELL_PERMISSION_KEYS, PERMISSIONS, ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
+import { CELL_PERMISSION_KEYS, PERMISSIONS, PRESENCE_NOT_INDIVIDUALLY_GRANTABLE, ROLE_KEYS, type PermissionKey } from "@/lib/rbac-data";
 import { provincialGrantRefusal } from "@/lib/cells/rules";
 
 export type AdjustmentEffect = "GRANT" | "REVOKE";
@@ -22,6 +22,8 @@ export const NOT_INDIVIDUALLY_GRANTABLE: readonly PermissionKey[] = [
   PERMISSIONS.USERS_MANAGE,
   PERMISSIONS.PUBLICATION_MANAGE,
   PERMISSIONS.DIRECTION_MANAGE,
+  // Présence du personnel (2026-10-10) : seulement par la fonction ou la cellule.
+  ...PRESENCE_NOT_INDIVIDUALLY_GRANTABLE,
 ];
 
 /** Fonctions qui gèrent les accès à l'échelle de la province. */
@@ -41,6 +43,8 @@ export function applyAdjustments(base: SessionPermission[], adjustments: Adjustm
   }
   for (const a of adjustments) {
     if (a.effect !== "GRANT" || CELL_PERMISSION_KEYS.includes(a.permissionKey)) continue;
+    // Un ajout individuel du module de présence, même déjà en base, reste sans effet.
+    if ((PRESENCE_NOT_INDIVIDUALLY_GRANTABLE as readonly string[]).includes(a.permissionKey)) continue;
     out.set(`${a.permissionKey}|${a.poolId ?? ""}|`, { permissionKey: a.permissionKey, poolId: a.poolId, organizationId });
   }
   return [...out.values()];

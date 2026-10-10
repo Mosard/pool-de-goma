@@ -5,7 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
 import { loadUserAccess } from "@/lib/permissions";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { CELL_MANDATE_LABELS } from "@/lib/cells/rules";
+import { holdsPersonnelCellManage } from "@/lib/cells/personnel";
 import { CellForm } from "./cell-form";
+import { MandateForm, PersonnelIpaForm } from "./personnel-forms";
 import { setCellActiveAction } from "./actions";
 
 // Cellules de l'IPP : saisies par l'équipe métier. Chaque cellule a au plus
@@ -15,15 +18,19 @@ export default async function CellulesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const { permissions } = await loadUserAccess(session.user.id);
-  if (!permissions.some((p) => p.permissionKey === PERMISSIONS.POOLS_MANAGE && p.poolId === null && !p.cellId)) redirect("/dashboard");
   const org = session.user.organizationId;
+  // Gestion des cellules (pools.manage) ; vocation et responsable de la cellule
+  // du personnel (cells.personnel.manage, décision Q-A du 2026-10-10).
+  const canManageCells = permissions.some((p) => p.permissionKey === PERMISSIONS.POOLS_MANAGE && p.poolId === null && !p.cellId);
+  const canManagePersonnel = holdsPersonnelCellManage(permissions, org);
+  if (!canManageCells && !canManagePersonnel) redirect("/dashboard");
 
   const [cells, ipas, unattached] = await Promise.all([
     prisma.cell.findMany({
       where: { organizationId: org },
       orderBy: [{ active: "desc" }, { code: "asc" }],
       include: {
-        ipa: { select: { id: true, name: true } },
+        ipa: { select: { id: true, name: true, status: true, roles: { where: { role: { key: ROLE_KEYS.IPA } }, select: { id: true } } } },
         userRoles: { where: { role: { key: ROLE_KEYS.EXPLOITANT_IPP } }, select: { user: { select: { id: true, name: true, status: true } } } },
       },
     }),
@@ -40,6 +47,7 @@ export default async function CellulesPage() {
     }),
   ]);
   const ipaOptions = ipas.map((i) => ({ id: i.id, name: i.name, busyWith: i.cellLed?.code ?? null }));
+  const personnelCells = cells.filter((c) => c.active && c.mandate === "PERSONNEL");
   const ipasWithoutCell = ipas.filter((i) => !i.cellLed);
 
   return (
@@ -82,10 +90,19 @@ export default async function CellulesPage() {
         </Card>
       )}
 
-      <Card>
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">Nouvelle cellule</h2>
-        <CellForm ipas={ipaOptions} />
-      </Card>
+      {personnelCells.length > 1 && (
+        <Card className="border-red-200 bg-red-50 text-sm text-red-900">
+          Plusieurs cellules actives portent la vocation « Gestion du personnel » ({personnelCells.map((c) => c.code).join(", ")}) : aucun
+          responsable ne reçoit les pouvoirs de gestion du personnel tant qu&apos;il en reste plus d&apos;une.
+        </Card>
+      )}
+
+      {canManageCells && (
+        <Card>
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">Nouvelle cellule</h2>
+          <CellForm ipas={ipaOptions} allowPersonnelMandate={canManagePersonnel} />
+        </Card>
+      )}
 
       {cells.length === 0 ? (
         <EmptyState message="Aucune cellule saisie pour le moment." />
@@ -96,14 +113,32 @@ export default async function CellulesPage() {
               <h2 className="text-sm font-semibold text-gray-900">
                 {c.code} — {c.name} {!c.active && <Badge color="gray">Archivée</Badge>}
               </h2>
-              <form action={setCellActiveAction.bind(null, c.id, !c.active)}>
-                <Button type="submit" variant={c.active ? "danger" : "secondary"} className="!min-h-0 !px-3 !py-1 text-xs">
-                  {c.active ? "Archiver" : "Réactiver"}
-                </Button>
-              </form>
+              {canManageCells && (
+                <form action={setCellActiveAction.bind(null, c.id, !c.active)}>
+                  <Button type="submit" variant={c.active ? "danger" : "secondary"} className="!min-h-0 !px-3 !py-1 text-xs">
+                    {c.active ? "Archiver" : "Réactiver"}
+                  </Button>
+                </form>
+              )}
             </div>
-            {c.active && <CellForm cell={{ id: c.id, code: c.code, name: c.name, ipaId: c.ipaId }} ipas={ipaOptions} />}
+            {c.active && canManageCells && <CellForm cell={{ id: c.id, code: c.code, name: c.name, ipaId: c.ipaId }} ipas={ipaOptions} />}
+            {c.active && canManagePersonnel && (
+              <div className="mt-4 space-y-3 rounded-lg border border-gray-100 p-3">
+                <MandateForm cellId={c.id} mandate={c.mandate} />
+                {c.mandate === "PERSONNEL" && !canManageCells && (
+                  <PersonnelIpaForm cellId={c.id} cellCode={c.code} ipaId={c.ipaId} ipas={ipaOptions} />
+                )}
+              </div>
+            )}
+            {c.active && c.mandate === "PERSONNEL" && c.ipa && (c.ipa.status !== "ACTIVE" || c.ipa.roles.length === 0) && (
+              <p className="mt-2 text-xs text-red-700">
+                Responsable enregistré sans compte actif ou sans fonction d&apos;IPA : il n&apos;exerce aucun pouvoir du personnel.
+              </p>
+            )}
             <p className="mt-3 text-xs text-gray-600">
+              Vocation : <Badge color={c.mandate === "PERSONNEL" ? "blue" : "gray"}>{CELL_MANDATE_LABELS[c.mandate]}</Badge>
+            </p>
+            <p className="mt-1 text-xs text-gray-600">
               IPA : {c.ipa?.name ?? "à désigner"} · Exploitants :{" "}
               {c.userRoles.length === 0 ? "aucun" : c.userRoles.map((ur) => ur.user.name + (ur.user.status === "ACTIVE" ? "" : " (inactif)")).join(", ")}
             </p>

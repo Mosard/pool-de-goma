@@ -9,6 +9,7 @@ import { logAudit } from "@/lib/audit";
 import { normalizeProfilePhoto } from "@/lib/profile-photo";
 import { revalidatePublicPools } from "@/lib/public-pools";
 import { applyPublicationDecision, PUBLICATION_REASONS } from "@/lib/publication";
+import { changedFieldNames } from "@/lib/audit-fields";
 
 export type ProfileFormState = {
   errors?: Record<string, string>;
@@ -36,24 +37,28 @@ export async function updateProfileAction(
     return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
   }
 
-  await prisma.user.update({
+  const data = {
+    prenom: parsed.data.prenom || null,
+    postnom: parsed.data.postnom || null,
+    sex: parsed.data.sex || null,
+    phone: parsed.data.phone || null,
+    dateNaissance: parsed.data.dateNaissance ? new Date(parsed.data.dateNaissance) : null,
+    nombreEnfants: parsed.data.nombreEnfants ? Number(parsed.data.nombreEnfants) : null,
+  };
+  const before = await prisma.user.findUniqueOrThrow({
     where: { id: session.user.id },
-    data: {
-      prenom: parsed.data.prenom || null,
-      postnom: parsed.data.postnom || null,
-      sex: parsed.data.sex || null,
-      phone: parsed.data.phone || null,
-      dateNaissance: parsed.data.dateNaissance ? new Date(parsed.data.dateNaissance) : null,
-      nombreEnfants: parsed.data.nombreEnfants ? Number(parsed.data.nombreEnfants) : null,
-    },
+    select: { prenom: true, postnom: true, sex: true, phone: true, dateNaissance: true, nombreEnfants: true },
   });
+  await prisma.user.update({ where: { id: session.user.id }, data });
 
+  // Journal : noms des champs modifiés seulement, jamais leur contenu.
   await logAudit({
     actorId: session.user.id,
     organizationId: session.user.organizationId,
     action: "profile.update",
     entityType: "User",
     entityId: session.user.id,
+    metadata: { fields: changedFieldNames(before, data) },
   });
 
   revalidatePath("/profil");

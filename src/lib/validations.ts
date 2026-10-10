@@ -139,7 +139,13 @@ export const profileSchema = z.object({
   sex: z.enum(["M", "F"]).optional().or(z.literal("")),
   phone: z.string().optional().or(z.literal("")),
   dateNaissance: z.string().optional().or(z.literal("")),
-  nombreEnfants: z.string().optional().or(z.literal("")),
+  // Entier positif ou nul ; vide = non renseigné (un « 0 » saisi est conservé).
+  nombreEnfants: z
+    .string()
+    .trim()
+    .regex(/^\d{1,3}$/, "Nombre d'enfants : un nombre entier positif ou nul.")
+    .optional()
+    .or(z.literal("")),
 });
 
 export const transitionSchema = z.object({

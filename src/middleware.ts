@@ -19,6 +19,9 @@ const PUBLIC_PREFIXES = [
   // Vignettes publiques de la Direction de l'Inspection (revérifiées par la route).
   "/photos/direction/",
   "/inuka-tech",
+  // Réception des pointeuses : authentification technique par jeton, contrôlée
+  // dans chaque route (src/app/api/presence/v1/*), jamais par session.
+  "/api/presence/v1/",
 ];
 
 export default auth((req) => {

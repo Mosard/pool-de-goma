@@ -11,7 +11,13 @@ import {
 import { canGrantRole, hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
 import { applyAdjustments } from "@/lib/access-rules";
-import { awaitingCellAssignment, bindRolePermissions, withoutProvincialFallback } from "@/lib/cells/rules";
+import {
+  awaitingCellAssignment,
+  bindPersonnelHeadPermissions,
+  bindRolePermissions,
+  withoutProvincialFallback,
+  withoutReservedForSimulation,
+} from "@/lib/cells/rules";
 
 // Fonctions pures réexportées (les composants client importent directement
 // permission-checks, ce module-ci lisant la base et les cookies).
@@ -55,7 +61,7 @@ async function loadRealAccess(userId: string) {
   if (!dbUser || dbUser.status !== "ACTIVE") return null;
 
   const organizationId = dbUser.organizationId;
-  const [userRoles, adjustments, ipaCell] = await Promise.all([
+  const [userRoles, adjustments, ipaCell, activePersonnelCellCount] = await Promise.all([
     prisma.userRole.findMany({
       where: { userId },
       include: {
@@ -65,7 +71,12 @@ async function loadRealAccess(userId: string) {
     }),
     prisma.userPermission.findMany({ where: { userId }, select: { poolId: true, effect: true, permission: { select: { key: true } } } }),
     // Cellule dont la personne est l'IPA responsable (une seule, décision D2).
-    prisma.cell.findFirst({ where: { ipaId: userId, active: true, organizationId }, select: { id: true, code: true, name: true } }),
+    prisma.cell.findFirst({
+      where: { ipaId: userId, active: true, organizationId },
+      select: { id: true, code: true, name: true, active: true, mandate: true, organizationId: true },
+    }),
+    // Cellule du personnel : une seule active attendue (sinon aucun responsable).
+    prisma.cell.count({ where: { organizationId, active: true, mandate: "PERSONNEL" } }),
   ]);
 
   // Une cellule archivée ou d'une autre organisation ne rattache rien.
@@ -89,6 +100,11 @@ async function loadRealAccess(userId: string) {
       organizationId,
     })
   );
+  // Responsable de la cellule du personnel : pouvoirs liés à son affectation
+  // active (Cell.ipaId) à la cellule active de vocation PERSONNEL, et à elle seule.
+  if (userRoles.some((ur) => ur.role.key === ROLE_KEYS.IPA)) {
+    fromRoles.push(...bindPersonnelHeadPermissions({ ipaCell, activePersonnelCellCount, organizationId }));
+  }
   // Ajustements individuels (écran « Gérer les accès ») : retraits puis ajouts ;
   // aucun ajout ne redonne un accès provincial à une personne rattachée à une cellule.
   const adjusted = applyAdjustments(
@@ -153,9 +169,12 @@ async function simulateAccess(
     ipaCellId: cell?.id ?? null,
     organizationId,
   }).filter((p) => !limitTo || ippExtra || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
+  // Jamais de pouvoir métier réservé en simulation (Super Admin compris), et
+  // jamais les pouvoirs du responsable du personnel (non ajoutés ici).
+  const simulated = withoutReservedForSimulation(permissions);
   return {
     roles: [{ key: role.key, label: role.label, poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null, cellName: cell?.name ?? null }],
-    permissions,
+    permissions: simulated,
     viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null, cellId: cell?.id ?? null, cellName: cell?.name ?? null },
   };
 }

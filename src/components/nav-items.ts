@@ -11,6 +11,7 @@ import {
   Newspaper,
   Sparkles,
   Inbox,
+  Clock,
 } from "lucide-react";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
@@ -143,10 +144,12 @@ export const EXPLOITATION_TABS: NavTab[] = [
   { href: "/syntheses", label: "Synthèses", permission: SYNTHESES_KEYS },
 ];
 
-/** Espace « Inspecteurs » : la liste et les affectations des écoles aux itinérants. */
+/** Espace « Inspecteurs » : la liste, les affectations des écoles aux itinérants et les fiches du personnel. */
 export const INSPECTEURS_TABS: NavTab[] = [
   { href: "/inspecteurs", label: "Liste des inspecteurs", permission: PERMISSIONS.USERS_MANAGE },
   { href: "/affectations", label: "Affectations", permission: PERMISSIONS.ASSIGNMENTS_MANAGE },
+  // Consultation globale des fiches (lecture seule), revérifiée par la page.
+  { href: "/personnel", label: "Fiches du personnel", permission: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL },
 ];
 
 /**
@@ -163,9 +166,34 @@ export const COMPTES_TABS: NavTab[] = [
   },
 ];
 
+/**
+ * Espace « Présence du personnel » (2026-10-11). « Ma présence » : tout compte
+ * connecté (sa propre présence). Les autres onglets suivent leur permission,
+ * revérifiée par chaque page : vue globale (presence.read_all) ou de cellule
+ * (presence.read_cell), appareils et associations, horaires et calendrier.
+ */
+export const PRESENCE_TABS: NavTab[] = [
+  { href: "/presence/moi", label: "Ma présence" },
+  { href: "/presence/aujourdhui", label: "Aujourd'hui", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_READ_CELL] },
+  { href: "/presence/periode", label: "Période", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_READ_CELL] },
+  {
+    href: "/presence/synchronisation",
+    label: "État de synchronisation",
+    permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_DEVICES_MANAGE, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE],
+  },
+  {
+    href: "/presence/appareils",
+    label: "Appareils et associations",
+    permission: [PERMISSIONS.PRESENCE_DEVICES_MANAGE, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE],
+    children: [{ href: "/presence/simulateur", label: "Simulateur", permission: [PERMISSIONS.PRESENCE_DEVICES_MANAGE] }],
+  },
+  { href: "/presence/parametres", label: "Horaires et calendrier", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_SCHEDULE_MANAGE] },
+];
+
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/ecoles", label: "Écoles", icon: School },
+  { href: "/presence/moi", label: "Présence", icon: Clock, tabs: PRESENCE_TABS },
   { href: "/inspections", label: "Exploitation", icon: ClipboardList, tabs: EXPLOITATION_TABS },
   // Secrétariat de l'IPP : rapports arrivés, à envoyer à une cellule.
   { href: "/secretariat", label: "Secrétariat", icon: Inbox, permission: PERMISSIONS.REPORTS_ROUTE_IPP },
@@ -183,7 +211,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Inspool (son POOL), IPP adjoints, IPP, informaticien, Super Admin.
   { href: "/ia", label: "IA", icon: Sparkles, permission: PERMISSIONS.AI_ANALYZE },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
-  { href: "/parametres", label: "Paramètres", icon: Settings, permission: PERMISSIONS.POOLS_MANAGE },
+  // Cellule du personnel (vocation, responsable) : aussi sans pools.manage (secrétaires, IPA du personnel).
+  { href: "/parametres", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.POOLS_MANAGE, PERMISSIONS.CELLS_PERSONNEL_MANAGE] },
 ];
 
 /** Espace à onglets contenant cette page, s'il y en a un. */

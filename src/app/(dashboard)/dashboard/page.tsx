@@ -21,6 +21,7 @@ import {
 } from "@/lib/dashboard/data";
 import { loadActor, type SynthesisActor } from "@/lib/synthese/server";
 import { cellAssignmentLabel, cellDisplayName } from "@/lib/cells/rules";
+import { MyPresenceCard } from "../presence/my-presence-card";
 
 // Tableau de bord : une section par fonction du compte connecté, chacune
 // limitée au périmètre décidé par resolveDashboardScopes (session côté
@@ -90,6 +91,7 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-10">
+      <MyPresenceCard userId={user.id} />
       {scopes.length > 1 && (
         <Card className="border-blue-100 bg-blue-50/60 text-sm text-blue-900">
           Vous exercez {scopes.length} fonctions. Chaque section ci-dessous est limitée au périmètre de la fonction indiquée.
