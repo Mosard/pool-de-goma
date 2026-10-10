@@ -16,6 +16,7 @@ import { notify } from "@/lib/notifications/dispatcher";
 import { ForbiddenError, requireOfficialActorUnlessDemoTarget, requireRoleGrant } from "@/lib/permissions";
 import { ROLE_KEYS } from "@/lib/rbac-data";
 import { cellDisplayName } from "@/lib/cells/rules";
+import { reconcileStaffCellTerms } from "@/lib/cells/history";
 
 /** Point d'entrée de l'affectation, conservé dans l'historique. */
 export type AssignmentVia = "direction" | "cellules";
@@ -74,6 +75,8 @@ export async function setCellIpa(
     if (p.ipaId) await tx.cellIpaAssignment.create({ data: { cellId: cell.id, ipaId: p.ipaId, assignedById: actor.id, via: p.via, startedAt: now } });
     // Poste public relié à la cellule : son titulaire suit l'IPA responsable.
     await tx.directionAttribution.updateMany({ where: { cellId: cell.id }, data: { holderId: p.ipaId } });
+    // Historique d'appartenance (présence du personnel) : nouvel et ancien responsable.
+    await reconcileStaffCellTerms([p.ipaId, cell.ipaId], p.via, tx);
   });
 
   await logAudit({
@@ -129,6 +132,7 @@ export async function setExploitantCell(actor: Actor, p: { userId: string; cellI
     const [kept, ...extra] = rows;
     if (extra.length > 0) await tx.userRole.deleteMany({ where: { id: { in: extra.map((r) => r.id) } } });
     await tx.userRole.update({ where: { id: kept.id }, data: { cellId: cell?.id ?? null } });
+    await reconcileStaffCellTerms([target.id], p.via, tx);
   });
 
   await logAudit({

@@ -23,6 +23,22 @@ export const PERMISSIONS = {
   CONTENT_WRITE: "content.write",
   CONTENT_PUBLISH: "content.publish",
   AI_ANALYZE: "ai.analyze",
+  // Présence du personnel et fiches (décisions du 2026-10-10,
+  // PRESENCES-BIOMETRIQUES-ANALYSE.md, Révision 2). Aucune ne découle d'une autre.
+  PRESENCE_READ_ALL: "presence.read_all",
+  PRESENCE_READ_CELL: "presence.read_cell",
+  PERSONNEL_RECORDS_READ_ALL: "personnel.records.read_all",
+  PRESENCE_DEVICES_MANAGE: "presence.devices.manage",
+  PRESENCE_ENROLLMENT_MANAGE: "presence.enrollment.manage",
+  PRESENCE_SCHEDULE_MANAGE: "presence.schedule.manage",
+  PRESENCE_REQUESTS_INITIATE_CELL: "presence.requests.initiate_cell",
+  PRESENCE_REQUESTS_INITIATE_UNCELLED: "presence.requests.initiate_uncelled",
+  PRESENCE_REQUESTS_VERIFY: "presence.requests.verify",
+  PRESENCE_REQUESTS_APPROVE_FINAL: "presence.requests.approve_final",
+  PRESENCE_DELEGATIONS_MANAGE: "presence.delegations.manage",
+  PRESENCE_PUNCH_CORRECT: "presence.punch.correct",
+  PRESENCE_OVERTIME_DECIDE: "presence.overtime.decide",
+  CELLS_INTERIM_MANAGE: "cells.interim.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -47,6 +63,20 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.CONTENT_WRITE, label: "Rédiger des actualités, articles et communiqués (brouillons, soumission)", category: "Site public" },
   { key: PERMISSIONS.CONTENT_PUBLISH, label: "Valider et publier les contenus du site, les renvoyer en correction ou les retirer", category: "Site public" },
   { key: PERMISSIONS.AI_ANALYZE, label: "Consulter et lancer les analyses IA des rapports", category: "IA" },
+  { key: PERMISSIONS.PRESENCE_READ_ALL, label: "Consulter les présences de tout le personnel (tous les POOL, bureaux et cellules)", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_READ_CELL, label: "Consulter les présences des personnes de sa cellule", category: "Présence du personnel" },
+  { key: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL, label: "Consulter les fiches détaillées de tout le personnel (lecture seule)", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_DEVICES_MANAGE, label: "Administrer les pointeuses et leur synchronisation", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, label: "Associer les identifiants de pointage aux comptes", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_SCHEDULE_MANAGE, label: "Modifier les seuils horaires et le calendrier", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_REQUESTS_INITIATE_CELL, label: "Initier les demandes (mission, congé, absence) des personnes de sa cellule", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED, label: "Initier les demandes des agents sans cellule", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_REQUESTS_VERIFY, label: "Vérifier les demandes et décider des absences justifiées", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_REQUESTS_APPROVE_FINAL, label: "Approuver ou signer les missions et congés", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_DELEGATIONS_MANAGE, label: "Déléguer ses pouvoirs d'approbation", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_PUNCH_CORRECT, label: "Corriger les pointages (événements bruts conservés)", category: "Présence du personnel" },
+  { key: PERMISSIONS.PRESENCE_OVERTIME_DECIDE, label: "Décider des heures supplémentaires proposées", category: "Présence du personnel" },
+  { key: PERMISSIONS.CELLS_INTERIM_MANAGE, label: "Désigner un intérimaire pour une cellule", category: "Présence du personnel" },
 ];
 
 export const ROLE_KEYS = {
@@ -71,7 +101,63 @@ export type RoleKey = (typeof ROLE_KEYS)[keyof typeof ROLE_KEYS];
 // celle de la fonction (UserRole.cellId, exploitant de l'IPP) ou celle dont
 // la personne est l'IPA responsable (Cell.ipaId). Sans cellule, elles ne
 // donnent rien : jamais d'accès provincial de repli (décisions du 2026-10-08).
-export const CELL_PERMISSION_KEYS: readonly string[] = [PERMISSIONS.REPORTS_REVIEW_CELL, PERMISSIONS.REPORTS_SIGN_CELL];
+export const CELL_PERMISSION_KEYS: readonly string[] = [
+  PERMISSIONS.REPORTS_REVIEW_CELL,
+  PERMISSIONS.REPORTS_SIGN_CELL,
+  PERMISSIONS.PRESENCE_READ_CELL,
+  PERMISSIONS.PRESENCE_REQUESTS_INITIATE_CELL,
+];
+
+// Pouvoirs du responsable de la cellule du personnel (décisions du 2026-10-10) :
+// ajoutés par loadUserAccess UNIQUEMENT à l'IPA responsable (Cell.ipaId) de la
+// cellule active de vocation PERSONNEL (Cell.mandate), à portée organisation.
+// Jamais par la fonction seule, jamais en « Voir comme ». Ils cessent dès qu'il
+// n'est plus responsable ou que la cellule est archivée.
+export const PERSONNEL_HEAD_KEYS: readonly PermissionKey[] = [
+  PERMISSIONS.PRESENCE_READ_ALL,
+  PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
+  PERMISSIONS.PRESENCE_DEVICES_MANAGE,
+  PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE,
+  PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,
+  PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED,
+  PERMISSIONS.PRESENCE_REQUESTS_VERIFY,
+  PERMISSIONS.PRESENCE_PUNCH_CORRECT,
+  PERMISSIONS.PRESENCE_OVERTIME_DECIDE,
+];
+
+// Pouvoirs métier qui ne reviennent JAMAIS au Super Admin par son catalogue
+// complet, ni en « Voir comme » (simulation de l'IPP ou d'un IPA comprise) :
+// fiches détaillées (accès à clarifier, Q-FICHE-2), seuils et calendrier
+// (IPP et IPA du personnel seulement), vérification, approbation, délégation,
+// heures supplémentaires ; permissions de cellule (il ne dirige aucune cellule).
+export const SUPER_ADMIN_EXCLUDED_PERMISSIONS: readonly PermissionKey[] = [
+  PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
+  PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,
+  PERMISSIONS.PRESENCE_REQUESTS_VERIFY,
+  PERMISSIONS.PRESENCE_REQUESTS_APPROVE_FINAL,
+  PERMISSIONS.PRESENCE_DELEGATIONS_MANAGE,
+  PERMISSIONS.PRESENCE_OVERTIME_DECIDE,
+  PERMISSIONS.PRESENCE_READ_CELL,
+  PERMISSIONS.PRESENCE_REQUESTS_INITIATE_CELL,
+];
+
+// Permissions du module qui ne s'AJOUTENT pas individuellement (« Gérer les
+// accès ») : le calendrier par décision du 2026-10-10, les autres en attente
+// de Q-E (refus par défaut). Leur retrait individuel reste possible.
+export const PRESENCE_NOT_INDIVIDUALLY_GRANTABLE: readonly PermissionKey[] = [
+  PERMISSIONS.PRESENCE_READ_ALL,
+  PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
+  PERMISSIONS.PRESENCE_DEVICES_MANAGE,
+  PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE,
+  PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,
+  PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED,
+  PERMISSIONS.PRESENCE_REQUESTS_VERIFY,
+  PERMISSIONS.PRESENCE_REQUESTS_APPROVE_FINAL,
+  PERMISSIONS.PRESENCE_DELEGATIONS_MANAGE,
+  PERMISSIONS.PRESENCE_PUNCH_CORRECT,
+  PERMISSIONS.PRESENCE_OVERTIME_DECIDE,
+  PERMISSIONS.CELLS_INTERIM_MANAGE,
+];
 
 // IPA : ses analyses IA sont aussi bornées à sa cellule (décision D4).
 export const IPA_CELL_BOUND_KEYS: readonly string[] = [...CELL_PERMISSION_KEYS, PERMISSIONS.AI_ANALYZE];
@@ -111,7 +197,9 @@ export const ASSIGNMENT_END_REASON_LABELS: Record<string, string> = {
 export const SUPER_ADMIN_LABEL = "Super Admin";
 export const SUPER_ADMIN_DESCRIPTION =
   "Fonction officielle de l'Inspection : accès complet à la plateforme pour l'administration, l'assistance et le dépannage. Toutes ses actions sont tracées.";
-export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key);
+export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = PERMISSION_CATALOG.map((p) => p.key).filter(
+  (k) => !(SUPER_ADMIN_EXCLUDED_PERMISSIONS as readonly string[]).includes(k)
+);
 
 // Fonctions qui ne s'attribuent JAMAIS depuis l'application (formulaire public,
 // validation de demande, création de compte, fiche POOL) : uniquement par le

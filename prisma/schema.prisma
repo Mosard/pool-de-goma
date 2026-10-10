@@ -404,6 +404,7 @@ model User {
   cellIpaTermsGiven       CellIpaAssignment[]      @relation("CellIpaTermAssignedBy")
   cellIpaTermsEnded       CellIpaAssignment[]      @relation("CellIpaTermEndedBy")
   ippEvents               ReportIppEvent[]         @relation("IppEventActor")
+  staffCellTerms          StaffCellTerm[]          @relation("StaffCellTermUser")
 
   @@index([organizationId])
   @@index([poolId])
@@ -456,19 +457,19 @@ model PasswordResetToken {
 // ---------------------------------------------------------------------------
 
 model School {
-  id         String   @id @default(cuid())
-  poolId     String
-  pool       Pool     @relation(fields: [poolId], references: [id])
-  name       String
+  id             String   @id @default(cuid())
+  poolId         String
+  pool           Pool     @relation(fields: [poolId], references: [id])
+  name           String
   // Une école est identifiée par « code du POOL + code de l'école » (jamais
   // par son nom) : le même code peut exister dans deux POOL différents.
-  code       String
-  province   String
-  territoire String
-  address    String?
-  director   String?
-  phone      String?
-  type       String?
+  code           String
+  province       String
+  territoire     String
+  address        String?
+  director       String?
+  phone          String?
+  type           String?
   // Fiche administrative (docs/import-ecoles-excel.md) : jamais publiée.
   approvalDecree String?
   classCount     Int?
@@ -476,11 +477,11 @@ model School {
   // Options organisées, écoles secondaires seulement : texte libre séparé
   // par des virgules (pas de liste imposée pour l'instant).
   options        String?
-  active     Boolean  @default(true)
+  active         Boolean  @default(true)
   // École de démonstration (seed) : jamais publiée.
-  isDemo     Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   assignments Assignment[]
   inspections Inspection[]
@@ -714,17 +715,23 @@ model Cell {
   // est dans CellIpaAssignment. Ne se modifie que par src/lib/cells/assignments.ts.
   ipaId          String?      @unique
   ipa            User?        @relation("CellIpa", fields: [ipaId], references: [id], onDelete: SetNull)
+  // Vocation explicite (décisions du 2026-10-10) : jamais déduite du nom ni du
+  // code. PERSONNEL : son IPA responsable reçoit les pouvoirs de gestion du
+  // personnel (PERSONNEL_HEAD_KEYS). Une seule cellule active PERSONNEL est
+  // attendue par organisation : sinon aucun responsable (règle de lecture).
+  mandate        CellMandate  @default(GENERAL)
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   userRoles     UserRole[]
   ippTracks     ReportIppTrack[]
-  ippEventsTo   ReportIppEvent[] @relation("IppEventCell")
-  ippEventsFrom ReportIppEvent[] @relation("IppEventFromCell")
+  ippEventsTo   ReportIppEvent[]      @relation("IppEventCell")
+  ippEventsFrom ReportIppEvent[]      @relation("IppEventFromCell")
   syntheses     Synthesis[]
   aiAnalyses    AiAnalysis[]
   ipaTerms      CellIpaAssignment[]
+  staffTerms    StaffCellTerm[]
   // Poste de la Direction publique correspondant à la cellule : son titulaire
   // est l'IPA responsable de la cellule.
   direction     DirectionAttribution?
@@ -753,6 +760,43 @@ model CellIpaAssignment {
 
   @@index([cellId, startedAt])
   @@index([ipaId])
+}
+
+enum CellMandate {
+  GENERAL
+  PERSONNEL
+}
+
+// Origine de la date de début d'une appartenance à une cellule : CONNUE
+// (affectation enregistrée par l'application, ou trace d'audit), ou
+// CONSTATEE_A_LA_REPRISE (affectation déjà en place à la migration, date
+// réelle inconnue : startedAt reste vide, aucune date ancienne n'est inventée).
+enum StaffTermStartSource {
+  CONNUE
+  CONSTATEE_A_LA_REPRISE
+}
+
+// Historique d'appartenance aux cellules de l'IPP (IPA responsable, exploitant),
+// pour les périmètres datés de la présence du personnel. Tenu par
+// src/lib/cells/history.ts (réconciliation avec Cell.ipaId et UserRole.cellId).
+model StaffCellTerm {
+  id          String               @id @default(cuid())
+  userId      String
+  user        User                 @relation("StaffCellTermUser", fields: [userId], references: [id], onDelete: Cascade)
+  cellId      String
+  cell        Cell                 @relation(fields: [cellId], references: [id], onDelete: Cascade)
+  // « ipa » (responsable) ou « exploitant_ipp » (membre).
+  roleKey     String
+  startedAt   DateTime?
+  startSource StaffTermStartSource
+  // Date à laquelle l'appartenance a été enregistrée ou constatée.
+  observedAt  DateTime             @default(now())
+  endedAt     DateTime?
+  // Point d'entrée : direction, cellules, gestion-acces, reprise.
+  via         String
+
+  @@index([userId, cellId])
+  @@index([cellId, endedAt])
 }
 
 enum IppStage {

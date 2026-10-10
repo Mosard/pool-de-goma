@@ -3,7 +3,8 @@
 // contrôles se font ici, côté serveur, sur les droits de l'acteur relus en
 // base : jamais sur ce qu'envoie le navigateur.
 
-import { cellDisplayName } from "@/lib/cells/rules";
+import { bindPersonnelHeadPermissions, cellDisplayName } from "@/lib/cells/rules";
+import { reconcileStaffCellTerms } from "@/lib/cells/history";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import {
@@ -129,7 +130,7 @@ export async function inheritedPermissions(targetId: string) {
         role: { select: { key: true, label: true, rolePermissions: { select: { permission: { select: { key: true } } } } } },
       },
     }),
-    prisma.cell.findFirst({ where: { ipaId: targetId, active: true }, select: { name: true } }),
+    prisma.cell.findFirst({ where: { ipaId: targetId, active: true }, select: { id: true, name: true, active: true, mandate: true, organizationId: true } }),
   ]);
   // `scopeLabel` : périmètre réel d'une permission de cellule (jamais « Tous les POOL »).
   const out = new Map<string, { permissionKey: string; poolId: string | null; roles: string[]; scopeLabel?: string }>();
@@ -143,6 +144,15 @@ export async function inheritedPermissions(targetId: string) {
       const e = out.get(k) ?? { permissionKey: key, poolId: ur.poolId, roles: [], scopeLabel };
       e.roles.push(ur.role.label);
       out.set(k, e);
+    }
+  }
+  // Pouvoirs du responsable de la cellule du personnel (même règle que loadUserAccess).
+  if (ipaCell && userRoles.some((ur) => ur.role.key === ROLE_KEYS.IPA)) {
+    const activePersonnelCellCount = await prisma.cell.count({ where: { organizationId: ipaCell.organizationId, active: true, mandate: "PERSONNEL" } });
+    const head = bindPersonnelHeadPermissions({ ipaCell, activePersonnelCellCount, organizationId: ipaCell.organizationId });
+    for (const p of head) {
+      const k = `${p.permissionKey}||personnel`;
+      out.set(k, { permissionKey: p.permissionKey, poolId: null, roles: [`Responsable de la cellule ${cellDisplayName(ipaCell.name)}`] });
     }
   }
   return [...out.values()];
@@ -306,6 +316,10 @@ export async function applyAccessChanges(actorId: string, targetId: string, chan
           metadata,
         });
       }
+    }
+    // Historique d'appartenance aux cellules (fonction d'exploitant ajoutée ou retirée).
+    if (rolesToAdd.some((r) => r.cellId) || rolesToRemove.some((r) => r.cellId)) {
+      await reconcileStaffCellTerms([targetId], "gestion-acces", tx);
     }
   });
   for (const a of audits) await logAudit(a);

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
 import { loadUserAccess } from "@/lib/permissions";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
+import { CELL_MANDATE_LABELS } from "@/lib/cells/rules";
 import { CellForm } from "./cell-form";
 import { setCellActiveAction } from "./actions";
 
@@ -40,6 +41,7 @@ export default async function CellulesPage() {
     }),
   ]);
   const ipaOptions = ipas.map((i) => ({ id: i.id, name: i.name, busyWith: i.cellLed?.code ?? null }));
+  const personnelCells = cells.filter((c) => c.active && c.mandate === "PERSONNEL");
   const ipasWithoutCell = ipas.filter((i) => !i.cellLed);
 
   return (
@@ -82,6 +84,13 @@ export default async function CellulesPage() {
         </Card>
       )}
 
+      {personnelCells.length > 1 && (
+        <Card className="border-red-200 bg-red-50 text-sm text-red-900">
+          Plusieurs cellules actives portent la vocation « Gestion du personnel » ({personnelCells.map((c) => c.code).join(", ")}) : aucun
+          responsable ne reçoit les pouvoirs de gestion du personnel tant qu&apos;il en reste plus d&apos;une.
+        </Card>
+      )}
+
       <Card>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Nouvelle cellule</h2>
         <CellForm ipas={ipaOptions} />
@@ -104,6 +113,10 @@ export default async function CellulesPage() {
             </div>
             {c.active && <CellForm cell={{ id: c.id, code: c.code, name: c.name, ipaId: c.ipaId }} ipas={ipaOptions} />}
             <p className="mt-3 text-xs text-gray-600">
+              Vocation : <Badge color={c.mandate === "PERSONNEL" ? "blue" : "gray"}>{CELL_MANDATE_LABELS[c.mandate]}</Badge>{" "}
+              <span className="text-gray-500">(modification non disponible : décision en attente sur qui l&apos;attribue)</span>
+            </p>
+            <p className="mt-1 text-xs text-gray-600">
               IPA : {c.ipa?.name ?? "à désigner"} · Exploitants :{" "}
               {c.userRoles.length === 0 ? "aucun" : c.userRoles.map((ur) => ur.user.name + (ur.user.status === "ACTIVE" ? "" : " (inactif)")).join(", ")}
             </p>

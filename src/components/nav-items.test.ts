@@ -47,7 +47,7 @@ test("Exploitation : quatre onglets, dans l'ordre exact", () => {
     EXPLOITATION_TABS.map((t) => t.label),
     ["Inspection et fiches", "Rapports", "Exploitation", "Synthèses"]
   );
-  assert.deepEqual(INSPECTEURS_TABS.map((t) => t.label), ["Liste des inspecteurs", "Affectations"]);
+  assert.deepEqual(INSPECTEURS_TABS.map((t) => t.label), ["Liste des inspecteurs", "Affectations", "Fiches du personnel"]);
   assert.deepEqual(COMPTES_TABS.map((t) => t.label), ["Validation des comptes", "Publication des comptes"]);
 });
 
@@ -112,6 +112,8 @@ test("Inspecteurs : chaque onglet suit sa propre permission", () => {
     const has = (k: string) => c.permissions.some((p) => p.permissionKey === k);
     assert.equal(t.includes("Liste des inspecteurs"), has(PERMISSIONS.USERS_MANAGE), role);
     assert.equal(t.includes("Affectations"), has(PERMISSIONS.ASSIGNMENTS_MANAGE), role);
+    // Aucune fonction ne donne les fiches : seulement la cellule du personnel.
+    assert.equal(t.includes("Fiches du personnel"), false, role);
     assert.equal(entries(c).includes("Inspecteurs"), t.length > 0, role);
   }
 });

@@ -9,8 +9,10 @@ import {
   CELL_PERMISSION_KEYS,
   IPA_CELL_BOUND_KEYS,
   PERMISSIONS,
+  PERSONNEL_HEAD_KEYS,
   ROLE_KEYS,
   SIGNED_ONLY_READER_ROLE_KEYS,
+  SUPER_ADMIN_EXCLUDED_PERMISSIONS,
 } from "@/lib/rbac-data";
 import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 
@@ -74,7 +76,9 @@ export function isSuperAdmin(roles: SessionRole[]): boolean {
  *  - permission de cellule (et, pour l'IPA, son analyse IA) : la cellule de
  *    la fonction (UserRole.cellId) ou, pour l'IPA, la cellule dont il est
  *    responsable. Sans cellule : AUCUNE permission, jamais de repli provincial ;
- *  - Super Admin : portée organisation (assistance technique) ;
+ *  - Super Admin : portée organisation (assistance technique), sauf les
+ *    pouvoirs métier SUPER_ADMIN_EXCLUDED_PERMISSIONS, écartés ici même si une
+ *    ligne RolePermission les lui donnait en base ;
  *  - sinon : le POOL de la fonction, ou l'organisation.
  */
 export function bindRolePermissions(p: {
@@ -89,7 +93,7 @@ export function bindRolePermissions(p: {
   for (const key of p.permissionKeys) {
     const base = { permissionKey: key, organizationId: p.organizationId };
     if (p.roleKey === ROLE_KEYS.SUPER_ADMIN) {
-      out.push({ ...base, poolId: p.poolId });
+      if (!SUPER_ADMIN_EXCLUDED_PERMISSIONS.includes(key as never)) out.push({ ...base, poolId: p.poolId });
       continue;
     }
     const cellBound = CELL_PERMISSION_KEYS.includes(key) || (p.roleKey === ROLE_KEYS.IPA && IPA_CELL_BOUND_KEYS.includes(key));
@@ -101,6 +105,42 @@ export function bindRolePermissions(p: {
     out.push({ ...base, poolId: p.poolId });
   }
   return out;
+}
+
+// ─── Cellule du personnel (décisions du 2026-10-10) ────────────────────────
+
+export type CellMandateKey = "GENERAL" | "PERSONNEL";
+
+export const CELL_MANDATE_LABELS: Record<CellMandateKey, string> = {
+  GENERAL: "Cellule de l'IPP",
+  PERSONNEL: "Gestion du personnel",
+};
+
+/**
+ * Pouvoirs du responsable du personnel : à l'IPA responsable (Cell.ipaId) de
+ * LA cellule active de vocation PERSONNEL de son organisation. Rien si la
+ * cellule est archivée, d'une autre organisation, d'une autre vocation, ou si
+ * plusieurs cellules actives portent cette vocation (anomalie : aucun
+ * responsable plutôt qu'un choix arbitraire).
+ */
+export function bindPersonnelHeadPermissions(p: {
+  ipaCell: { id: string; active: boolean; mandate: string; organizationId: string } | null;
+  activePersonnelCellCount: number;
+  organizationId: string;
+}): SessionPermission[] {
+  const c = p.ipaCell;
+  if (!c || !c.active || c.mandate !== "PERSONNEL" || c.organizationId !== p.organizationId) return [];
+  if (p.activePersonnelCellCount !== 1) return [];
+  return PERSONNEL_HEAD_KEYS.map((key) => ({ permissionKey: key, poolId: null, organizationId: p.organizationId }));
+}
+
+/**
+ * « Voir comme » : les pouvoirs métier réservés (SUPER_ADMIN_EXCLUDED_PERMISSIONS)
+ * ne figurent jamais dans des droits simulés — simuler l'IPP ou un IPA ne
+ * donne ni fiches, ni calendrier, ni validation, ni signature, ni délégation.
+ */
+export function withoutReservedForSimulation(permissions: SessionPermission[]): SessionPermission[] {
+  return permissions.filter((p) => !SUPER_ADMIN_EXCLUDED_PERMISSIONS.includes(p.permissionKey as never));
 }
 
 // Toute permission qui, à portée organisation, ouvrirait la lecture des rapports

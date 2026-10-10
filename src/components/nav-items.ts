@@ -143,10 +143,12 @@ export const EXPLOITATION_TABS: NavTab[] = [
   { href: "/syntheses", label: "Synthèses", permission: SYNTHESES_KEYS },
 ];
 
-/** Espace « Inspecteurs » : la liste et les affectations des écoles aux itinérants. */
+/** Espace « Inspecteurs » : la liste, les affectations des écoles aux itinérants et les fiches du personnel. */
 export const INSPECTEURS_TABS: NavTab[] = [
   { href: "/inspecteurs", label: "Liste des inspecteurs", permission: PERMISSIONS.USERS_MANAGE },
   { href: "/affectations", label: "Affectations", permission: PERMISSIONS.ASSIGNMENTS_MANAGE },
+  // Consultation globale des fiches (lecture seule), revérifiée par la page.
+  { href: "/personnel", label: "Fiches du personnel", permission: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL },
 ];
 
 /**

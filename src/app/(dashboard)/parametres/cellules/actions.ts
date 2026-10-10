@@ -15,6 +15,7 @@ import { logAudit } from "@/lib/audit";
 import { ForbiddenError, loadUserAccess, requireOfficialActor } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { setCellIpa } from "@/lib/cells/assignments";
+import { reconcileStaffCellTerms } from "@/lib/cells/history";
 
 export type CellFormState = { error?: string; ok?: boolean };
 
@@ -90,6 +91,9 @@ export async function setCellActiveAction(cellId: string, active: boolean) {
   if (cell.active === active) return;
   if (!active && cell.ipaId) await setCellIpa(actor, { cellId: cell.id, ipaId: null, via: "cellules", reason: "Cellule archivée" });
   await prisma.cell.update({ where: { id: cell.id }, data: { active } });
+  // Historique d'appartenance : seules les cellules actives comptent (archivage = fin, réactivation = reprise).
+  const members = await prisma.userRole.findMany({ where: { cellId: cell.id }, select: { userId: true } });
+  await reconcileStaffCellTerms(members.map((m) => m.userId), "cellules");
   await logAudit({
     actorId: actor.id,
     organizationId: actor.organizationId,
