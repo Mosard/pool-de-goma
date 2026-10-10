@@ -21,6 +21,7 @@ import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/p
 import { applyAdjustments, canAdjustPermission } from "@/lib/access-rules";
 import { awaitingCellAssignment, bindPersonnelHeadPermissions, bindRolePermissions, withoutReservedForSimulation } from "@/lib/cells/rules";
 import { diffMemberships } from "@/lib/cells/history";
+import { holdsPersonnelCellManage } from "@/lib/cells/personnel";
 import { changedFieldNames } from "@/lib/audit-fields";
 import { profileSchema } from "@/lib/validations";
 import {
@@ -120,6 +121,24 @@ test("approbation finale et délégation : IPP seulement ; intérim : Super Admi
   assert.deepEqual(holders(P.CELLS_INTERIM_MANAGE), [ROLE_KEYS.SUPER_ADMIN]);
   assert.equal(PERSONNEL_HEAD_KEYS.includes(P.PRESENCE_REQUESTS_APPROVE_FINAL), false);
   assert.equal(PERSONNEL_HEAD_KEYS.includes(P.CELLS_INTERIM_MANAGE), false);
+});
+
+test("cellule du personnel (Q-A) : vocation et responsable gérés par IPP, Super Admin, informaticien, secrétaires et l'IPA du personnel", () => {
+  for (const r of GLOBAL_VIEW) assert.ok(holdsPersonnelCellManage(rolePerms(r), ORG), r);
+  for (const r of [...NO_PRESENCE, ROLE_KEYS.IPA]) {
+    assert.equal(holdsPersonnelCellManage(rolePerms(r, { ipaCellId: "c1", cellId: "c1", poolId: "pool-a" }), ORG), false, r);
+  }
+  const head = bindPersonnelHeadPermissions({ ipaCell: personnelCell, activePersonnelCellCount: 1, organizationId: ORG });
+  assert.ok(holdsPersonnelCellManage(head, ORG));
+  // Ce pouvoir de gestion ne donne ni fiches, ni calendrier, ni approbation.
+  for (const r of [ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SECRETAIRE_IPP] as RoleKey[]) {
+    for (const k of [P.PERSONNEL_RECORDS_READ_ALL, P.PRESENCE_SCHEDULE_MANAGE, P.PRESENCE_REQUESTS_APPROVE_FINAL]) {
+      assert.equal(orgWide(rolePerms(r), k), false, `${r} ${k}`);
+    }
+  }
+  // Portée organisation exigée.
+  assert.equal(holdsPersonnelCellManage([{ permissionKey: P.CELLS_PERSONNEL_MANAGE, poolId: "pool-a", organizationId: ORG }], ORG), false);
+  assert.equal(holdsPersonnelCellManage([{ permissionKey: P.CELLS_PERSONNEL_MANAGE, poolId: null, organizationId: "autre" }], ORG), false);
 });
 
 // ─── Super Admin : catalogue moins les exclusions ──────────────────────────

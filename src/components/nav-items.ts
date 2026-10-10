@@ -185,7 +185,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Inspool (son POOL), IPP adjoints, IPP, informaticien, Super Admin.
   { href: "/ia", label: "IA", icon: Sparkles, permission: PERMISSIONS.AI_ANALYZE },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
-  { href: "/parametres", label: "Paramètres", icon: Settings, permission: PERMISSIONS.POOLS_MANAGE },
+  // Cellule du personnel (vocation, responsable) : aussi sans pools.manage (secrétaires, IPA du personnel).
+  { href: "/parametres", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.POOLS_MANAGE, PERMISSIONS.CELLS_PERSONNEL_MANAGE] },
 ];
 
 /** Espace à onglets contenant cette page, s'il y en a un. */

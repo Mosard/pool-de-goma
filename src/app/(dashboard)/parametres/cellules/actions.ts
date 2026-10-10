@@ -16,6 +16,7 @@ import { ForbiddenError, loadUserAccess, requireOfficialActor } from "@/lib/perm
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { setCellIpa } from "@/lib/cells/assignments";
 import { reconcileStaffCellTerms } from "@/lib/cells/history";
+import { PERSONNEL_DUPLICATE_MESSAGE, isPersonnelDuplicate, requirePersonnelCellManager, setCellMandate } from "@/lib/cells/personnel";
 
 export type CellFormState = { error?: string; ok?: boolean };
 
@@ -48,6 +49,18 @@ export async function saveCellAction(_prev: CellFormState, formData: FormData): 
   const existing = cellId ? await prisma.cell.findFirst({ where: { id: cellId, organizationId: actor.organizationId } }) : null;
   if (cellId && !existing) return { error: "Cellule introuvable." };
   if (existing && !existing.active) return { error: "Cellule archivée : réactivez-la d'abord." };
+  // Création avec la vocation « gestion du personnel » (décision Q-A) : vérifiée AVANT la création.
+  const wantsPersonnel = !existing && formData.get("mandate") === "PERSONNEL";
+  if (wantsPersonnel) {
+    try {
+      await requirePersonnelCellManager(actor.id, actor.organizationId);
+    } catch (e) {
+      if (e instanceof ForbiddenError) return { error: e.message };
+      throw e;
+    }
+    const other = await prisma.cell.findFirst({ where: { organizationId: actor.organizationId, active: true, mandate: "PERSONNEL" }, select: { code: true } });
+    if (other) return { error: `${PERSONNEL_DUPLICATE_MESSAGE} (cellule ${other.code})` };
+  }
 
   let saved;
   try {
@@ -66,6 +79,14 @@ export async function saveCellAction(_prev: CellFormState, formData: FormData): 
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: "Ce sigle est déjà utilisé par une autre cellule." };
     throw e;
+  }
+  if (wantsPersonnel) {
+    try {
+      await setCellMandate(actor, { cellId: saved.id, mandate: "PERSONNEL", via: "cellules" });
+    } catch (e) {
+      if (e instanceof ForbiddenError) return { error: `Cellule créée, mais vocation non attribuée : ${e.message}` };
+      throw e;
+    }
   }
   // IPA responsable : même écriture que l'espace Direction (historique, poste public, droits).
   try {
@@ -90,7 +111,13 @@ export async function setCellActiveAction(cellId: string, active: boolean) {
   if (!cell) throw new ForbiddenError("Cellule introuvable.");
   if (cell.active === active) return;
   if (!active && cell.ipaId) await setCellIpa(actor, { cellId: cell.id, ipaId: null, via: "cellules", reason: "Cellule archivée" });
-  await prisma.cell.update({ where: { id: cell.id }, data: { active } });
+  try {
+    await prisma.cell.update({ where: { id: cell.id }, data: { active } });
+  } catch (e) {
+    // Réactiver une cellule du personnel alors qu'une autre est active : refusé par l'index unique.
+    if (isPersonnelDuplicate(e)) throw new ForbiddenError(PERSONNEL_DUPLICATE_MESSAGE);
+    throw e;
+  }
   // Historique d'appartenance : seules les cellules actives comptent (archivage = fin, réactivation = reprise).
   const members = await prisma.userRole.findMany({ where: { cellId: cell.id }, select: { userId: true } });
   await reconcileStaffCellTerms(members.map((m) => m.userId), "cellules");
@@ -105,4 +132,46 @@ export async function setCellActiveAction(cellId: string, active: boolean) {
   });
   revalidatePath("/parametres/cellules");
   revalidatePath("/direction");
+}
+
+// ─── Cellule du personnel (décision Q-A du 2026-10-10) ─────────────────────
+// IPP, Super Admins, IPA chargé du personnel en fonction, secrétaires de l'IPP,
+// informaticien : contrôlé par src/lib/cells/personnel.ts et assignments.ts.
+
+async function requirePersonnelActor() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id }, select: { id: true, organizationId: true } });
+  await requirePersonnelCellManager(user.id, user.organizationId);
+  return user;
+}
+
+export async function setCellMandateAction(cellId: string, _prev: CellFormState, formData: FormData): Promise<CellFormState> {
+  try {
+    const actor = await requirePersonnelActor();
+    const mandate = formData.get("mandate") === "PERSONNEL" ? "PERSONNEL" : "GENERAL";
+    await setCellMandate(actor, { cellId, mandate, via: "cellules" });
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath("/parametres/cellules");
+  return { ok: true };
+}
+
+/** Responsable IPA de la cellule du personnel (affecter, remplacer, retirer). */
+export async function setPersonnelCellIpaAction(cellId: string, _prev: CellFormState, formData: FormData): Promise<CellFormState> {
+  try {
+    const actor = await requirePersonnelActor();
+    const cell = await prisma.cell.findFirst({ where: { id: cellId, organizationId: actor.organizationId }, select: { mandate: true } });
+    if (!cell || cell.mandate !== "PERSONNEL") throw new ForbiddenError("Ce formulaire ne concerne que la cellule du personnel.");
+    const ipaId = String(formData.get("ipaId") ?? "") || null;
+    await setCellIpa(actor, { cellId, ipaId, via: "cellules", reason: String(formData.get("reason") ?? "") || null });
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath("/parametres/cellules");
+  revalidatePath("/direction");
+  return { ok: true };
 }

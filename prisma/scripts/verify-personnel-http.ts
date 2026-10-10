@@ -28,6 +28,7 @@ async function check(name: string, fn: () => Promise<void>) {
 }
 
 const RUN = Date.now().toString(36);
+let createdCellId: string | null = null;
 const PASSWORD = "Verif-Personnel-2026!";
 
 /** Navigateur minimal : garde les cookies d'une session. */
@@ -81,10 +82,12 @@ async function main() {
   const ipp = await user("ipp", ROLE_KEYS.IPP);
   const head = await user("resp", ROLE_KEYS.IPA);
   const secr = await user("secr", ROLE_KEYS.SECRETAIRE_IPP);
+  const agent = await user("agent", ROLE_KEYS.AGENT_IPP);
   const zero = await user("zero", null, { nombreEnfants: 0, matricule: `MAT-${RUN}` });
   const unknown = await user("inconnu", null);
   assert.equal(await prisma.cell.count({ where: { organizationId: org.id, active: true, mandate: "PERSONNEL" } }), 0, "une cellule active PERSONNEL existe déjà : base de test non vierge");
   const cell = await prisma.cell.create({ data: { organizationId: org.id, code: `HP${RUN}`.toUpperCase().slice(0, 20), name: `Personnel ${RUN}`, mandate: "PERSONNEL" } });
+  createdCellId = cell.id;
   await setCellIpa({ id: ipp.id, organizationId: org.id }, { cellId: cell.id, ipaId: head.id, via: "direction" });
 
   const h = new Browser();
@@ -124,6 +127,25 @@ async function main() {
     assert.equal(dash.text.includes('href="/personnel"'), false);
   });
 
+  await check("secrétaire : Paramètres mène aux cellules ; vocation et responsable modifiables, sans gestion des cellules", async () => {
+    const root = await s.get("/parametres");
+    assert.ok(root.status >= 300 && root.status < 400 && (root.location ?? "").includes("/parametres/cellules"), `statut ${root.status} ${root.location}`);
+    const page = await s.get("/parametres/cellules");
+    assert.equal(page.status, 200);
+    assert.ok(shows(page.text, "Enregistrer la vocation"));
+    assert.ok(shows(page.text, "Enregistrer le responsable"));
+    assert.equal(shows(page.text, "Nouvelle cellule"), false);
+    assert.equal(shows(page.text, "Archiver"), false);
+  });
+
+  await check("agent IPP : ni Paramètres ni cellules", async () => {
+    const a = new Browser();
+    assert.ok(await a.login(agent.username!));
+    const page = await a.get("/parametres/cellules");
+    assert.ok(deniedTo(page), `statut ${page.status}`);
+    assert.equal(shows(page.text, "Enregistrer la vocation"), false);
+  });
+
   await check("fin de responsabilité, session ouverte : accès retiré dès la requête suivante", async () => {
     await setCellIpa({ id: ipp.id, organizationId: org.id }, { cellId: cell.id, ipaId: null, via: "direction" });
     const r = await h.get(`/personnel/${zero.id}`);
@@ -131,7 +153,7 @@ async function main() {
     assert.equal(r.status === 200 && shows(r.text, "lecture seule"), false);
   });
 
-  await prisma.cell.update({ where: { id: cell.id }, data: { active: false } });
+  // Archivage de la cellule de test : fait dans finally, même en cas d'échec.
   console.log(`\n${passed} vérifications HTTP réussies.`);
 }
 
@@ -140,4 +162,8 @@ main()
     console.error(e);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    // Une seule cellule active PERSONNEL : la cellule de test ne doit jamais rester active.
+    if (createdCellId) await prisma.cell.update({ where: { id: createdCellId }, data: { active: false, ipaId: null } });
+    await prisma.$disconnect();
+  });

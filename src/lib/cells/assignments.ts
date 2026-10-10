@@ -13,10 +13,11 @@
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { notify } from "@/lib/notifications/dispatcher";
-import { ForbiddenError, requireOfficialActorUnlessDemoTarget, requireRoleGrant } from "@/lib/permissions";
+import { ForbiddenError, loadUserAccess, requireOfficialActorUnlessDemoTarget, requireRoleGrant } from "@/lib/permissions";
 import { ROLE_KEYS } from "@/lib/rbac-data";
 import { cellDisplayName } from "@/lib/cells/rules";
 import { reconcileStaffCellTerms } from "@/lib/cells/history";
+import { holdsPersonnelCellManage } from "@/lib/cells/personnel";
 
 /** Point d'entrée de l'affectation, conservé dans l'historique. */
 export type AssignmentVia = "direction" | "cellules";
@@ -45,9 +46,19 @@ export async function setCellIpa(
     : await activeCell(actor.organizationId, p.cellId);
   if (!cell) throw new ForbiddenError("Cellule introuvable.");
   if (cell.ipaId === p.ipaId) return;
+  // Cellule du personnel (décision du 2026-10-10) : les détenteurs de
+  // cells.personnel.manage affectent, remplacent ou retirent son responsable,
+  // en plus des habilitations habituelles. Les autres cellules : inchangé.
+  const personnelAuthority =
+    cell.mandate === "PERSONNEL" && holdsPersonnelCellManage((await loadUserAccess(actor.id)).permissions, actor.organizationId);
   // Habilitation sur le compte qui gagne ou perd la responsabilité (jamais soi-même).
   for (const targetUserId of [p.ipaId, cell.ipaId]) {
-    if (targetUserId) await requireRoleGrant(actor.id, { roleKey: ROLE_KEYS.IPA, poolId: null, organizationId: actor.organizationId, targetUserId });
+    if (!targetUserId) continue;
+    if (personnelAuthority) {
+      if (targetUserId === actor.id) throw new ForbiddenError("Vous ne pouvez pas modifier votre propre affectation : demandez-le à un autre responsable habilité.");
+      continue;
+    }
+    await requireRoleGrant(actor.id, { roleKey: ROLE_KEYS.IPA, poolId: null, organizationId: actor.organizationId, targetUserId });
   }
   await requireOfficialActorUnlessDemoTarget(actor.id, false);
 
@@ -87,7 +98,13 @@ export async function setCellIpa(
     entityId: cell.id,
     oldValue: { ipaId: cell.ipaId },
     newValue: { ipaId: p.ipaId },
-    metadata: { via: p.via, ...(reason ? { reason } : {}) },
+    metadata: {
+      via: p.via,
+      cellCode: cell.code,
+      mandate: cell.mandate,
+      ...(personnelAuthority ? { authority: "cells.personnel.manage" } : {}),
+      ...(reason ? { reason } : {}),
+    },
   });
   const name = cellDisplayName(cell.name);
   if (p.ipaId) {

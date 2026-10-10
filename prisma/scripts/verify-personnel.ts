@@ -18,6 +18,7 @@ import { setCellIpa, setExploitantCell } from "../../src/lib/cells/assignments";
 import { applyAccessChanges } from "../../src/lib/access-admin";
 import { getPersonnelRecord, searchPersonnel } from "../../src/lib/personnel/server";
 import { FORBIDDEN_FIELDS } from "../../src/lib/personnel/record";
+import { setCellMandate } from "../../src/lib/cells/personnel";
 
 const url = process.env.POSTGRES_URL ?? "";
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
@@ -57,7 +58,10 @@ async function main() {
   await prisma.userRole.create({ data: { userId: exp.id, roleId: await roleId(ROLE_KEYS.EXPLOITANT_IPP) } });
   const zero = await mkUser("zero", null, { nombreEnfants: 0, phone: "+000" });
   const unknown = await mkUser("inconnu", null);
+  const agent = await mkUser("agent", ROLE_KEYS.AGENT_IPP);
+  const ipaNew = await mkUser("ipanew", ROLE_KEYS.IPA);
   const ippActor = { id: ipp.id, organizationId: org.id };
+  const as = (u: { id: string }) => ({ id: u.id, organizationId: org.id });
 
   // Cellules de test (la vocation n'a pas d'écran d'écriture : Q-A en attente).
   const pers = await prisma.cell.create({ data: { organizationId: org.id, code: `${TAG}P`.toUpperCase().slice(0, 20), name: `${TAG} personnel`, mandate: "PERSONNEL" } });
@@ -175,10 +179,10 @@ async function main() {
     assert.equal(await records(ipaPers.id), false);
     await prisma.cell.update({ where: { id: pers.id }, data: { mandate: "PERSONNEL" } });
     assert.equal(await records(ipaPers.id), true);
-    await prisma.cell.update({ where: { id: other.id }, data: { mandate: "PERSONNEL" } });
-    assert.equal(await records(ipaPers.id), false);
+    // Un doublon est désormais impossible en base (index unique partiel) ; la
+    // règle de lecture prudente reste testée par les tests unitaires.
+    await assert.rejects(() => prisma.cell.update({ where: { id: other.id }, data: { mandate: "PERSONNEL" } }), (e: { code?: string }) => e.code === "P2002");
     assert.equal(await records(ipaOther.id), false);
-    await prisma.cell.update({ where: { id: other.id }, data: { mandate: "GENERAL" } });
     assert.equal(await records(ipaPers.id), true);
   });
 
@@ -193,7 +197,124 @@ async function main() {
     assert.equal(after.startedAt?.getTime(), before.startedAt?.getTime());
   });
 
+  // ─── Complément du 2026-10-10 : vocation et responsable (décision Q-A) ───
+
+  await check("vocation : attribuée et retirée par l'IPP, le Super Admin, l'informaticien, une secrétaire ; journal avant / après", async () => {
+    let expected = "GENERAL" as "GENERAL" | "PERSONNEL";
+    for (const u of [ipp, sa, info, secr]) {
+      await setCellMandate(as(u), { cellId: pers.id, mandate: expected, via: "cellules" });
+      assert.equal((await prisma.cell.findUniqueOrThrow({ where: { id: pers.id } })).mandate, expected, u.name);
+      const log = await prisma.auditLog.findFirstOrThrow({
+        where: { actorId: u.id, entityId: pers.id, action: { startsWith: "cell.mandate_personnel" } },
+        orderBy: { createdAt: "desc" },
+      });
+      assert.deepEqual(log.newValue, { mandate: expected });
+      assert.deepEqual(log.oldValue, { mandate: expected === "PERSONNEL" ? "GENERAL" : "PERSONNEL" });
+      assert.equal((log.metadata as { cellCode?: string }).cellCode, pers.code);
+      expected = expected === "GENERAL" ? "PERSONNEL" : "GENERAL";
+    }
+    assert.equal((await prisma.cell.findUniqueOrThrow({ where: { id: pers.id } })).mandate, "PERSONNEL");
+  });
+
+  await check("responsable affecté par une secrétaire (cellule du personnel) : pouvoirs immédiats ; journal avec auteur, cellule, avant / après", async () => {
+    await setCellIpa(as(secr), { cellId: pers.id, ipaId: ipaPers.id, via: "cellules" });
+    assert.equal(await records(ipaPers.id), true);
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { actorId: secr.id, entityId: pers.id, action: "cell.ipa_assign" }, orderBy: { createdAt: "desc" } });
+    assert.deepEqual(log.oldValue, { ipaId: null });
+    assert.deepEqual(log.newValue, { ipaId: ipaPers.id });
+    const meta = log.metadata as { cellCode?: string; authority?: string };
+    assert.equal(meta.cellCode, pers.code);
+    assert.equal(meta.authority, "cells.personnel.manage");
+  });
+
+  await check("l'IPA chargé du personnel en fonction gère la vocation ; la retirer lui retire aussitôt ses pouvoirs", async () => {
+    await setCellMandate(as(ipaPers), { cellId: pers.id, mandate: "GENERAL", via: "cellules" });
+    assert.equal(await records(ipaPers.id), false);
+    await refused(() => setCellMandate(as(ipaPers), { cellId: pers.id, mandate: "PERSONNEL", via: "cellules" }));
+    await setCellMandate(ippActor, { cellId: pers.id, mandate: "PERSONNEL", via: "cellules" });
+    assert.equal(await records(ipaPers.id), true);
+  });
+
+  await check("refus : autre IPA, exploitant, agent IPP — vocation et responsable de la cellule du personnel", async () => {
+    for (const u of [ipaOther, exp, agent]) {
+      await refused(() => setCellMandate(as(u), { cellId: pers.id, mandate: "GENERAL", via: "cellules" }));
+      await refused(() => setCellIpa(as(u), { cellId: pers.id, ipaId: ipaNew.id, via: "cellules" }));
+    }
+    assert.equal((await prisma.cell.findUniqueOrThrow({ where: { id: pers.id } })).ipaId, ipaPers.id);
+  });
+
+  await check("autres cellules inchangées : ni la secrétaire, ni l'informaticien, ni l'IPA du personnel n'y affectent un IPA", async () => {
+    for (const u of [secr, info, ipaPers]) {
+      await refused(() => setCellIpa(as(u), { cellId: other.id, ipaId: null, via: "cellules" }));
+    }
+    assert.equal((await prisma.cell.findUniqueOrThrow({ where: { id: other.id } })).ipaId, ipaOther.id);
+  });
+
+  await check("unicité : seconde cellule active refusée (contrôle applicatif ET index de la base)", async () => {
+    await refused(() => setCellMandate(as(secr), { cellId: other.id, mandate: "PERSONNEL", via: "cellules" }));
+    await assert.rejects(() => prisma.cell.update({ where: { id: other.id }, data: { mandate: "PERSONNEL" } }), (e: { code?: string }) => e.code === "P2002");
+    // Opérations simultanées sur deux cellules libres : une seule réussit.
+    const c3 = await prisma.cell.create({ data: { organizationId: org.id, code: `${TAG}C3`.toUpperCase().slice(0, 20), name: `${TAG} c3` } });
+    const c4 = await prisma.cell.create({ data: { organizationId: org.id, code: `${TAG}C4`.toUpperCase().slice(0, 20), name: `${TAG} c4` } });
+    await prisma.cell.update({ where: { id: pers.id }, data: { mandate: "GENERAL" } });
+    const results = await Promise.allSettled([
+      setCellMandate(ippActor, { cellId: c3.id, mandate: "PERSONNEL", via: "cellules" }),
+      setCellMandate(as(sa), { cellId: c4.id, mandate: "PERSONNEL", via: "cellules" }),
+    ]);
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    assert.equal(await prisma.cell.count({ where: { organizationId: org.id, active: true, mandate: "PERSONNEL" } }), 1);
+    // Réactiver une cellule du personnel archivée alors qu'une autre est active : refusé par la base.
+    await prisma.cell.updateMany({ where: { id: { in: [c3.id, c4.id] } }, data: { mandate: "GENERAL" } });
+    await prisma.cell.update({ where: { id: c3.id }, data: { mandate: "PERSONNEL", active: false } });
+    await prisma.cell.update({ where: { id: c4.id }, data: { mandate: "PERSONNEL" } });
+    await assert.rejects(() => prisma.cell.update({ where: { id: c3.id }, data: { active: true } }), (e: { code?: string }) => e.code === "P2002");
+    await prisma.cell.updateMany({ where: { id: { in: [c3.id, c4.id] } }, data: { mandate: "GENERAL", active: false } });
+    await prisma.cell.update({ where: { id: pers.id }, data: { mandate: "PERSONNEL" } });
+  });
+
+  await check("remplacement par l'informaticien : l'ancien perd, le remplaçant reçoit ; historique clos et ouvert", async () => {
+    await setCellIpa(as(info), { cellId: pers.id, ipaId: ipaNew.id, via: "cellules", reason: "Remplacement" });
+    assert.equal(await records(ipaPers.id), false);
+    assert.equal((await loadUserAccess(ipaPers.id, { viewMode: null })).awaitingCell, true);
+    assert.equal(await records(ipaNew.id), true);
+    const old = await prisma.staffCellTerm.findMany({ where: { userId: ipaPers.id, cellId: pers.id }, orderBy: { observedAt: "desc" } });
+    assert.ok(old[0].endedAt);
+    const cur = await prisma.staffCellTerm.findFirstOrThrow({ where: { userId: ipaNew.id, cellId: pers.id, endedAt: null } });
+    assert.equal(cur.startSource, "CONNUE");
+  });
+
+  await check("jamais sur soi : le responsable ne se retire ni ne se remplace lui-même", async () => {
+    await refused(() => setCellIpa(as(ipaNew), { cellId: pers.id, ipaId: null, via: "cellules" }));
+    await refused(() => setCellIpa(as(ipaNew), { cellId: pers.id, ipaId: ipaPers.id, via: "cellules" }));
+  });
+
+  await check("fonction d'IPA retirée ou compte suspendu : l'affectation restante ne maintient aucun droit", async () => {
+    await prisma.user.update({ where: { id: ipaNew.id }, data: { status: "SUSPENDED" } });
+    assert.equal(await records(ipaNew.id), false);
+    await prisma.user.update({ where: { id: ipaNew.id }, data: { status: "ACTIVE" } });
+    assert.equal(await records(ipaNew.id), true);
+    const ipaRole = await prisma.userRole.findFirstOrThrow({ where: { userId: ipaNew.id, role: { key: ROLE_KEYS.IPA } } });
+    await applyAccessChanges(ipp.id, ipaNew.id, { addRoles: [], removeUserRoleIds: [ipaRole.id], adjustments: [] });
+    assert.equal((await prisma.cell.findUniqueOrThrow({ where: { id: pers.id } })).ipaId, ipaNew.id);
+    const a = await loadUserAccess(ipaNew.id, { viewMode: null });
+    for (const k of PERSONNEL_HEAD_KEYS) assert.equal(hasPermission(a.permissions, k), false, k);
+  });
+
+  await check("ces pouvoirs de gestion ne donnent rien d'autre : secrétaire et informaticien sans fiches, calendrier ni approbation", async () => {
+    for (const u of [secr, info]) {
+      const p = (await loadUserAccess(u.id, { viewMode: null })).permissions;
+      assert.ok(hasPermission(p, PERMISSIONS.CELLS_PERSONNEL_MANAGE), u.name);
+      for (const k of [PERMISSIONS.PERSONNEL_RECORDS_READ_ALL, PERMISSIONS.PRESENCE_SCHEDULE_MANAGE, PERMISSIONS.PRESENCE_REQUESTS_APPROVE_FINAL]) {
+        assert.equal(hasPermission(p, k), false, `${u.name} ${k}`);
+      }
+    }
+    await refused(() =>
+      applyAccessChanges(ipp.id, agent.id, { addRoles: [], removeUserRoleIds: [], adjustments: [{ permissionKey: PERMISSIONS.CELLS_PERSONNEL_MANAGE, poolId: null, effect: "GRANT" }] })
+    );
+  });
+
   // Cellules de test archivées : une seule cellule active PERSONNEL doit rester possible pour les tests suivants.
+  await prisma.cell.updateMany({ where: { organizationId: org.id, name: { startsWith: TAG } }, data: { active: false, ipaId: null } });
   await prisma.cell.updateMany({ where: { id: { in: [pers.id, other.id] } }, data: { active: false, ipaId: null } });
   console.log(`\n${passed} vérifications réussies (préfixe ${TAG}).`);
 }

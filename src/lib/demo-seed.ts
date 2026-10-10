@@ -45,6 +45,8 @@ const PRESENCE_SUPPORT_KEYS: PermissionKey[] = [
   PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE,
   PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED,
   PERMISSIONS.PRESENCE_PUNCH_CORRECT,
+  // Vocation et responsable de la cellule du personnel (décision Q-A du 2026-10-10).
+  PERMISSIONS.CELLS_PERSONNEL_MANAGE,
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
@@ -70,6 +72,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.PRESENCE_REQUESTS_APPROVE_FINAL,
     PERMISSIONS.PRESENCE_DELEGATIONS_MANAGE,
     PERMISSIONS.PRESENCE_OVERTIME_DECIDE,
+    PERMISSIONS.CELLS_PERSONNEL_MANAGE,
   ],
   // D4 (2026-10-08) : l'IPA ne voit que sa cellule ; il en signe les rapports et synthèses (D6).
   // Présences et demandes de SA cellule (permissions de cellule). Les pouvoirs du

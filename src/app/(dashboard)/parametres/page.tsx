@@ -12,7 +12,10 @@ import { togglePoolStatusAction } from "./actions";
 export default async function ParametresPage() {
   const session = await auth();
   const user = session!.user;
-  if (!hasPermissionAnyPool(user.permissions, PERMISSIONS.POOLS_MANAGE)) redirect("/dashboard");
+  if (!hasPermissionAnyPool(user.permissions, PERMISSIONS.POOLS_MANAGE)) {
+    // Gestion de la cellule du personnel seule (secrétaires, IPA du personnel) : directement aux cellules.
+    redirect(hasPermissionAnyPool(user.permissions, PERMISSIONS.CELLS_PERSONNEL_MANAGE) ? "/parametres/cellules" : "/dashboard");
+  }
 
   const [pools, functions] = await Promise.all([
     prisma.pool.findMany({

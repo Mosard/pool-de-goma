@@ -10,9 +10,12 @@ type IpaOption = { id: string; name: string; busyWith: string | null };
 export function CellForm({
   cell,
   ipas,
+  allowPersonnelMandate = false,
 }: {
   cell?: { id: string; code: string; name: string; ipaId: string | null };
   ipas: IpaOption[];
+  /** Création : proposer la vocation « gestion du personnel » (détenteurs de cells.personnel.manage). */
+  allowPersonnelMandate?: boolean;
 }) {
   const [state, action, pending] = useActionState<CellFormState, FormData>(saveCellAction, {});
   return (
@@ -38,6 +41,12 @@ export function CellForm({
           ))}
         </Select>
       </label>
+      {!cell && allowPersonnelMandate && (
+        <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-4">
+          <input type="checkbox" name="mandate" value="PERSONNEL" />
+          Vocation « Gestion du personnel » (une seule cellule active à la fois)
+        </label>
+      )}
       <div className="flex items-center gap-3 sm:col-span-4">
         <Button type="submit" disabled={pending}>
           {pending ? "Enregistrement…" : cell ? "Enregistrer" : "Créer la cellule"}

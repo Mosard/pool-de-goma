@@ -39,6 +39,9 @@ export const PERMISSIONS = {
   PRESENCE_PUNCH_CORRECT: "presence.punch.correct",
   PRESENCE_OVERTIME_DECIDE: "presence.overtime.decide",
   CELLS_INTERIM_MANAGE: "cells.interim.manage",
+  // Décision Q-A du 2026-10-10 : vocation « gestion du personnel » d'une cellule
+  // et responsable IPA de CETTE cellule (les autres cellules gardent leurs règles).
+  CELLS_PERSONNEL_MANAGE: "cells.personnel.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -77,6 +80,7 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.PRESENCE_PUNCH_CORRECT, label: "Corriger les pointages (événements bruts conservés)", category: "Présence du personnel" },
   { key: PERMISSIONS.PRESENCE_OVERTIME_DECIDE, label: "Décider des heures supplémentaires proposées", category: "Présence du personnel" },
   { key: PERMISSIONS.CELLS_INTERIM_MANAGE, label: "Désigner un intérimaire pour une cellule", category: "Présence du personnel" },
+  { key: PERMISSIONS.CELLS_PERSONNEL_MANAGE, label: "Attribuer ou retirer la vocation « gestion du personnel » et désigner le responsable de cette cellule", category: "Présence du personnel" },
 ];
 
 export const ROLE_KEYS = {
@@ -123,6 +127,7 @@ export const PERSONNEL_HEAD_KEYS: readonly PermissionKey[] = [
   PERMISSIONS.PRESENCE_REQUESTS_VERIFY,
   PERMISSIONS.PRESENCE_PUNCH_CORRECT,
   PERMISSIONS.PRESENCE_OVERTIME_DECIDE,
+  PERMISSIONS.CELLS_PERSONNEL_MANAGE,
 ];
 
 // Pouvoirs métier qui ne reviennent JAMAIS au Super Admin par son catalogue
@@ -157,6 +162,7 @@ export const PRESENCE_NOT_INDIVIDUALLY_GRANTABLE: readonly PermissionKey[] = [
   PERMISSIONS.PRESENCE_PUNCH_CORRECT,
   PERMISSIONS.PRESENCE_OVERTIME_DECIDE,
   PERMISSIONS.CELLS_INTERIM_MANAGE,
+  PERMISSIONS.CELLS_PERSONNEL_MANAGE,
 ];
 
 // IPA : ses analyses IA sont aussi bornées à sa cellule (décision D4).
