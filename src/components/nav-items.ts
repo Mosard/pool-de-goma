@@ -11,6 +11,7 @@ import {
   Newspaper,
   Sparkles,
   Inbox,
+  Clock,
 } from "lucide-react";
 import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
@@ -165,9 +166,34 @@ export const COMPTES_TABS: NavTab[] = [
   },
 ];
 
+/**
+ * Espace « Présence du personnel » (2026-10-11). « Ma présence » : tout compte
+ * connecté (sa propre présence). Les autres onglets suivent leur permission,
+ * revérifiée par chaque page : vue globale (presence.read_all) ou de cellule
+ * (presence.read_cell), appareils et associations, horaires et calendrier.
+ */
+export const PRESENCE_TABS: NavTab[] = [
+  { href: "/presence/moi", label: "Ma présence" },
+  { href: "/presence/aujourdhui", label: "Aujourd'hui", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_READ_CELL] },
+  { href: "/presence/periode", label: "Période", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_READ_CELL] },
+  {
+    href: "/presence/synchronisation",
+    label: "État de synchronisation",
+    permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_DEVICES_MANAGE, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE],
+  },
+  {
+    href: "/presence/appareils",
+    label: "Appareils et associations",
+    permission: [PERMISSIONS.PRESENCE_DEVICES_MANAGE, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE],
+    children: [{ href: "/presence/simulateur", label: "Simulateur", permission: [PERMISSIONS.PRESENCE_DEVICES_MANAGE] }],
+  },
+  { href: "/presence/parametres", label: "Horaires et calendrier", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_SCHEDULE_MANAGE] },
+];
+
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/ecoles", label: "Écoles", icon: School },
+  { href: "/presence/moi", label: "Présence", icon: Clock, tabs: PRESENCE_TABS },
   { href: "/inspections", label: "Exploitation", icon: ClipboardList, tabs: EXPLOITATION_TABS },
   // Secrétariat de l'IPP : rapports arrivés, à envoyer à une cellule.
   { href: "/secretariat", label: "Secrétariat", icon: Inbox, permission: PERMISSIONS.REPORTS_ROUTE_IPP },
