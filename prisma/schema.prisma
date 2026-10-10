@@ -84,6 +84,9 @@ model Organization {
   syntheses             Synthesis[]
   cells                 Cell[]
   ippTracks             ReportIppTrack[]
+  attendanceSettings    AttendanceSetting[]
+  calendarDays          CalendarDay[]
+  attendanceDevices     AttendanceDevice[]
 }
 
 // Contenus éditoriaux du site public (actualités, articles, communiqués).
@@ -405,6 +408,8 @@ model User {
   cellIpaTermsEnded       CellIpaAssignment[]      @relation("CellIpaTermEndedBy")
   ippEvents               ReportIppEvent[]         @relation("IppEventActor")
   staffCellTerms          StaffCellTerm[]          @relation("StaffCellTermUser")
+  presenceMappings        DeviceUserMapping[]      @relation("PresenceMappingUser")
+  presenceDays            DailyAttendance[]        @relation("PresenceDailyUser")
 
   @@index([organizationId])
   @@index([poolId])
@@ -797,6 +802,188 @@ model StaffCellTerm {
 
   @@index([userId, cellId])
   @@index([cellId, endedAt])
+}
+
+// ─── Présence du personnel : règles, calendrier, pointages (lots 2 à 4) ─────
+// Instants en UTC ; règles appliquées dans le fuseau de Goma (src/lib/presence/time.ts).
+
+// Paramètres versionnés : la valeur courante d'une clé est la plus récente.
+// Clé « schedule » : horaire validé (src/lib/presence/settings.ts). Les règles
+// non tranchées n'ont AUCUNE ligne : elles restent non définies.
+model AttendanceSetting {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  key            String
+  value          Json
+  // Auteur du changement (null : migration).
+  setById        String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, key, createdAt])
+}
+
+enum CalendarDayKind {
+  NON_TRAVAILLE
+}
+
+// Calendrier des exceptions : aucun calendrier officiel n'est préchargé.
+model CalendarDay {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  date           DateTime        @db.Date
+  kind           CalendarDayKind @default(NON_TRAVAILLE)
+  label          String
+  createdById    String?
+  createdAt      DateTime        @default(now())
+
+  @@unique([organizationId, date])
+}
+
+enum PunchDirection {
+  IN
+  OUT
+  UNKNOWN
+}
+
+enum PunchSource {
+  DEVICE
+  SIMULATOR
+}
+
+enum DeviceStatus {
+  // Aucune pointeuse réelle n'est présentée comme opérationnelle avant vérification sur l'appareil acheté.
+  NON_VERIFIE
+  VERIFIE
+  DESACTIVE
+}
+
+model AttendanceDevice {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id])
+  label               String
+  // Bureau d'installation : le lieu est porté par l'appareil, pas par la cellule.
+  siteLabel           String
+  vendor              String?
+  model               String?
+  serialNumber        String?
+  firmware            String?
+  status              DeviceStatus @default(NON_VERIFIE)
+  // Appareil du simulateur de développement : ses pointages sont SIMULATOR, jamais présentés comme réels.
+  isSimulator         Boolean      @default(false)
+  lastContactAt       DateTime?
+  lastEventReceivedAt DateTime?
+  // Heure de l'appareil moins heure du serveur, en secondes (dernier contrôle).
+  lastClockOffsetSec  Int?
+  lastClockCheckAt    DateTime?
+  createdById         String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  credentials DeviceCredential[]
+  mappings    DeviceUserMapping[]
+  batches     IngestBatch[]
+  punches     RawPunch[]
+}
+
+// Identifiant technique d'un appareil (séparé des comptes utilisateurs) :
+// jeton aléatoire vérifié par notre serveur, stocké HACHÉ (SHA-256), affiché
+// une seule fois ; révocable et renouvelable.
+model DeviceCredential {
+  id          String           @id @default(cuid())
+  deviceId    String
+  device      AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  prefix      String           @unique
+  tokenHash   String           @unique
+  createdById String?
+  createdAt   DateTime         @default(now())
+  revokedAt   DateTime?
+  revokedById String?
+  lastUsedAt  DateTime?
+}
+
+// Association explicite et datée d'un identifiant de pointage (propre à
+// l'appareil) à un compte existant. Jamais de rapprochement par le nom.
+model DeviceUserMapping {
+  id           String           @id @default(cuid())
+  deviceId     String
+  device       AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceUserId String
+  userId       String
+  user         User             @relation("PresenceMappingUser", fields: [userId], references: [id], onDelete: Cascade)
+  // Début de validité (minuit de Goma du jour choisi) ; fin exclue.
+  validFrom    DateTime
+  validTo      DateTime?
+  createdById  String?
+  createdAt    DateTime         @default(now())
+  endedById    String?
+  endReason    String?
+
+  @@index([deviceId, deviceUserId])
+  @@index([userId])
+}
+
+model IngestBatch {
+  id             String           @id @default(cuid())
+  deviceId       String
+  device         AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  idempotencyKey String
+  payloadHash    String
+  source         PunchSource
+  receivedAt     DateTime         @default(now())
+  accepted       Int
+  duplicates     Int
+  rejected       Int
+
+  punches RawPunch[]
+
+  @@unique([deviceId, idempotencyKey])
+}
+
+// Pointage BRUT, immuable : jamais modifié ni supprimé par une correction.
+model RawPunch {
+  id              String           @id @default(cuid())
+  organizationId  String
+  deviceId        String
+  device          AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceUserId    String
+  // Heure du pointage (UTC), distincte de l'heure de réception.
+  punchedAt       DateTime
+  // Valeur reçue telle quelle.
+  deviceLocalTime String
+  receivedAt      DateTime         @default(now())
+  batchId         String
+  batch           IngestBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  externalEventId String?
+  direction       PunchDirection
+  verifyMode      String?
+  source          PunchSource
+  // Déduplication documentée (src/lib/presence/ingest.ts).
+  dedupKey        String           @unique
+
+  @@index([deviceId, deviceUserId, punchedAt])
+  @@index([organizationId, punchedAt])
+}
+
+// Synthèse journalière CALCULÉE (src/lib/presence/daily.ts), recalculable à
+// tout moment depuis les pointages bruts ; aucune décision n'y est stockée.
+model DailyAttendance {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  user           User     @relation("PresenceDailyUser", fields: [userId], references: [id], onDelete: Cascade)
+  date           DateTime @db.Date
+  status         String
+  summary        Json
+  simulated      Boolean  @default(false)
+  punchCount     Int
+  computedAt     DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([organizationId, date])
+  @@index([computedAt])
 }
 
 enum IppStage {
