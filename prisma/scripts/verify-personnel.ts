@@ -39,6 +39,8 @@ async function refused(fn: () => Promise<unknown>) {
 
 async function main() {
   const org = await prisma.organization.findFirstOrThrow({ select: { id: true } });
+  // Une seule cellule active PERSONNEL (index unique) : celles d'anciens tests locaux sont archivées.
+  await prisma.cell.updateMany({ where: { organizationId: org.id, active: true, mandate: "PERSONNEL" }, data: { active: false, ipaId: null } });
   const roleId = async (key: string) => (await prisma.roleDefinition.findUniqueOrThrow({ where: { key } })).id;
   const mkUser = async (label: string, roleKey: string | null, extra: Record<string, unknown> = {}) => {
     const u = await prisma.user.create({

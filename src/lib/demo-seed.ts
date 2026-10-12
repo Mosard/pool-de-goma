@@ -96,6 +96,9 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   [ROLE_KEYS.AGENT_POOL]: [],
   [ROLE_KEYS.SECRETAIRE_POOL]: [PERMISSIONS.SCHOOLS_MANAGE],
   [ROLE_KEYS.INFORMATICIEN]: [
+    // Décision du 2026-10-12 : Secrétariat de l'IPP (recevoir les rapports et les
+    // envoyer à une cellule), même droit que les secrétaires de l'IPP.
+    PERMISSIONS.REPORTS_ROUTE_IPP,
     PERMISSIONS.ACCOUNTS_MANAGE,
     PERMISSIONS.USERS_MANAGE,
     PERMISSIONS.POOLS_MANAGE,
