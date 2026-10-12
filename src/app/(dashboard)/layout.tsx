@@ -93,14 +93,16 @@ export default async function DashboardLayout({
       ? `/parametres/pools/${chiefPoolId}`
       : null;
 
-  // « Voir comme » : Super Admin (toute fonction non réservée) et IPP
-  // (fonctions de POOL + chargé des médias), d'après les rôles réels relus en base.
+  // « Voir comme » : Super Admin (toute fonction non réservée), informaticien et
+  // secrétaires de l'IPP (toute fonction non réservée, en consultation seule) et
+  // IPP (fonctions de POOL + chargé des médias), d'après les rôles réels relus en base.
+  const viewKind = session.user.viewModeKind ?? null;
   const [simulableRoles, pools, cells] = session.user.canViewAs
     ? await Promise.all([
         prisma.roleDefinition.findMany({
           where: {
             key: { notIn: [...RESTRICTED_ROLE_KEYS] },
-            ...(session.user.isSuperAdmin
+            ...(viewKind === "full" || viewKind === "readonly"
               ? {}
               : { OR: [{ scope: "POOL" as const }, { key: { in: [...IPP_VIEW_MODE_EXTRA_ROLE_KEYS] } }] }),
           },
@@ -144,7 +146,8 @@ export default async function DashboardLayout({
         />
         {session.user.canViewAs && (
           <ViewModeBar
-            holderLabel={session.user.isSuperAdmin ? "Super Admin" : "IPP"}
+            holderLabel={viewKind === "full" ? "Super Admin" : viewKind === "readonly" ? "votre fonction" : "IPP"}
+            kind={viewKind ?? "bounded"}
             active={
               session.user.viewMode
                 ? { label: session.user.viewMode.label, poolName: session.user.viewMode.poolName ?? session.user.viewMode.cellName ?? null }

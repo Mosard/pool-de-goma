@@ -1,5 +1,6 @@
 "use server";
 
+import { assertNotReadOnly } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -40,6 +41,8 @@ export async function launchAnalysisAction(_prev: AiActionState, formData: FormD
     const period = parseAiPeriod(text(formData, "du"), text(formData, "au"));
     if (!period) return { error: "Période invalide : vérifiez les dates (deux ans au plus)." };
 
+    // Bascule en consultation : aucune analyse lancée (ni appel au modèle, ni écriture).
+    await assertNotReadOnly();
     const result = await runAnalysis({ scope, poolId, from: period.from, to: period.to });
     if (!result.ok) {
       if (result.analysisId) revalidatePath("/ia");

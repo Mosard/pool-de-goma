@@ -104,6 +104,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.permissions = access.permissions;
         session.user.isSuperAdmin = access.superAdmin;
         session.user.canViewAs = access.canViewAs;
+        session.user.viewModeKind = access.viewModeKind;
         session.user.viewMode = access.viewMode;
         session.user.awaitingCell = access.awaitingCell;
       }

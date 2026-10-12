@@ -5,8 +5,9 @@ import {
   PUBLICATION_AUTHORITY_ROLE_KEYS,
   RESTRICTED_ROLE_KEYS,
   ROLE_KEYS,
-  VIEW_MODE_HOLDER_ROLE_KEYS,
+  viewModeKind,
   type PermissionKey,
+  type ViewModeKind,
 } from "@/lib/rbac-data";
 import { canGrantRole, hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { readViewMode, type ViewMode } from "@/lib/view-mode";
@@ -24,12 +25,9 @@ import {
 export { canGrantRole, hasPermission, hasPermissionAnyPool, isChiefOf, poolsWithPermission } from "@/lib/permission-checks";
 export type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 
-export class ForbiddenError extends Error {
-  constructor(message = "Action non autorisée pour ce rôle.") {
-    super(message);
-    this.name = "ForbiddenError";
-  }
-}
+// Erreurs communes (définies sans dépendance : le client Prisma les utilise aussi).
+export { ForbiddenError, ReadOnlyModeError } from "@/lib/errors";
+import { ForbiddenError } from "@/lib/errors";
 
 export type ActiveViewMode = {
   role: string;
@@ -38,6 +36,8 @@ export type ActiveViewMode = {
   poolName: string | null;
   cellId?: string | null;
   cellName?: string | null;
+  /** Bascule en consultation : aucune écriture possible (informaticien, secrétaires de l'IPP). */
+  readOnly?: boolean;
 };
 
 export type UserAccess = {
@@ -45,8 +45,10 @@ export type UserAccess = {
   permissions: SessionPermission[];
   /** Détient RÉELLEMENT le rôle Super Admin (indépendamment du mode simulé). */
   superAdmin: boolean;
-  /** Détient RÉELLEMENT un rôle autorisé à « Voir comme » (Super Admin, IPP). */
+  /** Détient RÉELLEMENT un rôle autorisé à « Voir comme » (Super Admin, IPP, informaticien, secrétaire de l'IPP). */
   canViewAs: boolean;
+  /** Type de bascule d'après les fonctions réelles : complète, bornée ou consultation. */
+  viewModeKind: ViewModeKind | null;
   /** Fonction simulée (« Voir comme »), sinon null. */
   viewMode: ActiveViewMode | null;
   /**
@@ -124,12 +126,18 @@ async function loadRealAccess(userId: string) {
  * `limitTo` (IPP) : seules les fonctions de POOL se simulent, et chaque
  * permission simulée n'est conservée que si le compte la détient déjà
  * réellement pour ce POOL — la bascule ne donne jamais plus de droits.
+ *
+ * `kind` « readonly » (informaticien, secrétaires de l'IPP, 2026-10-12) :
+ * toute fonction non réservée, écran COMPLET de la fonction (pouvoirs
+ * réservés compris, responsable du personnel compris) pour la consultation ;
+ * aucune écriture n'aboutit : le client Prisma la refuse (src/lib/prisma.ts).
  */
 async function simulateAccess(
   mode: ViewMode,
   organizationId: string,
-  limitTo: SessionPermission[] | null
-): Promise<Omit<UserAccess, "superAdmin" | "canViewAs" | "awaitingCell"> | null> {
+  limitTo: SessionPermission[] | null,
+  kind: ViewModeKind = "full"
+): Promise<Omit<UserAccess, "superAdmin" | "canViewAs" | "awaitingCell" | "viewModeKind"> | null> {
   if (RESTRICTED_ROLE_KEYS.includes(mode.role)) return null;
   const role = await prisma.roleDefinition.findUnique({
     where: { key: mode.role },
@@ -151,12 +159,12 @@ async function simulateAccess(
   }
   // Fonction de cellule (exploitant de l'IPP) ou IPA : une cellule active de
   // l'organisation est obligatoire ; jamais de simulation provinciale de repli.
-  let cell: { id: string; code: string; name: string } | null = null;
+  let cell: { id: string; code: string; name: string; active: boolean; mandate: string; organizationId: string } | null = null;
   if (role.scope === "CELL" || role.key === ROLE_KEYS.IPA) {
     if (!mode.cellId) return null;
     cell = await prisma.cell.findFirst({
       where: { id: mode.cellId, organizationId, active: true },
-      select: { id: true, code: true, name: true },
+      select: { id: true, code: true, name: true, active: true, mandate: true, organizationId: true },
     });
     if (!cell) return null;
   }
@@ -169,13 +177,32 @@ async function simulateAccess(
     ipaCellId: cell?.id ?? null,
     organizationId,
   }).filter((p) => !limitTo || ippExtra || hasPermission(limitTo, p.permissionKey, { poolId, organizationId }));
-  // Jamais de pouvoir métier réservé en simulation (Super Admin compris), et
-  // jamais les pouvoirs du responsable du personnel (non ajoutés ici).
-  const simulated = withoutReservedForSimulation(permissions);
+  let simulated: SessionPermission[];
+  if (kind === "readonly") {
+    // Consultation : l'écran complet de la fonction, y compris celui du
+    // responsable du personnel ; les écritures sont refusées par le client Prisma.
+    simulated = [...permissions];
+    if (role.key === ROLE_KEYS.IPA && cell) {
+      const activePersonnelCellCount = await prisma.cell.count({ where: { organizationId, active: true, mandate: "PERSONNEL" } });
+      simulated.push(...bindPersonnelHeadPermissions({ ipaCell: cell, activePersonnelCellCount, organizationId }));
+    }
+  } else {
+    // Jamais de pouvoir métier réservé en simulation agissante (Super Admin
+    // compris), et jamais les pouvoirs du responsable du personnel.
+    simulated = withoutReservedForSimulation(permissions);
+  }
   return {
     roles: [{ key: role.key, label: role.label, poolId, cellId: cell?.id ?? null, cellCode: cell?.code ?? null, cellName: cell?.name ?? null }],
     permissions: simulated,
-    viewMode: { role: role.key, label: role.label, poolId, poolName: pool?.name ?? null, cellId: cell?.id ?? null, cellName: cell?.name ?? null },
+    viewMode: {
+      role: role.key,
+      label: role.label,
+      poolId,
+      poolName: pool?.name ?? null,
+      cellId: cell?.id ?? null,
+      cellName: cell?.name ?? null,
+      ...(kind === "readonly" ? { readOnly: true } : {}),
+    },
   };
 }
 
@@ -193,18 +220,20 @@ async function simulateAccess(
  */
 export async function loadUserAccess(userId: string, opts?: { viewMode?: ViewMode | null }): Promise<UserAccess> {
   const real = await loadRealAccess(userId);
-  if (!real) return { roles: [], permissions: [], superAdmin: false, canViewAs: false, viewMode: null, awaitingCell: false };
-  if (real.awaitingCell) return { roles: real.roles, permissions: [], superAdmin: false, canViewAs: false, viewMode: null, awaitingCell: true };
+  const none = { superAdmin: false, canViewAs: false, viewModeKind: null, viewMode: null };
+  if (!real) return { roles: [], permissions: [], ...none, awaitingCell: false };
+  if (real.awaitingCell) return { roles: real.roles, permissions: [], ...none, awaitingCell: true };
 
   const superAdmin = real.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
-  const canViewAs = real.roles.some((r) => VIEW_MODE_HOLDER_ROLE_KEYS.includes(r.key));
-  const own = { roles: real.roles, permissions: real.permissions, superAdmin, canViewAs, viewMode: null, awaitingCell: false };
-  if (!canViewAs) return own;
+  const kind = viewModeKind(real.roles.map((r) => r.key));
+  const canViewAs = kind !== null;
+  const own = { roles: real.roles, permissions: real.permissions, superAdmin, canViewAs, viewModeKind: kind, viewMode: null, awaitingCell: false };
+  if (!kind) return own;
 
   const mode = opts && "viewMode" in opts ? opts.viewMode : await readViewMode();
-  const simulated = mode ? await simulateAccess(mode, real.organizationId, superAdmin ? null : real.permissions) : null;
+  const simulated = mode ? await simulateAccess(mode, real.organizationId, kind === "bounded" ? real.permissions : null, kind) : null;
   if (!simulated) return own;
-  return { ...simulated, superAdmin, canViewAs, awaitingCell: false };
+  return { ...simulated, superAdmin, canViewAs, viewModeKind: kind, awaitingCell: false };
 }
 
 /** Revérifie la permission côté serveur en interrogeant la base (ne jamais se fier uniquement au JWT). */
