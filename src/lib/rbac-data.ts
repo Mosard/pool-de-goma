@@ -223,6 +223,27 @@ export const VIEW_MODE_HOLDER_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_AD
 // rédaction ne publie rien sans validation d'un autre compte habilité.
 export const IPP_VIEW_MODE_EXTRA_ROLE_KEYS: readonly string[] = [ROLE_KEYS.CHARGE_MEDIAS];
 
+// Bascule en CONSULTATION (décision du 2026-10-12) : l'informaticien et les
+// secrétaires de l'IPP voient l'écran de toute fonction (sauf Super Admin),
+// pouvoirs réservés compris, mais AUCUNE écriture n'est possible pendant la
+// bascule : refus central dans le client Prisma (src/lib/prisma.ts), exports
+// et analyses IA refusés.
+export const READ_ONLY_VIEW_MODE_ROLE_KEYS: readonly string[] = [ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SECRETAIRE_IPP];
+
+export type ViewModeKind = "full" | "bounded" | "readonly";
+
+/**
+ * Type de bascule d'après les fonctions RÉELLES : Super Admin → droits complets
+ * de la fonction simulée ; IPP → bornée à ses droits ; informaticien ou
+ * secrétaire de l'IPP → consultation seule ; sinon aucune bascule.
+ */
+export function viewModeKind(realRoleKeys: readonly string[]): ViewModeKind | null {
+  if (realRoleKeys.includes(ROLE_KEYS.SUPER_ADMIN)) return "full";
+  if (realRoleKeys.includes(ROLE_KEYS.IPP)) return "bounded";
+  if (realRoleKeys.some((k) => READ_ONLY_VIEW_MODE_ROLE_KEYS.includes(k))) return "readonly";
+  return null;
+}
+
 // Décision de l'Inspection : seuls l'IPP et l'informaticien autorisent la
 // publication d'un agent (le Chef de POOL, notamment, ne le peut pas).
 // Le Super Admin aussi (décision du 2026-09-27), sauf lorsqu'il simule une

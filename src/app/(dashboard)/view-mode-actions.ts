@@ -7,13 +7,15 @@ import { ForbiddenError, loadUserAccess } from "@/lib/permissions";
 import { VIEW_MODE_COOKIE, VIEW_MODE_MAX_AGE } from "@/lib/view-mode";
 import { logAudit } from "@/lib/audit";
 
-/** Super Admin ou IPP, d'après les rôles RÉELS en base (jamais le mode simulé ni le jeton). */
+/** Super Admin, IPP, informaticien ou secrétaire de l'IPP, d'après les rôles RÉELS en base (jamais le mode simulé ni le jeton). */
 async function requireViewModeHolder() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const real = await loadUserAccess(session.user.id, { viewMode: null });
-  if (!real.canViewAs) throw new ForbiddenError("Réservé au Super Admin et à l'IPP.");
-  return { user: session.user, auditAction: real.superAdmin ? "super_admin.view_mode" : "ipp.view_mode" };
+  if (!real.canViewAs) throw new ForbiddenError("Réservé au Super Admin, à l'IPP, à l'informaticien et aux secrétaires de l'IPP.");
+  const auditAction =
+    real.viewModeKind === "full" ? "super_admin.view_mode" : real.viewModeKind === "readonly" ? "consultation.view_mode" : "ipp.view_mode";
+  return { user: session.user, auditAction };
 }
 
 /** « Voir comme » : fonction (et POOL) simulés, avec leurs seuls droits. */

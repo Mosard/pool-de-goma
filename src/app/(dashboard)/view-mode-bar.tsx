@@ -15,12 +15,15 @@ type PoolOption = { id: string; name: string };
  */
 export function ViewModeBar({
   holderLabel,
+  kind = "bounded",
   active,
   roles,
   pools,
   cells,
 }: {
   holderLabel: string;
+  /** full : Super Admin ; bounded : IPP ; readonly : informaticien, secrétaires de l'IPP (consultation seule). */
+  kind?: "full" | "bounded" | "readonly";
   active: { label: string; poolName: string | null } | null;
   roles: RoleOption[];
   pools: PoolOption[];
@@ -29,23 +32,25 @@ export function ViewModeBar({
 }) {
   const [roleKey, setRoleKey] = useState("");
   const role = roles.find((r) => r.key === roleKey);
-  const limited = holderLabel !== "Super Admin";
+  const explanation =
+    kind === "readonly"
+      ? "Consultation seule : vous voyez l'écran complet de ce profil, mais aucune modification, validation, signature ni export n'est possible. Vos consultations sont tracées à votre nom."
+      : kind === "bounded"
+        ? "Vous voyez l'écran de ce profil, dans la limite de vos propres droits. Vos actions sont tracées à votre nom."
+        : "Vous avez exactement les droits de ce profil. Vos actions sont tracées à votre nom.";
 
   if (active) {
     return (
       <div className="flex flex-wrap items-center gap-3 border-b border-amber-300 bg-amber-100 px-6 py-2 text-sm text-amber-900">
         <span className="font-semibold">
-          Vue simulée : {active.label}
+          {kind === "readonly" ? "Consultation : " : "Vue simulée : "}
+          {active.label}
           {active.poolName ? ` — ${active.poolName}` : ""}
         </span>
-        <span className="text-amber-800">
-          {limited
-            ? "Vous voyez l'écran de ce profil, dans la limite de vos propres droits. Vos actions sont tracées à votre nom."
-            : "Vous avez exactement les droits de ce profil. Vos actions sont tracées à votre nom."}
-        </span>
+        <span className="text-amber-800">{explanation}</span>
         <form action={clearViewModeAction} className="ml-auto">
           <Button type="submit" variant="secondary" className="!min-h-0 !px-3 !py-1 text-xs">
-            Revenir en {holderLabel}
+            {kind === "readonly" ? "Revenir à ma fonction" : `Revenir en ${holderLabel}`}
           </Button>
         </form>
       </div>
@@ -57,7 +62,7 @@ export function ViewModeBar({
       action={setViewModeAction}
       className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-6 py-2 text-sm text-indigo-900"
     >
-      <span className="font-semibold">{holderLabel} — voir comme :</span>
+      <span className="font-semibold">{kind === "readonly" ? "Consulter comme (lecture seule) :" : `${holderLabel} — voir comme :`}</span>
       <Select
         name="role"
         aria-label="Profil à simuler"

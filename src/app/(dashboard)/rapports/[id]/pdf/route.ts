@@ -1,11 +1,19 @@
 // PDF d'un rapport : seules les personnes autorisées à le lire (contrôle serveur).
 
+import { assertNotReadOnly } from "@/lib/prisma";
+import { READ_ONLY_MESSAGE } from "@/lib/errors";
 import { auth } from "@/lib/auth";
 import { loadExportSubject } from "@/lib/exports/server";
 import { PdfAccessError, buildReportPdf } from "@/lib/exports/report-pdf";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
+  // Bascule en consultation (informaticien, secrétaires de l'IPP) : aucun export.
+  try {
+    await assertNotReadOnly();
+  } catch {
+    return new Response(READ_ONLY_MESSAGE, { status: 403 });
+  }
   if (!session?.user) return new Response("Connexion requise.", { status: 401 });
   // IPA ou exploitant de l'IPP sans cellule : aucun accès métier, même par appel direct.
   if (session.user.awaitingCell) return new Response("Compte en attente d'affectation à une cellule.", { status: 403 });

@@ -13,6 +13,8 @@ declare module "next-auth" {
       isSuperAdmin?: boolean;
       /** Rôle réellement détenu autorisant « Voir comme » (Super Admin, IPP). */
       canViewAs?: boolean;
+      /** Type de bascule : complète (Super Admin), bornée (IPP), consultation (informaticien, secrétaires de l'IPP). */
+      viewModeKind?: "full" | "bounded" | "readonly" | null;
       /** IPA ou exploitant de l'IPP sans cellule active : aucun espace de travail. */
       awaitingCell?: boolean;
       /** Fonction simulée (« Voir comme »), sinon null. */
@@ -23,6 +25,8 @@ declare module "next-auth" {
         poolName: string | null;
         cellId?: string | null;
         cellName?: string | null;
+        /** Bascule en consultation : aucune écriture possible. */
+        readOnly?: boolean;
       } | null;
     } & DefaultSession["user"];
   }

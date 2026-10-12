@@ -2,12 +2,20 @@
 // filtres et même périmètre que la liste, recalculés ici côté serveur depuis
 // la session ; un filtre hors périmètre est refusé (403).
 
+import { assertNotReadOnly } from "@/lib/prisma";
+import { READ_ONLY_MESSAGE } from "@/lib/errors";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { EXPORT_LIMIT, buildReportsWorkbook, loadExportSubject, loadReportRows, resolveFilters } from "@/lib/exports/server";
 
 export async function GET(request: Request) {
   const session = await auth();
+  // Bascule en consultation (informaticien, secrétaires de l'IPP) : aucun export.
+  try {
+    await assertNotReadOnly();
+  } catch {
+    return new Response(READ_ONLY_MESSAGE, { status: 403 });
+  }
   if (!session?.user) return new Response("Connexion requise.", { status: 401 });
   // IPA ou exploitant de l'IPP sans cellule : aucun accès métier, même par appel direct.
   if (session.user.awaitingCell) return new Response("Compte en attente d'affectation à une cellule.", { status: 403 });
