@@ -5,6 +5,8 @@ import {
   PERMISSION_CATALOG,
   PERMISSIONS,
   ROLE_KEYS,
+  ADMIN_DESCRIPTION,
+  ADMIN_LABEL,
   SUPER_ADMIN_DESCRIPTION,
   SUPER_ADMIN_LABEL,
   SUPER_ADMIN_PERMISSIONS,
@@ -34,6 +36,7 @@ const ROLE_DEFINITIONS: { key: RoleKey; label: string; description: string; scop
   { key: ROLE_KEYS.INFORMATICIEN, label: "Informaticien de l'Inspection", description: "Administration de la plateforme, validation des comptes.", scope: "PROVINCE" },
   { key: ROLE_KEYS.CHARGE_MEDIAS, label: "Chargé des médias", description: "Rédaction des actualités, articles, communiqués et albums photo du site public, soumis à validation avant publication.", scope: "PROVINCE" },
   { key: ROLE_KEYS.SUPER_ADMIN, label: SUPER_ADMIN_LABEL, description: SUPER_ADMIN_DESCRIPTION, scope: "PROVINCE" },
+  { key: ROLE_KEYS.ADMIN, label: ADMIN_LABEL, description: ADMIN_DESCRIPTION, scope: "PROVINCE" },
 ];
 
 // Informaticien et secrétaires de l'IPP (décisions du 2026-10-10) : vue globale
@@ -114,6 +117,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   ],
   [ROLE_KEYS.CHARGE_MEDIAS]: [PERMISSIONS.CONTENT_WRITE],
   [ROLE_KEYS.SUPER_ADMIN]: [...SUPER_ADMIN_PERMISSIONS],
+  [ROLE_KEYS.ADMIN]: [...SUPER_ADMIN_PERMISSIONS],
 };
 
 // Pools cités au §7. "Karisimbi 2" est explicitement signalé comme incertain

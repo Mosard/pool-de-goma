@@ -97,6 +97,9 @@ export const ROLE_KEYS = {
   CHARGE_MEDIAS: "charge_medias",
   SECRETAIRE_IPP: "secretaire_ipp",
   SUPER_ADMIN: "super_admin",
+  // Décision du 2026-10-13 : mêmes droits que le Super Admin, attribuée depuis
+  // l'écran par un Super Admin seulement.
+  ADMIN: "admin",
 } as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[keyof typeof ROLE_KEYS];
@@ -165,6 +168,14 @@ export const PRESENCE_NOT_INDIVIDUALLY_GRANTABLE: readonly PermissionKey[] = [
   PERMISSIONS.CELLS_PERSONNEL_MANAGE,
 ];
 
+// Fonctions PERSONNALISÉES (créées ou modifiées dans Paramètres, 2026-10-13) :
+// elles ne peuvent porter ni les permissions sensibles du module de présence
+// (fonction officielle ou cellule seulement), ni les pouvoirs réservés, ni des
+// permissions de cellule (sans effet hors cellule). Évite tout contournement.
+export const CUSTOM_FUNCTION_FORBIDDEN_PERMISSIONS: readonly string[] = [
+  ...new Set<string>([...PRESENCE_NOT_INDIVIDUALLY_GRANTABLE, ...SUPER_ADMIN_EXCLUDED_PERMISSIONS, ...CELL_PERMISSION_KEYS]),
+];
+
 // IPA : ses analyses IA sont aussi bornées à sa cellule (décision D4).
 export const IPA_CELL_BOUND_KEYS: readonly string[] = [...CELL_PERMISSION_KEYS, PERMISSIONS.AI_ANALYZE];
 
@@ -212,6 +223,19 @@ export const SUPER_ADMIN_PERMISSIONS: readonly PermissionKey[] = PERMISSION_CATA
 // script serveur prisma/scripts/grant-super-admin.ts. Leur clé est réservée.
 export const RESTRICTED_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN];
 
+// Super-utilisateurs (décision du 2026-10-13) : Super Admin et Admin ont les
+// mêmes droits (catalogue moins SUPER_ADMIN_EXCLUDED_PERMISSIONS) et le même
+// traitement partout. Seule différence : l'Admin s'attribue depuis l'écran par
+// un Super Admin ; le Super Admin, par le script serveur seulement.
+export const SUPERUSER_ROLE_KEYS: readonly string[] = [ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN];
+export const ADMIN_LABEL = "Admin";
+export const ADMIN_DESCRIPTION =
+  "Mêmes droits que le Super Admin (administration, assistance, dépannage), attribuée par un Super Admin. Toutes ses actions sont tracées.";
+
+export function isSuperuserRoleKey(key: string): boolean {
+  return SUPERUSER_ROLE_KEYS.includes(key);
+}
+
 // « Voir comme » (bascule de profil) : Super Admin (toute fonction non
 // réservée) et IPP (décision du 2026-09-29 : fonctions de POOL seulement,
 // pour suivre chaque POOL, sans jamais dépasser ses propres droits).
@@ -238,7 +262,7 @@ export type ViewModeKind = "full" | "bounded" | "readonly";
  * secrétaire de l'IPP → consultation seule ; sinon aucune bascule.
  */
 export function viewModeKind(realRoleKeys: readonly string[]): ViewModeKind | null {
-  if (realRoleKeys.includes(ROLE_KEYS.SUPER_ADMIN)) return "full";
+  if (realRoleKeys.some(isSuperuserRoleKey)) return "full";
   if (realRoleKeys.includes(ROLE_KEYS.IPP)) return "bounded";
   if (realRoleKeys.some((k) => READ_ONLY_VIEW_MODE_ROLE_KEYS.includes(k))) return "readonly";
   return null;
@@ -252,6 +276,7 @@ export const PUBLICATION_AUTHORITY_ROLE_KEYS: readonly string[] = [
   ROLE_KEYS.IPP,
   ROLE_KEYS.INFORMATICIEN,
   ROLE_KEYS.SUPER_ADMIN,
+  ROLE_KEYS.ADMIN,
 ];
 
 // Qui peut attribuer (et retirer) chaque fonction — décision du 2026-10-07 :
@@ -261,13 +286,15 @@ export const PUBLICATION_AUTHORITY_ROLE_KEYS: readonly string[] = [
 // Le chef de POOL n'attribue que la fonction d'inspecteur (comptes déjà
 // validés) et les fonctions d'appui, et seulement dans son propre POOL
 // (voir canGrantRole). Liste vide : jamais depuis l'application.
-const PROVINCIAL_GRANTORS: readonly RoleKey[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN];
+const PROVINCIAL_GRANTORS: readonly RoleKey[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN];
 const POOL_SUPPORT_GRANTORS: readonly RoleKey[] = [...PROVINCIAL_GRANTORS, ROLE_KEYS.CHEF_POOL];
 export const ROLE_GRANTORS: Readonly<Record<RoleKey, readonly RoleKey[]>> = {
   [ROLE_KEYS.SUPER_ADMIN]: [],
-  [ROLE_KEYS.IPP]: [ROLE_KEYS.SUPER_ADMIN],
-  [ROLE_KEYS.IPA]: [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN],
-  [ROLE_KEYS.INFORMATICIEN]: [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN],
+  // Admin : attribué et retiré par un Super Admin seulement (décision du 2026-10-13).
+  [ROLE_KEYS.ADMIN]: [ROLE_KEYS.SUPER_ADMIN],
+  [ROLE_KEYS.IPP]: [ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN],
+  [ROLE_KEYS.IPA]: [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN],
+  [ROLE_KEYS.INFORMATICIEN]: [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN],
   [ROLE_KEYS.EXPLOITANT_IPP]: PROVINCIAL_GRANTORS,
   [ROLE_KEYS.AGENT_IPP]: PROVINCIAL_GRANTORS,
   [ROLE_KEYS.CHARGE_MEDIAS]: PROVINCIAL_GRANTORS,

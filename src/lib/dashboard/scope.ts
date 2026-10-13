@@ -82,6 +82,7 @@ export function isProvincialKind(kind: DashboardKind): boolean {
 // (kindFromPermissions), jamais en pilotage provincial.
 const ROLE_KIND: Partial<Record<string, DashboardKind>> = {
   [ROLE_KEYS.SUPER_ADMIN]: "pilotage_provincial",
+  [ROLE_KEYS.ADMIN]: "pilotage_provincial",
   [ROLE_KEYS.IPP]: "pilotage_provincial",
   // D4, D6 : l'IPA ne voit que sa cellule, qu'il dirige et dont il signe les rapports.
   [ROLE_KEYS.IPA]: "exploitation_cellule",

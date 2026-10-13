@@ -5,9 +5,10 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { poolSchema, functionSchema } from "@/lib/validations";
-import { demoRefusal, hasPermissionAnyPool, loadUserAccess, requireOfficialActor, requirePermission } from "@/lib/permissions";
-import { PERMISSIONS, PERMISSION_CATALOG, RESTRICTED_ROLE_KEYS } from "@/lib/rbac-data";
+import { ForbiddenError, demoRefusal, hasPermissionAnyPool, loadUserAccess, requireOfficialActor, requirePermission } from "@/lib/permissions";
+import { CUSTOM_FUNCTION_FORBIDDEN_PERMISSIONS, PERMISSIONS, PERMISSION_CATALOG, RESTRICTED_ROLE_KEYS, isSuperuserRoleKey } from "@/lib/rbac-data";
 import { logAudit } from "@/lib/audit";
+import { deleteCustomFunction, updateCustomFunction } from "@/lib/functions-admin";
 import { revalidatePublicPools } from "@/lib/public-pools";
 
 export type PoolFormState = {
@@ -127,6 +128,9 @@ export async function createFunctionAction(
 
   const validKeys = new Set<string>(PERMISSION_CATALOG.map((p) => p.key));
   const permissionKeys = formData.getAll("permissionKeys").filter((k): k is string => typeof k === "string" && validKeys.has(k));
+  if (permissionKeys.some((k) => CUSTOM_FUNCTION_FORBIDDEN_PERMISSIONS.includes(k))) {
+    return { formError: "Une fonction personnalisée ne peut pas porter les pouvoirs réservés ni les permissions sensibles de la présence." };
+  }
   // Jamais au-dessus de soi : une fonction ne porte que des permissions que
   // son créateur détient lui-même (sinon elle servirait à en distribuer plus).
   const { permissions: actorPermissions } = await loadUserAccess(session.user.id);
@@ -136,7 +140,7 @@ export async function createFunctionAction(
 
   const key = slugifyRoleKey(parsed.data.label);
   if (!key) return { errors: { label: "Nom invalide." } };
-  if (RESTRICTED_ROLE_KEYS.includes(key)) return { errors: { label: "Ce nom de fonction est réservé." } };
+  if (RESTRICTED_ROLE_KEYS.includes(key) || isSuperuserRoleKey(key)) return { errors: { label: "Ce nom de fonction est réservé." } };
 
   let role;
   try {
@@ -169,4 +173,39 @@ export async function createFunctionAction(
 
   revalidatePath("/parametres");
   redirect("/parametres");
+}
+
+// ─── Modifier ou supprimer une fonction personnalisée (décisions du 2026-10-13) ─
+// Logique et contrôles : src/lib/functions-admin.ts.
+
+async function sessionActor() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  return { id: session.user.id, organizationId: session.user.organizationId };
+}
+
+export async function updateFunctionAction(roleId: string, _prev: FunctionFormState, formData: FormData): Promise<FunctionFormState> {
+  try {
+    await updateCustomFunction(await sessionActor(), roleId, {
+      label: String(formData.get("label") ?? ""),
+      description: String(formData.get("description") ?? "") || null,
+      permissionKeys: formData.getAll("permissionKeys").filter((k): k is string => typeof k === "string"),
+    });
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { formError: e.message };
+    throw e;
+  }
+  revalidatePath("/parametres");
+  redirect("/parametres?fonction=modifiee");
+}
+
+export async function deleteFunctionAction(roleId: string) {
+  try {
+    await deleteCustomFunction(await sessionActor(), roleId);
+  } catch (e) {
+    if (!(e instanceof ForbiddenError)) throw e;
+    redirect(`/parametres?erreur=${encodeURIComponent(e.message)}`);
+  }
+  revalidatePath("/parametres");
+  redirect("/parametres?fonction=supprimee");
 }
