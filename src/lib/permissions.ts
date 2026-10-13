@@ -6,6 +6,7 @@ import {
   RESTRICTED_ROLE_KEYS,
   ROLE_KEYS,
   viewModeKind,
+  isSuperuserRoleKey,
   type PermissionKey,
   type ViewModeKind,
 } from "@/lib/rbac-data";
@@ -224,7 +225,8 @@ export async function loadUserAccess(userId: string, opts?: { viewMode?: ViewMod
   if (!real) return { roles: [], permissions: [], ...none, awaitingCell: false };
   if (real.awaitingCell) return { roles: real.roles, permissions: [], ...none, awaitingCell: true };
 
-  const superAdmin = real.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
+  // Super Admin ou Admin (même traitement, décision du 2026-10-13).
+  const superAdmin = real.roles.some((r) => isSuperuserRoleKey(r.key));
   const kind = viewModeKind(real.roles.map((r) => r.key));
   const canViewAs = kind !== null;
   const own = { roles: real.roles, permissions: real.permissions, superAdmin, canViewAs, viewModeKind: kind, viewMode: null, awaitingCell: false };

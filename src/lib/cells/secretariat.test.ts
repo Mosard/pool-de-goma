@@ -10,9 +10,9 @@ import { NAV_ITEMS, isNavItemVisible } from "@/components/nav-items";
 
 const ORG = "org";
 
-test("Secrétariat : secrétaires de l'IPP, informaticiens et Super Admin ; aucune autre fonction", () => {
+test("Secrétariat : secrétaires de l'IPP, informaticiens, Super Admin et Admin ; aucune autre fonction", () => {
   const holders = (Object.keys(ROLE_PERMISSIONS) as RoleKey[]).filter((r) => ROLE_PERMISSIONS[r].includes(PERMISSIONS.REPORTS_ROUTE_IPP)).sort();
-  assert.deepEqual(holders, [ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SECRETAIRE_IPP, ROLE_KEYS.SUPER_ADMIN].sort());
+  assert.deepEqual(holders, [ROLE_KEYS.ADMIN, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SECRETAIRE_IPP, ROLE_KEYS.SUPER_ADMIN].sort());
 });
 
 test("informaticien : droit d'orienter les rapports et entrée « Secrétariat » dans son menu", () => {

@@ -124,7 +124,7 @@ test("Demandes de compte : validation et publication restent deux droits distinc
     const t = tabs(COMPTES_TABS, c);
     const has = (k: string) => c.permissions.some((p) => p.permissionKey === k);
     assert.equal(t.includes("Validation des comptes"), has(PERMISSIONS.ACCOUNTS_MANAGE), role);
-    const authority = ([ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN] as string[]).includes(role);
+    const authority = ([ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN] as string[]).includes(role);
     assert.equal(t.includes("Publication des comptes"), has(PERMISSIONS.PUBLICATION_MANAGE) && authority, role);
   }
   // Permission de publication sans fonction d'autorité : onglet masqué (la page redirige aussi).

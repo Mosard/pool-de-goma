@@ -27,7 +27,7 @@ export const NOT_INDIVIDUALLY_GRANTABLE: readonly PermissionKey[] = [
 ];
 
 /** Fonctions qui gèrent les accès à l'échelle de la province. */
-const PROVINCIAL_MANAGERS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN];
+const PROVINCIAL_MANAGERS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN];
 
 /**
  * Droits effectifs : permissions des fonctions, moins les retraits

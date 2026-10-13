@@ -114,11 +114,11 @@ test("fiches détaillées : aucune fonction ne les donne ; seulement la responsa
   assert.equal(orgWide(rolePerms(ROLE_KEYS.SUPER_ADMIN), P.PERSONNEL_RECORDS_READ_ALL), false);
 });
 
-test("approbation finale et délégation : IPP seulement ; intérim : Super Admin seulement", () => {
+test("approbation finale et délégation : IPP seulement ; intérim : Super Admin et Admin seulement", () => {
   const holders = (k: PermissionKey) => (Object.keys(ROLE_PERMISSIONS) as RoleKey[]).filter((r) => ROLE_PERMISSIONS[r].includes(k));
   assert.deepEqual(holders(P.PRESENCE_REQUESTS_APPROVE_FINAL), [ROLE_KEYS.IPP]);
   assert.deepEqual(holders(P.PRESENCE_DELEGATIONS_MANAGE), [ROLE_KEYS.IPP]);
-  assert.deepEqual(holders(P.CELLS_INTERIM_MANAGE), [ROLE_KEYS.SUPER_ADMIN]);
+  assert.deepEqual(holders(P.CELLS_INTERIM_MANAGE), [ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN]);
   assert.equal(PERSONNEL_HEAD_KEYS.includes(P.PRESENCE_REQUESTS_APPROVE_FINAL), false);
   assert.equal(PERSONNEL_HEAD_KEYS.includes(P.CELLS_INTERIM_MANAGE), false);
 });

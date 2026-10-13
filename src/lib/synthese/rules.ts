@@ -44,7 +44,7 @@ export type SynthesisMeta = {
 };
 
 /** Q3/Q4 : valident (et lisent les synthèses provinciales) l'IPP et le Super Admin ; l'IPA ne voit plus que sa cellule (D4). */
-export const SYNTHESIS_VALIDATOR_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN];
+export const SYNTHESIS_VALIDATOR_ROLE_KEYS: readonly string[] = [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN];
 
 /** Q1 : rapports dont l'exploitation a commencé (branche POOL). */
 export const EXPLOITED_REPORT_STATUSES: readonly string[] = [W.EN_EXPLOITATION, W.TRANSMIS, W.EN_ATTENTE_VALIDATION, W.VALIDE, W.CLOTURE];
@@ -55,7 +55,7 @@ export const CELL_EXPLOITED_STAGES: readonly string[] = ["EXPLOITE"];
 export const EDITABLE_STATUSES: readonly SynthesisStatusKey[] = ["BROUILLON", "A_CORRIGER"];
 
 function isSuperAdmin(actor: Actor): boolean {
-  return actor.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
+  return actor.roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN || r.key === ROLE_KEYS.ADMIN);
 }
 
 function holdsCell(actor: Actor, key: string, cellId: string | null): boolean {

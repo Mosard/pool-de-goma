@@ -13,6 +13,7 @@ import {
   ROLE_KEYS,
   SIGNED_ONLY_READER_ROLE_KEYS,
   SUPER_ADMIN_EXCLUDED_PERMISSIONS,
+  isSuperuserRoleKey,
 } from "@/lib/rbac-data";
 import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 
@@ -66,7 +67,7 @@ export function withSynthesisFlags(track: IppTrackInfo | null, sources: readonly
 export type CellActor = { id: string; organizationId: string; roles: SessionRole[]; permissions: SessionPermission[] };
 
 export function isSuperAdmin(roles: SessionRole[]): boolean {
-  return roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN);
+  return roles.some((r) => isSuperuserRoleKey(r.key));
 }
 
 // ─── Droits effectifs : rattachement des permissions à une cellule ─────────
@@ -92,7 +93,7 @@ export function bindRolePermissions(p: {
   const out: SessionPermission[] = [];
   for (const key of p.permissionKeys) {
     const base = { permissionKey: key, organizationId: p.organizationId };
-    if (p.roleKey === ROLE_KEYS.SUPER_ADMIN) {
+    if (isSuperuserRoleKey(p.roleKey)) {
       if (!SUPER_ADMIN_EXCLUDED_PERMISSIONS.includes(key as never)) out.push({ ...base, poolId: p.poolId });
       continue;
     }
@@ -155,7 +156,7 @@ const PROVINCIAL_REVIEW_KEYS: readonly string[] = [
 
 /** Fonction rattachée à une cellule (exploitant de l'IPP, IPA), hors Super Admin. */
 export function isCellBound(roles: { key: string }[]): boolean {
-  return !roles.some((r) => r.key === ROLE_KEYS.SUPER_ADMIN) && roles.some((r) => CELL_BOUND_ROLE_KEYS.includes(r.key));
+  return !roles.some((r) => isSuperuserRoleKey(r.key)) && roles.some((r) => CELL_BOUND_ROLE_KEYS.includes(r.key));
 }
 
 /**

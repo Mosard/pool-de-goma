@@ -7,9 +7,11 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { canOpenAccessScreen } from "@/lib/access-rules";
-import { togglePoolStatusAction } from "./actions";
+import { deleteFunctionAction, togglePoolStatusAction } from "./actions";
+import { Alert } from "@/components/ui";
 
-export default async function ParametresPage() {
+export default async function ParametresPage({ searchParams }: { searchParams: Promise<{ fonction?: string; erreur?: string }> }) {
+  const sp = await searchParams;
   const session = await auth();
   const user = session!.user;
   if (!hasPermissionAnyPool(user.permissions, PERMISSIONS.POOLS_MANAGE)) {
@@ -116,7 +118,10 @@ export default async function ParametresPage() {
       </div>
 
       <div>
-        <div className="mb-4 flex items-center justify-between">
+        {sp.fonction === "supprimee" && <Alert variant="success">Fonction supprimée ; elle a été retirée à tous ses titulaires.</Alert>}
+        {sp.fonction === "modifiee" && <Alert variant="success">Fonction modifiée ; ses titulaires en héritent dès leur prochaine action.</Alert>}
+        {sp.erreur && <Alert variant="error">{sp.erreur}</Alert>}
+        <div className="mb-4 mt-2 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Fonctions</h2>
           <Link href="/parametres/fonctions/nouveau">
             <Button>Nouvelle fonction</Button>
@@ -135,6 +140,7 @@ export default async function ParametresPage() {
                   <th className="px-6 py-3">Permissions</th>
                   <th className="px-6 py-3">Titulaires</th>
                   <th className="px-6 py-3">Origine</th>
+                  <th className="px-6 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -151,6 +157,24 @@ export default async function ParametresPage() {
                     <td className="px-6 py-3 text-gray-600">{f._count.userRoles}</td>
                     <td className="px-6 py-3">
                       <Badge color={f.isSystem ? "blue" : "green"}>{f.isSystem ? "Système" : "Ajoutée"}</Badge>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link href={`/parametres/fonctions/${f.id}`} className="text-xs font-medium text-blue-700 underline">
+                          {f.isSystem ? "Voir" : "Modifier"}
+                        </Link>
+                        {f.isSystem ? (
+                          <span className="text-xs text-gray-400" title="Le logiciel s'appuie sur les fonctions système.">Non supprimable</span>
+                        ) : (
+                          <ConfirmButton
+                            label="Supprimer"
+                            confirmLabel={f._count.userRoles > 0 ? `Supprimer et retirer à ${f._count.userRoles} titulaire(s)` : "Supprimer"}
+                            variant="danger"
+                            className="!min-h-0 !px-3 !py-1.5 text-xs"
+                            formAction={deleteFunctionAction.bind(null, f.id)}
+                          />
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
