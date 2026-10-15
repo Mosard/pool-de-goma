@@ -20,6 +20,13 @@ import {
   issueAdmsPathSecret,
   issueDeviceToken,
   openAdmsPairing,
+  cancelDeviceCommand,
+  deleteUnmappedDeviceUser,
+  enrollAgentOnDevice,
+  removeAgentFromDevice,
+  requestDeviceInventory,
+  requestFingerprintCapture,
+  resendEnrollment,
   presenceSimulatorEnabled,
   resolveDeviceAlert,
   revokeDeviceToken,
@@ -144,6 +151,67 @@ export async function resolveAlertAction(alertId: string): Promise<FormState> {
   return run(async () => {
     await resolveDeviceAlert(await actor(), alertId);
     return { ok: "Signalement traité." };
+  });
+}
+
+// ─── Enrôlement ADMS géré depuis l'application ─────────────────────────────
+
+const finger = (fd: FormData) => Math.min(9, Math.max(0, Number(str(fd, "finger") || 0) || 0));
+
+export async function enrollAgentAction(deviceId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const { pin } = await enrollAgentOnDevice(await actor(), {
+      deviceId,
+      userId: str(fd, "userId"),
+      pin: str(fd, "pin") || undefined,
+      fromDateKey: str(fd, "from"),
+      captureFingerprint: fd.get("capture") === "on",
+      fingerIndex: finger(fd),
+    });
+    return { ok: `Agent inscrit sous le PIN ${pin} : la pointeuse le recevra à sa prochaine interrogation (environ 1 minute).` };
+  });
+}
+
+export async function resendEnrollmentAction(mappingId: string): Promise<FormState> {
+  return run(async () => {
+    await resendEnrollment(await actor(), mappingId);
+    return { ok: "Inscription renvoyée à la pointeuse." };
+  });
+}
+
+export async function fingerprintAction(mappingId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    await requestFingerprintCapture(await actor(), mappingId, finger(fd));
+    return { ok: "Capture demandée : l'agent pose son doigt sur la pointeuse dans les minutes qui suivent." };
+  });
+}
+
+export async function removeAgentAction(mappingId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const deleteFromDevice = fd.get("deleteFromDevice") === "on";
+    await removeAgentFromDevice(await actor(), { mappingId, endDateKey: str(fd, "end"), reason: str(fd, "reason"), deleteFromDevice });
+    return { ok: deleteFromDevice ? "Association terminée ; retrait envoyé à la pointeuse." : "Association terminée (l'agent reste inscrit sur la pointeuse)." };
+  });
+}
+
+export async function inventoryAction(deviceId: string): Promise<FormState> {
+  return run(async () => {
+    await requestDeviceInventory(await actor(), deviceId);
+    return { ok: "Inventaire demandé : résultat dans 1 à 2 minutes (rechargez la page)." };
+  });
+}
+
+export async function deleteDeviceUserAction(deviceId: string, pin: string): Promise<FormState> {
+  return run(async () => {
+    await deleteUnmappedDeviceUser(await actor(), deviceId, pin);
+    return { ok: `Retrait du PIN ${pin} envoyé à la pointeuse.` };
+  });
+}
+
+export async function cancelCommandAction(commandId: string): Promise<FormState> {
+  return run(async () => {
+    await cancelDeviceCommand(await actor(), commandId);
+    return { ok: "Commande annulée." };
   });
 }
 

@@ -17,12 +17,12 @@ import { MAX_EVENTS_PER_BATCH, type CanonicalEvent } from "@/lib/presence/ingest
 const PIN_RE = /^[A-Za-z0-9_.-]{1,64}$/; // même règle que les associations
 const TIME_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/;
 
-export type AdmsEndpoint = "cdata" | "getrequest" | "devicecmd" | "other";
+export type AdmsEndpoint = "cdata" | "getrequest" | "devicecmd" | "querydata" | "other";
 
 /** Point d'entrée ADMS d'après le dernier segment du chemin (« cdata », « cdata.aspx »…). */
 export function admsEndpoint(segment: string): AdmsEndpoint {
   const s = segment.toLowerCase().replace(/\.aspx$/, "");
-  return s === "cdata" || s === "getrequest" || s === "devicecmd" ? s : "other";
+  return s === "cdata" || s === "getrequest" || s === "devicecmd" || s === "querydata" ? s : "other";
 }
 
 /** Numéro de série plausible (lettres, chiffres) ; sinon null. */
@@ -172,3 +172,99 @@ export function parseInfo(info: string | null | undefined): AdmsInfo | null {
 export function hashPathSecret(secret: string): string {
   return createHash("sha256").update(`adms-path:${secret}`).digest("hex");
 }
+
+// ─── Commandes de gestion (serveur → pointeuse) ─────────────────────────────
+// Remises en réponse à getrequest, une par ligne : « C:<seq>:<commande> ».
+// Seules ces commandes existent dans l'application : inscription et retrait
+// d'un utilisateur, capture d'empreinte SUR l'appareil, inventaire, INFO.
+// Jamais d'effacement des pointages, jamais de lecture ni d'envoi d'empreinte.
+
+export const PIN_PATTERN = PIN_RE;
+
+/** Nom affiché par la pointeuse : sans accents, 24 caractères, sans séparateurs du protocole. */
+export function deviceDisplayName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\t\r\n=]/g, " ")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 24);
+}
+
+/** Inscription ou mise à jour d'un utilisateur ORDINAIRE (Pri=0 : jamais administrateur). */
+export function userUpsertCommand(pin: string, name: string): string {
+  if (!PIN_RE.test(pin)) throw new Error("PIN invalide.");
+  return `DATA UPDATE USERINFO PIN=${pin}\tName=${deviceDisplayName(name)}\tPri=0\tGrp=1`;
+}
+
+export function userDeleteCommand(pin: string): string {
+  if (!PIN_RE.test(pin)) throw new Error("PIN invalide.");
+  return `DATA DELETE USERINFO PIN=${pin}`;
+}
+
+/** Lance la capture d'une empreinte SUR la pointeuse (l'agent pose son doigt sur l'appareil). */
+export function enrollFingerprintCommand(pin: string, fingerIndex: number): string {
+  if (!PIN_RE.test(pin)) throw new Error("PIN invalide.");
+  const fid = Math.min(9, Math.max(0, Math.trunc(fingerIndex)));
+  return `ENROLL_FP PIN=${pin}\tFID=${fid}\tRETRY=3\tOVERWRITE=0`;
+}
+
+export const USER_QUERY_COMMAND = "DATA QUERY USERINFO";
+export const INFO_COMMAND = "INFO";
+
+/** Corps de réponse à getrequest : une commande par ligne, ou « OK » s'il n'y en a aucune. */
+export function formatCommands(cmds: { seq: number; command: string }[]): string {
+  return cmds.length ? cmds.map((c) => `C:${c.seq}:${c.command}`).join("\n") + "\n" : "OK";
+}
+
+/** Résultats rendus par /iclock/devicecmd : « ID=<seq>&Return=<code>&CMD=<type> », un par ligne. */
+export function parseCommandResults(body: string): { seq: number; returnCode: number; cmd: string | null }[] {
+  const out: { seq: number; returnCode: number; cmd: string | null }[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const params = new URLSearchParams(line.trim());
+    const id = params.get("ID") ?? params.get("id");
+    const ret = params.get("Return") ?? params.get("return");
+    if (!id || !/^\d{1,9}$/.test(id) || ret === null || !/^-?\d{1,6}$/.test(ret)) continue;
+    out.push({ seq: Number(id), returnCode: Number(ret), cmd: (params.get("CMD") ?? params.get("cmd"))?.slice(0, 32) ?? null });
+  }
+  return out;
+}
+
+export type DeviceUserEntry = { pin: string; privilege: number };
+
+/**
+ * Inventaire des utilisateurs envoyé par la pointeuse en réponse à
+ * DATA QUERY USERINFO. Formats tolérés selon le micrologiciel :
+ *   « USER PIN=1⇥Name=…⇥Pri=0⇥Passwd=…⇥Card=… » (journal d'opérations),
+ *   « PIN=1⇥Name=…⇥Pri=0… » (table USERINFO),
+ *   « user uid=1⇥pin=1⇥privilege=0⇥name=… » (querydata).
+ * Seuls le PIN et le privilège sont extraits. Toute autre ligne (empreintes
+ * « FP … », visages, photos) est ignorée sans être interprétée ; nom, mot de
+ * passe et carte ne sont jamais retournés.
+ */
+export function parseUserInventory(body: string): DeviceUserEntry[] {
+  const out = new Map<string, number>();
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!/^(USER\s|user\s|PIN=|pin=)/.test(line)) continue;
+    const fields = new Map<string, string>();
+    for (const part of line.replace(/^user\s+/i, "").split("\t")) {
+      const i = part.indexOf("=");
+      if (i > 0) fields.set(part.slice(0, i).trim().toLowerCase(), part.slice(i + 1).trim());
+    }
+    const pin = fields.get("pin") ?? "";
+    if (!PIN_RE.test(pin)) continue;
+    const pri = fields.get("pri") ?? fields.get("privilege") ?? "0";
+    out.set(pin, /^\d{1,3}$/.test(pri) ? Number(pri) : 0);
+  }
+  return [...out].map(([pin, privilege]) => ({ pin, privilege }));
+}
+
+/** Privilège ZKTeco : 0 = utilisateur ; 2 = enrôleur ; 6 = administrateur ; 14 = super administrateur. */
+export function isDeviceAdmin(privilege: number): boolean {
+  return privilege > 0;
+}
+

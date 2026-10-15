@@ -11,6 +11,7 @@ import { loadPresenceViewer } from "@/lib/presence/views";
 import { ActionForm } from "../action-form";
 import { SimulatedBadge } from "../presence-ui";
 import { AdmsPanel } from "./adms-panel";
+import { AdmsEnrollment, AdmsMappingActions } from "./adms-enrollment";
 import { createDeviceAction, createMappingAction, endMappingAction, issueTokenAction, revokeTokenAction, toggleDeviceAction } from "../actions";
 
 const STATUS_BADGE = {
@@ -43,6 +44,11 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
         credentials: { orderBy: { createdAt: "desc" }, select: { id: true, prefix: true, createdAt: true, revokedAt: true, lastUsedAt: true } },
         mappings: { orderBy: [{ validTo: "asc" }, { validFrom: "desc" }], include: { user: { select: { name: true } } } },
         _count: { select: { punches: true } },
+        commands: {
+          orderBy: { seq: "desc" },
+          take: 15,
+          select: { id: true, seq: true, kind: true, pin: true, status: true, returnCode: true, createdAt: true, doneAt: true },
+        },
       },
     }),
     canEnroll
@@ -122,6 +128,19 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
               />
             )}
 
+            {d.protocol === "ADMS" && canEnroll && d.status !== "DESACTIVE" && (
+              <AdmsEnrollment
+                deviceId={d.id}
+                accounts={accounts}
+                inscribedUserIds={d.mappings.filter((m) => !m.validTo).map((m) => m.userId)}
+                activePins={d.mappings.filter((m) => !m.validTo).map((m) => m.deviceUserId)}
+                inventory={Array.isArray(d.admsUsers) ? (d.admsUsers as { pin: string; privilege: number }[]) : null}
+                inventoryAt={d.admsUsersAt}
+                commands={d.commands}
+                today={today}
+              />
+            )}
+
             {canDevices && !d.isSimulator && d.protocol !== "ADMS" && (
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold uppercase text-gray-500">Jetons techniques (stockés hachés)</h3>
@@ -155,7 +174,8 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
                           {m.validTo ? ` jusqu'au ${formatGomaDateTime(m.validTo)} (exclu)${m.endReason ? ` — ${m.endReason}` : ""}` : " — en cours"}
                         </span>
                       </span>
-                      {canEnroll && !m.validTo && (
+                      {canEnroll && !m.validTo && d.protocol === "ADMS" && d.status !== "DESACTIVE" && <AdmsMappingActions mappingId={m.id} today={today} />}
+                      {canEnroll && !m.validTo && (d.protocol !== "ADMS" || d.status === "DESACTIVE") && (
                         <ActionForm action={endMappingAction.bind(null, m.id)} submit="Terminer" variant="ghost" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[30rem] sm:grid-cols-3">
                           <Input type="date" name="end" defaultValue={today} aria-label="Fin (exclue)" />
                           <Input name="reason" placeholder="Motif" aria-label="Motif" />

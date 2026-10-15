@@ -888,6 +888,12 @@ model AttendanceDevice {
   // Compteurs annoncés par la pointeuse (INFO) : utilisateurs, empreintes, pointages en mémoire.
   admsInfo            Json?
   admsInfoAt          DateTime?
+  // Commandes en attente (évite une lecture de la file à chaque interrogation).
+  admsCommandsPending Boolean        @default(false)
+  // Inventaire des utilisateurs déclarés SUR l'appareil (PIN et privilège
+  // administrateur seulement ; ni nom, ni mot de passe, ni carte, ni empreinte).
+  admsUsers           Json?
+  admsUsersAt         DateTime?
   // Appareil du simulateur de développement : ses pointages sont SIMULATOR, jamais présentés comme réels.
   isSimulator         Boolean        @default(false)
   lastContactAt       DateTime?
@@ -904,6 +910,42 @@ model AttendanceDevice {
   batches     IngestBatch[]
   punches     RawPunch[]
   alerts      AttendanceDeviceAlert[]
+  commands    DeviceCommand[]
+}
+
+enum DeviceCommandStatus {
+  PENDING
+  SENT
+  OK
+  ERROR
+  CANCELLED
+  EXPIRED
+}
+
+// Commande envoyée à une pointeuse ADMS lors de son interrogation
+// (« C:<seq>:<commande> ») ; résultat rendu par /iclock/devicecmd.
+// Seules des commandes de gestion des utilisateurs et d'inventaire existent :
+// jamais d'effacement des pointages ni de lecture d'empreintes.
+model DeviceCommand {
+  id          String              @id @default(cuid())
+  // Numéro transmis à l'appareil (C:<seq>:…), unique.
+  seq         Int                 @unique @default(autoincrement())
+  deviceId    String
+  device      AttendanceDevice    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  // USER_UPSERT, USER_DELETE, ENROLL_FP, USER_QUERY, INFO
+  kind        String
+  pin         String?
+  userId      String?
+  command     String
+  status      DeviceCommandStatus @default(PENDING)
+  attempts    Int                 @default(0)
+  returnCode  Int?
+  createdById String?
+  createdAt   DateTime            @default(now())
+  sentAt      DateTime?
+  doneAt      DateTime?
+
+  @@index([deviceId, status])
 }
 
 enum DeviceProtocol {

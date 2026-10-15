@@ -12,7 +12,18 @@ import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../src/lib/prisma";
 import { ROLE_KEYS } from "../../src/lib/rbac-data";
-import { createDevice, createMapping, issueAdmsPathSecret, openAdmsPairing, setDeviceDisabled } from "../../src/lib/presence/devices";
+import {
+  cancelDeviceCommand,
+  createDevice,
+  createMapping,
+  deleteUnmappedDeviceUser,
+  enrollAgentOnDevice,
+  issueAdmsPathSecret,
+  openAdmsPairing,
+  removeAgentFromDevice,
+  requestDeviceInventory,
+  setDeviceDisabled,
+} from "../../src/lib/presence/devices";
 import { saveSchedule } from "../../src/lib/presence/config";
 import { VALIDATED_SCHEDULE_DEFAULTS } from "../../src/lib/presence/settings";
 import { addDays, dateKeyToDbDate, gomaClock, gomaDateKey } from "../../src/lib/presence/time";
@@ -207,6 +218,101 @@ async function main() {
     const rs = await Promise.all([1, 2, 3].map(() => attlog(`${L6}\n`)));
     assert.deepEqual(rs.map((r) => r.text), ["OK: 1", "OK: 1", "OK: 1"]);
     assert.equal(await prisma.rawPunch.count({ where: { deviceId: device.id } }), before + 1);
+  });
+
+  // ─── Gestion centralisée : enrôlement, inventaire, blocage ───
+  const agent2 = await user("agent2", `Agent Epsilon ${RUN}`, ROLE_KEYS.AGENT_IPP);
+  const poll = () => call("GET", `/iclock/getrequest?SN=${SN}`);
+  const results = (lines: string[]) => call("POST", `/iclock/devicecmd?SN=${SN}`, lines.join("\n") + "\n");
+  const commandsOf = (where: object = {}) => prisma.deviceCommand.findMany({ where: { deviceId: device.id, ...where }, orderBy: { seq: "asc" } });
+
+  await check("pointage d'un PIN sans association : conservé, non compté, signalé", async () => {
+    assert.equal((await attlog(`${line("55", yest, "07:30:00", "0")}\n`)).text, "OK: 1");
+    assert.ok(await prisma.rawPunch.findFirst({ where: { deviceId: device.id, deviceUserId: "55" } }));
+    const a = await alertOf("POINTAGE_NON_AUTORISE", { deviceId: device.id });
+    assert.ok(a);
+    assert.match(JSON.stringify(a.detail), /"55"/);
+  });
+
+  let enrolledPin = "";
+  await check("inscription depuis l'application : PIN attribué, association datée, commandes remises à l'interrogation suivante", async () => {
+    const { pin } = await enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: agent2.id, fromDateKey: today, captureFingerprint: true, fingerIndex: 1 });
+    enrolledPin = pin;
+    assert.equal(pin, "78", "au-dessus du plus grand PIN connu (77)");
+    assert.ok(await prisma.deviceUserMapping.findFirst({ where: { deviceId: device.id, deviceUserId: pin, userId: agent2.id, validTo: null } }));
+    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: agent2.id, fromDateKey: today }), /déjà inscrit/);
+    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: ipp.id, pin: "55", fromDateKey: today }), /personne non associée/);
+    const r = await poll();
+    const lines = r.text.trim().split("\n");
+    assert.equal(lines.length, 2);
+    assert.match(lines[0], new RegExp(`^C:\\d+:DATA UPDATE USERINFO PIN=${pin}\\tName=Agent Epsilon ${RUN}\\tPri=0\\tGrp=1$`));
+    assert.match(lines[1], new RegExp(`^C:\\d+:ENROLL_FP PIN=${pin}\\tFID=1\\tRETRY=3\\tOVERWRITE=0$`));
+    assert.ok((await commandsOf()).every((c) => c.status === "SENT"));
+    // Interrogation suivante sans résultat : rien n'est renvoyé avant 5 minutes.
+    assert.equal((await poll()).text, "OK");
+  });
+
+  await check("résultats : réussite et échec enregistrés ; échec signalé ; plus rien en attente", async () => {
+    const [up, fp] = await commandsOf();
+    assert.equal((await results([`ID=${up.seq}&Return=0&CMD=DATA`, `ID=${fp.seq}&Return=-1002&CMD=ENROLL_FP`])).text, "OK");
+    const [up2, fp2] = await commandsOf();
+    assert.equal(up2.status, "OK");
+    assert.equal(fp2.status, "ERROR");
+    assert.equal(fp2.returnCode, -1002);
+    assert.ok(await alertOf("COMMANDE_EN_ECHEC", { deviceId: device.id }));
+    assert.equal((await prisma.attendanceDevice.findUniqueOrThrow({ where: { id: device.id } })).admsCommandsPending, false);
+    assert.equal((await poll()).text, "OK");
+  });
+
+  await check("pointage de l'agent inscrit : compté dans sa journée", async () => {
+    const pin = enrolledPin;
+    assert.equal((await attlog(`${line(pin, dateAt(-5), clock(-5), "0")}\n`)).text, "OK: 1");
+    const d = await prisma.dailyAttendance.findUnique({ where: { userId_date: { userId: agent2.id, date: dateKeyToDbDate(dateAt(-5)) } } });
+    assert.equal(d?.punchCount, 1);
+  });
+
+  await check("inventaire : réponse non demandée ignorée ; demandée → PIN et privilège seulement ; non associés et administrateurs signalés", async () => {
+    const marker = `SECRET-${RUN}`;
+    const body = [`USER PIN=1\tName=Chef\tPri=14\tPasswd=${marker}\tCard=[0]`, `FP PIN=1\tFID=6\tTMP=${marker}`, `USER PIN=11\tName=A\tPri=0`, `USER PIN=${enrolledPin}\tName=B\tPri=0`, `USER PIN=55\tName=C\tPri=0`].join("\n");
+    assert.equal((await call("POST", `/iclock/cdata?SN=${SN}&table=USERINFO&Stamp=1`, body)).text, "OK");
+    assert.equal((await prisma.attendanceDevice.findUniqueOrThrow({ where: { id: device.id } })).admsUsers, null, "pas d'inventaire sans demande");
+    await requestDeviceInventory(as(secr), device.id);
+    assert.match((await poll()).text, /^C:\d+:DATA QUERY USERINFO\n$/);
+    assert.equal((await call("POST", `/iclock/cdata?SN=${SN}&table=OPERLOG&Stamp=1`, body)).text, "OK: 4");
+    const d = await prisma.attendanceDevice.findUniqueOrThrow({ where: { id: device.id } });
+    assert.deepEqual(d.admsUsers, [
+      { pin: "1", privilege: 14 },
+      { pin: "11", privilege: 0 },
+      { pin: "55", privilege: 0 },
+      { pin: enrolledPin, privilege: 0 },
+    ]);
+    assert.doesNotMatch(JSON.stringify(d.admsUsers), new RegExp(marker));
+    const stray = await alertOf("UTILISATEUR_NON_ASSOCIE_SUR_APPAREIL", { deviceId: device.id });
+    assert.match(JSON.stringify(stray?.detail), /"55"/);
+    assert.doesNotMatch(JSON.stringify(stray?.detail), /"11"/, "PIN 11 associé");
+    assert.ok(await alertOf("ADMINISTRATEUR_SUR_APPAREIL", { deviceId: device.id }));
+    const found = await prisma.$queryRawUnsafe<{ n: bigint }[]>(`SELECT COUNT(*)::bigint AS n FROM "AttendanceDeviceAlert" WHERE detail::text LIKE $1`, `%${marker}%`);
+    assert.equal(Number(found[0].n), 0);
+  });
+
+  await check("blocage : retrait à distance d'un PIN non associé ; administrateur ou PIN associé refusés ; annulation avant remise", async () => {
+    await assert.rejects(deleteUnmappedDeviceUser(as(secr), device.id, "1"), /Administrateur/);
+    await assert.rejects(deleteUnmappedDeviceUser(as(secr), device.id, "11"), /associé/);
+    await deleteUnmappedDeviceUser(as(secr), device.id, "55");
+    const pending = (await commandsOf({ status: "PENDING" }))[0];
+    assert.equal(pending.command, "DATA DELETE USERINFO PIN=55");
+    await cancelDeviceCommand(as(secr), pending.id);
+    assert.equal((await poll()).text, "OK", "commande annulée : rien n'est remis");
+    await deleteUnmappedDeviceUser(as(secr), device.id, "55");
+    assert.match((await poll()).text, /^C:\d+:DATA DELETE USERINFO PIN=55\n$/);
+    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: ipp.id, pin: "1", fromDateKey: today }), /administrateur de la pointeuse/);
+  });
+
+  await check("retrait d'un agent : fin d'association et suppression sur la pointeuse ; ses pointages ultérieurs ne comptent plus", async () => {
+    const m = await prisma.deviceUserMapping.findFirstOrThrow({ where: { deviceId: device.id, userId: agent2.id, validTo: null } });
+    await removeAgentFromDevice(as(secr), { mappingId: m.id, endDateKey: addDays(today, 1), reason: "Départ (test)", deleteFromDevice: true });
+    assert.ok((await prisma.deviceUserMapping.findUniqueOrThrow({ where: { id: m.id } })).validTo);
+    assert.match((await poll()).text, new RegExp(`C:\\d+:DATA DELETE USERINFO PIN=${enrolledPin}\\n$`));
   });
 
   await check("chemin secret : exigé une fois défini ; faux ou absent = 401 ; bon chemin accepté", async () => {

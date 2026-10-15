@@ -31,6 +31,11 @@ const ALERT_LABEL: Record<string, string> = {
   TABLE_NON_ATTENDUE: "Envoi d'une table non demandée — ignoré sans lecture",
   LIGNES_ILLISIBLES: "Lignes de pointage illisibles",
   HORLOGE_EN_AVANCE: "Horloge de l'appareil en avance — pointages en quarantaine",
+  POINTAGE_NON_AUTORISE: "Pointage d'un PIN sans association valide — conservé, non compté",
+  UTILISATEUR_NON_ASSOCIE_SUR_APPAREIL: "Utilisateur présent sur la pointeuse sans association",
+  ADMINISTRATEUR_SUR_APPAREIL: "Administrateur(s) déclaré(s) sur la pointeuse — à vérifier",
+  MENU_NON_PROTEGE: "Aucun administrateur sur la pointeuse : menu accessible à tous",
+  COMMANDE_EN_ECHEC: "Commande refusée par la pointeuse",
 };
 
 // État de synchronisation : dernier contact, dernier pointage reçu, décalage

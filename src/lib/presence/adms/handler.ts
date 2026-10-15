@@ -13,7 +13,13 @@
 // Fiabilité : « OK: n » n'est répondu qu'APRÈS l'enregistrement en base ; en
 // cas d'erreur, la pointeuse garde ses pointages et les renvoie (renvoi sans
 // effet grâce aux clés d'idempotence). Les tables autres qu'ATTLOG ne sont
-// jamais lues ni conservées : seuls leur nom et leur taille sont signalés.
+// jamais conservées : seuls leur nom et leur taille sont signalés. Seule
+// exception, la réponse à un inventaire DEMANDÉ par l'application (moins de
+// 30 minutes) : elle est lue en mémoire et seuls le PIN et le privilège de
+// chaque utilisateur sont retenus (ni nom, ni mot de passe, ni carte, ni empreinte).
+//
+// Gestion centralisée : les commandes de la file (src/lib/presence/adms/commands.ts)
+// sont remises en réponse à getrequest ; leurs résultats arrivent par devicecmd.
 //
 // Coût : chaque appel à la base est facturé ; l'appareil est gardé en mémoire
 // 60 s et le dernier contact n'est écrit qu'une fois toutes les 5 minutes.
@@ -24,7 +30,21 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { ingestBatch } from "@/lib/presence/ingest";
 import { gomaLocalToUtc } from "@/lib/presence/time";
-import { type AdmsEndpoint, cleanPathSecret, cleanSn, handshakeOptions, hashPathSecret, parseAttlog, parseInfo, toBatches } from "./protocol";
+import { mappingCovers } from "@/lib/presence/daily";
+import { applyCommandResults, inventoryExpected, storeInventory, takeCommandsForDelivery } from "./commands";
+import {
+  type AdmsEndpoint,
+  type DeviceUserEntry,
+  cleanPathSecret,
+  cleanSn,
+  handshakeOptions,
+  hashPathSecret,
+  isDeviceAdmin,
+  parseAttlog,
+  parseInfo,
+  parseUserInventory,
+  toBatches,
+} from "./protocol";
 
 export const ADMS_DELAY_SEC = 60;
 /** Avance d'horloge tolérée avant quarantaine (secondes). */
@@ -53,11 +73,14 @@ const deviceSelect = {
   admsLocalIp: true,
   admsPathSecretHash: true,
   admsInfo: true,
+  admsCommandsPending: true,
+  admsUsers: true,
+  admsUsersAt: true,
 } satisfies Prisma.AttendanceDeviceSelect;
 type AdmsDevice = Prisma.AttendanceDeviceGetPayload<{ select: typeof deviceSelect }>;
 
 // Mémoire de l'instance (indicative : une autre instance repart de zéro).
-type Memo = { devices: Map<string, { device: AdmsDevice | null; at: number }>; alerts: Map<string, number> };
+type Memo = { devices: Map<string, { device: AdmsDevice | null; at: number }>; alerts: Map<string, { at: number; sig: string }> };
 const g = globalThis as unknown as { __adms?: Memo };
 const memo: Memo = g.__adms ?? (g.__adms = { devices: new Map(), alerts: new Map() });
 
@@ -93,15 +116,23 @@ export type AlertKind =
   | "IP_PUBLIQUE_CHANGEE"
   | "TABLE_NON_ATTENDUE"
   | "LIGNES_ILLISIBLES"
-  | "HORLOGE_EN_AVANCE";
+  | "HORLOGE_EN_AVANCE"
+  | "POINTAGE_NON_AUTORISE"
+  | "UTILISATEUR_NON_ASSOCIE_SUR_APPAREIL"
+  | "ADMINISTRATEUR_SUR_APPAREIL"
+  | "MENU_NON_PROTEGE"
+  | "COMMANDE_EN_ECHEC";
 
 /** Signalement regroupé (une ligne par appareil ou série et par nature) ; rouvert s'il était traité. */
 export async function raiseAlert(p: { kind: AlertKind; device?: { id: string; organizationId: string } | null; serialNumber?: string | null; detail?: Record<string, unknown> }) {
   const dedupKey = `${p.device ? p.device.id : `sn:${p.serialNumber ?? "?"}`}|${p.kind}`;
-  const last = memo.alerts.get(dedupKey);
-  if (last && Date.now() - last < ALERT_WRITE_EVERY_MS) return;
-  memo.alerts.set(dedupKey, Date.now());
+  // Une même alerte au détail identique n'est réécrite qu'une fois par minute ;
+  // un détail nouveau (autre PIN, autre IP…) est toujours enregistré.
   const detail = (p.detail ?? {}) as Prisma.InputJsonValue;
+  const sig = JSON.stringify(detail);
+  const last = memo.alerts.get(dedupKey);
+  if (last && last.sig === sig && Date.now() - last.at < ALERT_WRITE_EVERY_MS) return;
+  memo.alerts.set(dedupKey, { at: Date.now(), sig });
   await prisma.attendanceDeviceAlert.upsert({
     where: { dedupKey },
     create: { dedupKey, kind: p.kind, organizationId: p.device?.organizationId ?? null, deviceId: p.device?.id ?? null, serialNumber: p.serialNumber ?? null, detail },
@@ -224,8 +255,59 @@ async function receiveAttlog(request: Request, device: AdmsDevice, sn: string, q
   }
   if (unreadable + invalid) await raiseAlert({ kind: "LIGNES_ILLISIBLES", device, serialNumber: sn, detail: { lignes: unreadable + invalid } });
   if (suspect) await raiseAlert({ kind: "HORLOGE_EN_AVANCE", device, serialNumber: sn, detail: { pointages: suspect, avanceMaxSec: newest !== null ? Math.round(newest / 1000) : null } });
+  await flagUnauthorized(device, sn, lines);
   // Tout est enregistré : la pointeuse peut marquer ces lignes comme transmises.
   return text(`OK: ${lineCount}`);
+}
+
+/**
+ * Pointages non autorisés : PIN sans association valide à l'heure du pointage
+ * (inconnu, association terminée ou pas encore commencée). Ils sont conservés
+ * (preuve) mais n'entrent dans aucune journée ; signalés pour action
+ * (associer, ou retirer l'utilisateur de la pointeuse).
+ */
+async function flagUnauthorized(device: AdmsDevice, sn: string, lines: ReturnType<typeof parseAttlog>["lines"]) {
+  if (lines.length === 0) return;
+  const pins = [...new Set(lines.map((l) => l.event.deviceUserId))];
+  const mappings = await prisma.deviceUserMapping.findMany({ where: { deviceId: device.id, deviceUserId: { in: pins } }, select: { deviceUserId: true, validFrom: true, validTo: true } });
+  const refused = new Map<string, number>();
+  for (const l of lines) {
+    const at = gomaLocalToUtc(l.event.localTime);
+    if (!at) continue;
+    const ok = mappings.some((m) => m.deviceUserId === l.event.deviceUserId && mappingCovers(m, at));
+    if (!ok) refused.set(l.event.deviceUserId, (refused.get(l.event.deviceUserId) ?? 0) + 1);
+  }
+  if (refused.size) {
+    await raiseAlert({ kind: "POINTAGE_NON_AUTORISE", device, serialNumber: sn, detail: { pins: [...refused.keys()].slice(0, 20), pointages: [...refused.values()].reduce((a, b) => a + b, 0) } });
+  }
+}
+
+/** Contrôle de l'inventaire : PIN présents sur l'appareil sans association, administrateurs de l'appareil. */
+async function checkInventory(device: AdmsDevice, sn: string, users: DeviceUserEntry[]) {
+  const active = await prisma.deviceUserMapping.findMany({ where: { deviceId: device.id, validTo: null }, select: { deviceUserId: true } });
+  const known = new Set(active.map((m) => m.deviceUserId));
+  const stray = users.filter((u) => !known.has(u.pin)).map((u) => u.pin);
+  const admins = users.filter((u) => isDeviceAdmin(u.privilege));
+  if (stray.length) await raiseAlert({ kind: "UTILISATEUR_NON_ASSOCIE_SUR_APPAREIL", device, serialNumber: sn, detail: { pins: stray.slice(0, 50), total: stray.length } });
+  // Sans administrateur, le menu de la pointeuse est ouvert à tous (enrôlement, réglages).
+  if (users.length && admins.length === 0) await raiseAlert({ kind: "MENU_NON_PROTEGE", device, serialNumber: sn, detail: { utilisateurs: users.length } });
+  if (admins.length) await raiseAlert({ kind: "ADMINISTRATEUR_SUR_APPAREIL", device, serialNumber: sn, detail: { pins: admins.map((a) => a.pin).slice(0, 20) } });
+}
+
+/** Inventaire reçu (POST cdata USERINFO/OPERLOG, ou querydata) ; corps lu en mémoire, seuls PIN et privilège retenus. */
+async function receiveInventory(request: Request, device: AdmsDevice, sn: string, table: string): Promise<Response> {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_BYTES) return text("Payload too large", 413);
+  const body = Buffer.from(await request.arrayBuffer()).toString("utf8");
+  const entries = parseUserInventory(body);
+  if (entries.length === 0) {
+    await raiseAlert({ kind: "TABLE_NON_ATTENDUE", device, serialNumber: sn, detail: { table: table || null, octets: declared || null } });
+    return text("OK");
+  }
+  const list = await storeInventory(device, entries);
+  forgetAdmsDevice(sn);
+  await checkInventory(device, sn, list);
+  return text(`OK: ${entries.length}`);
 }
 
 /** Traite un appel ADMS (après le routage). */
@@ -245,6 +327,10 @@ export async function handleAdms(request: Request, endpoint: AdmsEndpoint, pathS
   if (endpoint === "cdata" && request.method === "POST") {
     const table = (q.get("table") ?? "").toUpperCase().slice(0, 32);
     if (table === "ATTLOG") return receiveAttlog(request, device, sn, q);
+    // Réponse à une demande d'inventaire (et seulement dans ce cas) : PIN et privilège.
+    if ((table === "USERINFO" || table === "OPERLOG" || table === "USER") && (await inventoryExpected(device.id))) {
+      return receiveInventory(request, device, sn, table);
+    }
     // Jamais lu ni conservé : seuls le nom de la table et la taille annoncée sont signalés.
     await raiseAlert({ kind: "TABLE_NON_ATTENDUE", device, serialNumber: sn, detail: { table: table || null, octets: Number(request.headers.get("content-length") ?? 0) || null } });
     await touchContact(device);
@@ -265,11 +351,32 @@ export async function handleAdms(request: Request, endpoint: AdmsEndpoint, pathS
           }
         : {}
     );
-    // Aucune commande n'est jamais envoyée à la pointeuse.
+    // Commandes de gestion en attente (inscription, retrait, inventaire…).
+    if (device.admsCommandsPending) {
+      const { body } = await takeCommandsForDelivery(device.id);
+      forgetAdmsDevice(sn);
+      return text(body);
+    }
     return text("OK");
   }
 
-  // devicecmd et chemins propres à d'autres micrologiciels : accusé simple, corps ignoré.
+  if (endpoint === "devicecmd" && request.method === "POST") {
+    const declared = Number(request.headers.get("content-length") ?? 0);
+    if (declared > 64 * 1024) return text("Payload too large", 413);
+    const body = Buffer.from(await request.arrayBuffer()).toString("utf8").slice(0, 64 * 1024);
+    await applyCommandResults(device.id, body);
+    forgetAdmsDevice(sn);
+    const failed = await prisma.deviceCommand.findMany({ where: { deviceId: device.id, status: "ERROR", doneAt: { gte: new Date(Date.now() - 60_000) } }, select: { seq: true, kind: true, pin: true, returnCode: true } });
+    if (failed.length) await raiseAlert({ kind: "COMMANDE_EN_ECHEC", device, serialNumber: sn, detail: { commandes: failed } });
+    await touchContact(device);
+    return text("OK");
+  }
+
+  if (endpoint === "querydata" && request.method === "POST" && (await inventoryExpected(device.id))) {
+    return receiveInventory(request, device, sn, (q.get("tablename") ?? "").toUpperCase().slice(0, 32));
+  }
+
+  // Chemins propres à d'autres micrologiciels : accusé simple, corps ignoré.
   await touchContact(device);
   return text("OK");
 }

@@ -16,8 +16,60 @@ import {
   parseInfo,
   toBatches,
   transFlagFor,
+  deviceDisplayName,
+  enrollFingerprintCommand,
+  formatCommands,
+  isDeviceAdmin,
+  parseCommandResults,
+  parseUserInventory,
+  userDeleteCommand,
+  userUpsertCommand,
 } from "@/lib/presence/adms/protocol";
 import { parseEvents } from "@/lib/presence/ingest";
+import { nextFreePin } from "@/lib/presence/devices";
+
+test("commandes : inscription d'un utilisateur ORDINAIRE, retrait, capture sur l'appareil ; format C:<n>:", () => {
+  assert.equal(userUpsertCommand("12", "Éloïse Kahindo-Mbusa"), "DATA UPDATE USERINFO PIN=12\tName=Eloise Kahindo-Mbusa\tPri=0\tGrp=1");
+  assert.equal(userDeleteCommand("12"), "DATA DELETE USERINFO PIN=12");
+  assert.equal(enrollFingerprintCommand("12", 1), "ENROLL_FP PIN=12\tFID=1\tRETRY=3\tOVERWRITE=0");
+  assert.equal(enrollFingerprintCommand("12", 42), "ENROLL_FP PIN=12\tFID=9\tRETRY=3\tOVERWRITE=0");
+  assert.throws(() => userUpsertCommand("1\tPri=14", "x"), /PIN invalide/, "aucune injection de champ (privilège)");
+  assert.equal(deviceDisplayName("A\tB=C\nD"), "A B C D");
+  assert.equal(deviceDisplayName("x".repeat(40)).length, 24);
+  assert.equal(formatCommands([]), "OK");
+  assert.equal(formatCommands([{ seq: 7, command: "INFO" }, { seq: 8, command: "DATA QUERY USERINFO" }]), "C:7:INFO\nC:8:DATA QUERY USERINFO\n");
+});
+
+test("résultats de commandes : identifiant, code (négatif = échec), lignes invalides ignorées", () => {
+  assert.deepEqual(parseCommandResults("ID=7&Return=0&CMD=DATA\nID=8&Return=-1002&CMD=ENROLL_FP\ngarbage\nID=x&Return=0\n"), [
+    { seq: 7, returnCode: 0, cmd: "DATA" },
+    { seq: 8, returnCode: -1002, cmd: "ENROLL_FP" },
+  ]);
+});
+
+test("inventaire : PIN et privilège seulement ; lignes d'empreintes ignorées ; trois formats", () => {
+  const body = [
+    "USER PIN=1\tName=Admin\tPri=14\tPasswd=1234\tCard=[0000]\tGrp=1",
+    "FP PIN=1\tFID=6\tSize=1408\tValid=1\tTMP=TWFJU1NFLUJJT01FVFJJUVVF",
+    "PIN=2\tName=Agent\tPri=0\tPasswd=\tCard=",
+    "user uid=3\tcardno=\tpin=3\tpassword=\tgroup=1\tprivilege=0\tname=X",
+    "BIODATA Pin=4\tNo=0\tTmp=QUJD",
+  ].join("\n");
+  const inv = parseUserInventory(body);
+  assert.deepEqual(inv, [
+    { pin: "1", privilege: 14 },
+    { pin: "2", privilege: 0 },
+    { pin: "3", privilege: 0 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(inv), /TMP|TWFJ|1234|Admin|Agent|QUJD/);
+  assert.equal(isDeviceAdmin(14), true);
+  assert.equal(isDeviceAdmin(0), false);
+});
+
+test("PIN libre : au-dessus du plus grand PIN numérique utilisé (association ou appareil)", () => {
+  assert.equal(nextFreePin([]), "1");
+  assert.equal(nextFreePin(["1", "2", "A7", "10"]), "11");
+});
 
 test("ATTLOG réel (tabulations, champs réservés) → format canonique, valeurs brutes conservées", () => {
   const body = "1\t2026-10-15 00:02:17\t4\t1\t0\t0\t0\t0\t0\t0\t\n2\t2026-10-15 12:52:33\t0\t1\t7\t0\r\n";
