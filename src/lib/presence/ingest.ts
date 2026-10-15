@@ -183,7 +183,9 @@ export async function ingestBatch(
         },
       });
       return { batchId: batch.id, accepted: created.count, duplicates };
-    });
+      // Attente d'une connexion jusqu'à 10 s (2 s par défaut) : plusieurs envois
+      // simultanés d'une pointeuse ne doivent pas échouer pour une file d'attente.
+    }, { maxWait: 10_000, timeout: 20_000 });
   } catch (e) {
     // Deux envois simultanés du même lot : le second est un simple renvoi.
     if (isUniqueViolation(e)) {

@@ -52,25 +52,44 @@ export function FingerSelect() {
  * porte le PIN visé : la capture d'empreinte s'adresse à un utilisateur précis
  * de l'appareil (test réel du 15/10 : capture lancée par erreur sur un autre PIN).
  */
-export function AdmsMappingActions({ mappingId, pin, today }: { mappingId: string; pin: string; today: string }) {
+export function AdmsMappingActions({ mappingId, pin, name }: { mappingId: string; pin: string; name: string }) {
   return (
     <div className="flex w-full flex-wrap items-start gap-2 sm:w-auto">
       <ActionForm action={resendEnrollmentAction.bind(null, mappingId)} submit={`Renvoyer l'inscription (PIN ${pin})`} variant="ghost" />
       <ActionForm action={fingerprintAction.bind(null, mappingId)} submit={`Capturer une empreinte — PIN ${pin}`} variant="ghost" className="flex items-end gap-2">
         <FingerSelect />
       </ActionForm>
-      <ActionForm action={removeAgentAction.bind(null, mappingId)} submit={`Retirer le PIN ${pin}`} variant="danger" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[34rem] sm:grid-cols-4">
-        <Input type="date" name="end" defaultValue={today} aria-label="Fin (exclue)" />
-        <Input name="reason" placeholder="Motif" aria-label="Motif" />
-        <label className="flex items-center gap-1 text-xs text-gray-600">
-          <input type="checkbox" name="deleteFromDevice" defaultChecked /> retirer de la pointeuse
-        </label>
-      </ActionForm>
+      <details className="w-full rounded-md border border-red-100 p-2 sm:w-[36rem]">
+        <summary className="cursor-pointer text-xs font-medium text-red-700">
+          Retirer {name} (PIN {pin})…
+        </summary>
+        <p className="mt-2 text-xs text-gray-600">
+          L&apos;association prend fin <strong>immédiatement</strong> : ses pointages suivants ne comptent plus. La suppression sur la pointeuse (utilisateur et
+          empreintes) part dans 10 minutes et reste annulable jusque-là. Un nouvel enrôlement demandera la présence de l&apos;agent devant l&apos;appareil.
+        </p>
+        <ActionForm action={removeAgentAction.bind(null, mappingId)} submit={`Retirer ${name} (PIN ${pin})`} variant="danger" className="mt-2 grid grid-cols-1 items-end gap-2 sm:grid-cols-3">
+          <Input name="reason" required minLength={3} placeholder="Motif (obligatoire)" aria-label="Motif" />
+          <Input name="confirmPin" required autoComplete="off" placeholder={`Ressaisir le PIN ${pin}`} aria-label={`Ressaisir le PIN ${pin} pour confirmer`} />
+          <label className="flex items-center gap-1 text-xs text-gray-600">
+            <input type="checkbox" name="deleteFromDevice" defaultChecked /> supprimer de la pointeuse
+          </label>
+        </ActionForm>
+      </details>
     </div>
   );
 }
 
-type Command = { id: string; seq: number; kind: string; pin: string | null; status: string; returnCode: number | null; createdAt: Date; doneAt: Date | null };
+type Command = {
+  id: string;
+  seq: number;
+  kind: string;
+  pin: string | null;
+  status: string;
+  returnCode: number | null;
+  createdAt: Date;
+  doneAt: Date | null;
+  notBefore: Date | null;
+};
 
 export function AdmsEnrollment({
   deviceId,
@@ -110,7 +129,7 @@ export function AdmsEnrollment({
               </option>
             ))}
           </Select>
-          <Input name="pin" placeholder="PIN (auto)" aria-label="PIN" />
+          <Input name="pin" inputMode="numeric" placeholder="PIN auto (101–8999)" aria-label="PIN (101 à 8999)" />
           <label className="text-xs text-gray-600">
             À partir du
             <Input type="date" name="from" defaultValue={today} required className="mt-1" />
@@ -145,7 +164,11 @@ export function AdmsEnrollment({
                     {u.privilege > 0 && <Badge color="orange">administrateur de l&apos;appareil</Badge>}{" "}
                     {known.has(u.pin) ? <Badge color="green">associé</Badge> : <Badge color="red">non associé — pointages non comptés</Badge>}
                   </span>
-                  {!known.has(u.pin) && u.privilege === 0 && <ActionForm action={deleteDeviceUserAction.bind(null, deviceId, u.pin)} submit="Retirer de la pointeuse" variant="danger" />}
+                  {!known.has(u.pin) && u.privilege === 0 && Number(u.pin) < 9000 && (
+                    <ActionForm action={deleteDeviceUserAction.bind(null, deviceId, u.pin)} submit={`Supprimer le PIN ${u.pin} de la pointeuse`} variant="danger" className="flex flex-wrap items-end gap-2">
+                      <Input name="confirmPin" required autoComplete="off" placeholder={`Ressaisir ${u.pin}`} aria-label={`Ressaisir le PIN ${u.pin} pour confirmer`} className="w-32" />
+                    </ActionForm>
+                  )}
                 </li>
               ))}
             </ul>
@@ -164,6 +187,7 @@ export function AdmsEnrollment({
                 <span>
                   n° {c.seq} · {KIND_LABEL[c.kind] ?? c.kind}
                   {c.pin ? ` · PIN ${c.pin}` : ""} · <Badge color={STATUS[c.status]?.color ?? "gray"}>{STATUS[c.status]?.label ?? c.status}</Badge>
+                  {c.status === "PENDING" && c.notBefore && <span className="font-medium text-red-700"> — envoi prévu à {formatGomaDateTime(c.notBefore)}</span>}
                   {c.returnCode !== null && c.returnCode < 0 && <span className="text-red-700"> (code {c.returnCode})</span>}
                   <span className="text-gray-400"> — {formatGomaDateTime(c.createdAt)}</span>
                 </span>

@@ -940,6 +940,8 @@ model DeviceCommand {
   status      DeviceCommandStatus @default(PENDING)
   attempts    Int                 @default(0)
   returnCode  Int?
+  // Remise pas avant cette heure (suppressions différées, annulables jusque-là).
+  notBefore   DateTime?
   createdById String?
   createdAt   DateTime            @default(now())
   sentAt      DateTime?

@@ -40,17 +40,18 @@ const ROLE_DEFINITIONS: { key: RoleKey; label: string; description: string; scop
 ];
 
 // Informaticien et secrétaires de l'IPP (décisions du 2026-10-10) : vue globale
-// des présences, appareils, associations, demandes des agents sans cellule,
-// corrections — sans fiches détaillées, calendrier, validation ni signature.
+// des présences, demandes des agents sans cellule, corrections — sans fiches
+// détaillées, calendrier, validation ni signature.
 const PRESENCE_SUPPORT_KEYS: PermissionKey[] = [
   PERMISSIONS.PRESENCE_READ_ALL,
-  PERMISSIONS.PRESENCE_DEVICES_MANAGE,
-  PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE,
   PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED,
   PERMISSIONS.PRESENCE_PUNCH_CORRECT,
   // Vocation et responsable de la cellule du personnel (décision Q-A du 2026-10-10).
   PERMISSIONS.CELLS_PERSONNEL_MANAGE,
 ];
+// Appareils et associations : l'informaticien seulement parmi les profils de
+// support (directive du 2026-10-15 ; plus les secrétaires de l'IPP).
+const PRESENCE_DEVICE_ADMIN_KEYS: PermissionKey[] = [PERMISSIONS.PRESENCE_DEVICES_MANAGE, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   [ROLE_KEYS.IPP]: [
@@ -114,6 +115,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.CONTENT_PUBLISH,
     PERMISSIONS.AI_ANALYZE,
     ...PRESENCE_SUPPORT_KEYS,
+    ...PRESENCE_DEVICE_ADMIN_KEYS,
   ],
   [ROLE_KEYS.CHARGE_MEDIAS]: [PERMISSIONS.CONTENT_WRITE],
   [ROLE_KEYS.SUPER_ADMIN]: [...SUPER_ADMIN_PERMISSIONS],

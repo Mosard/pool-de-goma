@@ -1,8 +1,10 @@
 // Appareils, identifiants techniques, associations d'identifiants de pointage
 // et simulateur (lot 3). Droits relus en base à chaque appel :
-//  - presence.devices.manage : appareils et jetons (IPP, Super Admins,
-//    informaticien, secrétaires de l'IPP, IPA chargé du personnel) ;
-//  - presence.enrollment.manage : associations (mêmes profils).
+//  - presence.devices.manage : appareils et jetons ;
+//  - presence.enrollment.manage : associations et enrôlements ;
+//  les deux réservés au Super Admin (ou Admin), à l'IPP principal et à
+//  l'informaticien (directive du 2026-10-15), vérifiés par la permission ET
+//  par la fonction réelle (holdsDeviceAdminRole).
 // Aucune capture d'empreinte par le navigateur : l'enrôlement biométrique se
 // fait sur l'appareil ; l'application associe seulement l'identifiant de
 // pointage (propre à l'appareil) à un compte existant, de façon datée et journalisée.
@@ -11,7 +13,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { ForbiddenError, loadUserAccess, requireOfficialActorUnlessDemoTarget } from "@/lib/permissions";
-import { PERMISSIONS } from "@/lib/rbac-data";
+import { DEVICE_ADMIN_ROLE_KEYS, PERMISSIONS, PRESENCE_DEVICE_KEYS } from "@/lib/rbac-data";
 import { holdsOrgPermission } from "@/lib/presence/config";
 import { recomputeForMapping } from "@/lib/presence/daily";
 import { gomaDayStartUtc, isDateKey } from "@/lib/presence/time";
@@ -30,13 +32,28 @@ import {
 
 type Actor = { id: string; organizationId: string };
 
+/**
+ * Fonction RÉELLE autorisant « Appareils et associations » (directive du
+ * 2026-10-15) : Super Admin, Admin, IPP principal, informaticien. Lue en base
+ * à chaque appel, indépendamment du « Voir comme » et des ajustements individuels.
+ */
+export async function holdsDeviceAdminRole(userId: string): Promise<boolean> {
+  const role = await prisma.userRole.findFirst({
+    where: { userId, user: { status: "ACTIVE" }, role: { key: { in: [...DEVICE_ADMIN_ROLE_KEYS] } } },
+    select: { id: true },
+  });
+  return Boolean(role);
+}
+
 async function requireOrgPermission(actor: Actor, key: string, message: string) {
   const { permissions } = await loadUserAccess(actor.id);
   if (!holdsOrgPermission(permissions, key, actor.organizationId)) throw new ForbiddenError(message);
+  // Double contrôle pour les appareils et associations : permission ET fonction réelle.
+  if ((PRESENCE_DEVICE_KEYS as readonly string[]).includes(key) && !(await holdsDeviceAdminRole(actor.id))) throw new ForbiddenError(message);
 }
 
-const DEVICE_REFUSAL = "Seuls l'IPP, les Super Admins, l'informaticien, les secrétaires de l'IPP et l'IPA chargé du personnel administrent les appareils.";
-const ENROLL_REFUSAL = "Seuls l'IPP, les Super Admins, l'informaticien, les secrétaires de l'IPP et l'IPA chargé du personnel associent les identifiants de pointage.";
+const DEVICE_REFUSAL = "Seuls le Super Admin, l'IPP principal et l'informaticien de l'IPP administrent les appareils.";
+const ENROLL_REFUSAL = "Seuls le Super Admin, l'IPP principal et l'informaticien de l'IPP gèrent les associations et les enrôlements biométriques.";
 
 // ─── Simulateur : développement local uniquement ───────────────────────────
 
@@ -172,7 +189,11 @@ export function periodsOverlap(a: { validFrom: Date; validTo: Date | null }, b: 
   return a.validFrom.getTime() < bEnd && b.validFrom.getTime() < aEnd;
 }
 
-export async function createMapping(actor: Actor, p: { deviceId: string; deviceUserId: string; userId: string; fromDateKey: string }) {
+/**
+ * `validFromAt` (interne, enrôlement ADMS) : début à un instant précis plutôt
+ * qu'à minuit — réattribution le jour même d'un PIN retiré plus tôt dans la journée.
+ */
+export async function createMapping(actor: Actor, p: { deviceId: string; deviceUserId: string; userId: string; fromDateKey: string; validFromAt?: Date }) {
   await requireOrgPermission(actor, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, ENROLL_REFUSAL);
   const deviceUserId = p.deviceUserId.trim();
   if (!/^[A-Za-z0-9_.-]{1,64}$/.test(deviceUserId)) throw new ForbiddenError("Identifiant de pointage : 1 à 64 caractères (lettres, chiffres, . _ -).");
@@ -184,7 +205,7 @@ export async function createMapping(actor: Actor, p: { deviceId: string; deviceU
   if (!device) throw new ForbiddenError("Appareil introuvable.");
   if (!user) throw new ForbiddenError("Compte introuvable.");
   if (!device.isSimulator) await requireOfficialActorUnlessDemoTarget(actor.id, user.isDemo);
-  const validFrom = gomaDayStartUtc(p.fromDateKey);
+  const validFrom = p.validFromAt ?? gomaDayStartUtc(p.fromDateKey);
   const candidate = { validFrom, validTo: null };
   const existing = await prisma.deviceUserMapping.findMany({ where: { deviceId: device.id, deviceUserId } });
   if (existing.some((m) => periodsOverlap(m, candidate))) {
@@ -197,7 +218,7 @@ export async function createMapping(actor: Actor, p: { deviceId: string; deviceU
     action: "presence.mapping_create",
     entityType: "DeviceUserMapping",
     entityId: mapping.id,
-    newValue: { deviceId: device.id, deviceUserId, userId: user.id, validFrom: p.fromDateKey },
+    newValue: { deviceId: device.id, deviceUserId, userId: user.id, validFrom: p.validFromAt ? validFrom.toISOString() : p.fromDateKey },
   });
   await recomputeForMapping(actor.organizationId, { ...mapping });
   return mapping;
@@ -211,7 +232,12 @@ export async function endMapping(actor: Actor, p: { mappingId: string; endDateKe
   if (mapping.validTo) throw new ForbiddenError("Association déjà terminée.");
   // Fin exclue : l'association cesse au début du jour choisi.
   const validTo = gomaDayStartUtc(p.endDateKey);
-  if (validTo.getTime() <= mapping.validFrom.getTime()) throw new ForbiddenError("La fin doit être postérieure au début.");
+  // La date de fin est EXCLUE (l'association cesse à minuit, heure de Goma, ce
+  // jour-là) : une association commencée aujourd'hui se termine au plus tôt demain.
+  // Pour une pointeuse ADMS, « Retirer » met fin immédiatement (removeAgentFromDevice).
+  if (validTo.getTime() <= mapping.validFrom.getTime()) {
+    throw new ForbiddenError("La date de fin est exclue : choisissez au plus tôt le lendemain du début de l'association.");
+  }
   const reason = p.reason.trim().slice(0, 200) || null;
   await prisma.deviceUserMapping.update({ where: { id: mapping.id }, data: { validTo, endedById: actor.id, endReason: reason } });
   await logAudit({
@@ -320,10 +346,36 @@ export async function resolveDeviceAlert(actor: Actor, alertId: string) {
 // l'appareil. L'empreinte est capturée SUR la pointeuse (commande de capture
 // ou menu de l'appareil) et n'est jamais transmise à l'application.
 
-/** Fonction pure : PIN numérique libre (au-dessus du plus grand utilisé), au moins 1. */
-export function nextFreePin(used: string[]): string {
-  const nums = used.filter((p) => /^\d{1,9}$/.test(p)).map(Number);
-  return String(nums.length ? Math.max(...nums) + 1 : 1);
+// Plages de PIN (décision du 2026-10-15) : agents 101 à 8999 ; 9000 et au-delà
+// réservés aux administrateurs de l'appareil (créés sur la pointeuse, jamais
+// par l'application) ; en dessous de 101 : anciens PIN de test, jamais réattribués.
+export const AGENT_PIN_MIN = 101;
+export const AGENT_PIN_MAX = 8999;
+export const ADMIN_PIN_MIN = 9000;
+/** Délai avant l'envoi d'une suppression à la pointeuse (annulable pendant ce délai). */
+export const DEVICE_DELETE_DELAY_MINUTES = 10;
+
+/** Fonction pure : le PIN est-il dans la plage des agents ? */
+export function isAgentPin(pin: string): boolean {
+  // Sans zéro en tête : « 0101 » et « 101 » seraient deux utilisateurs distincts sur l'appareil.
+  return /^[1-9]\d{0,3}$/.test(pin) && Number(pin) >= AGENT_PIN_MIN && Number(pin) <= AGENT_PIN_MAX;
+}
+
+/** Fonction pure : PIN réservé aux administrateurs de l'appareil (≥ 9000) ? */
+export function isReservedAdminPin(pin: string): boolean {
+  return /^\d{1,9}$/.test(pin) && Number(pin) >= ADMIN_PIN_MIN;
+}
+
+/** Fonction pure : PIN d'agent libre (au-dessus du plus grand PIN d'agent utilisé), dès 101 ; null si la plage est pleine. */
+export function nextFreePin(used: string[]): string | null {
+  const nums = used.filter(isAgentPin).map(Number);
+  const next = nums.length ? Math.max(...nums) + 1 : AGENT_PIN_MIN;
+  return next <= AGENT_PIN_MAX ? String(next) : null;
+}
+
+/** Confirmation explicite d'une suppression : le PIN ressaisi doit être identique. */
+function requireConfirmation(pin: string, confirmPin: string | undefined) {
+  if ((confirmPin ?? "").trim() !== pin) throw new ForbiddenError(`Confirmation incorrecte : saisissez exactement le PIN ${pin} pour confirmer.`);
 }
 
 async function loadEnrollDevice(actor: Actor, deviceId: string) {
@@ -360,6 +412,10 @@ export async function enrollAgentOnDevice(
   const punched = await prisma.rawPunch.findMany({ where: { deviceId: device.id }, distinct: ["deviceUserId"], select: { deviceUserId: true } });
   const onDevice = new Set([...inventory.map((u) => u.pin), ...punched.map((x) => x.deviceUserId)]);
   const pin = p.pin?.trim() || nextFreePin([...mappings.map((m) => m.deviceUserId), ...onDevice]);
+  if (!pin) throw new ForbiddenError(`Plus aucun PIN d'agent libre (${AGENT_PIN_MIN} à ${AGENT_PIN_MAX}).`);
+  if (!isAgentPin(pin)) {
+    throw new ForbiddenError(`PIN d'agent : nombre de ${AGENT_PIN_MIN} à ${AGENT_PIN_MAX} (${ADMIN_PIN_MIN} et au-delà sont réservés aux administrateurs de la pointeuse).`);
+  }
   // Un PIN administrateur de l'appareil ne doit jamais être réécrit en utilisateur ordinaire.
   if (inventory.some((u) => u.pin === pin && isDeviceAdmin(u.privilege))) throw new ForbiddenError("Ce PIN est un administrateur de la pointeuse : choisissez-en un autre.");
   // Un PIN déjà utilisé sur l'appareil par une personne non associée : jamais réattribué
@@ -367,7 +423,13 @@ export async function enrollAgentOnDevice(
   if (onDevice.has(pin) && !mappings.some((m) => m.deviceUserId === pin)) {
     throw new ForbiddenError("Ce PIN est déjà utilisé sur la pointeuse par une personne non associée : associez-la, retirez-la, ou choisissez un autre PIN.");
   }
-  const mapping = await createMapping(actor, { deviceId: device.id, deviceUserId: pin, userId: user.id, fromDateKey: p.fromDateKey });
+  // PIN retiré plus tôt dans la journée : la nouvelle association commence à la fin de l'ancienne.
+  const dayStart = gomaDayStartUtc(p.fromDateKey);
+  const lastEnd = (
+    await prisma.deviceUserMapping.findFirst({ where: { deviceId: device.id, deviceUserId: pin, validTo: { gt: dayStart } }, orderBy: { validTo: "desc" }, select: { validTo: true } })
+  )?.validTo;
+  const validFromAt = lastEnd && lastEnd.getTime() <= Date.now() ? lastEnd : undefined;
+  const mapping = await createMapping(actor, { deviceId: device.id, deviceUserId: pin, userId: user.id, fromDateKey: p.fromDateKey, validFromAt });
   await enqueueCommand({ deviceId: device.id, kind: "USER_UPSERT", command: userUpsertCommand(pin, user.name), pin, userId: user.id, createdById: actor.id });
   if (p.captureFingerprint) {
     await enqueueCommand({ deviceId: device.id, kind: "ENROLL_FP", command: enrollFingerprintCommand(pin, p.fingerIndex ?? 0), pin, userId: user.id, createdById: actor.id });
@@ -392,6 +454,8 @@ async function loadActiveAdmsMapping(actor: Actor, mappingId: string) {
   if (!mapping) throw new ForbiddenError("Association introuvable.");
   const device = await loadEnrollDevice(actor, mapping.deviceId);
   if (mapping.validTo) throw new ForbiddenError("Association terminée.");
+  // Jamais de commande d'écriture vers un PIN administrateur de l'appareil.
+  if (isReservedAdminPin(mapping.deviceUserId)) throw new ForbiddenError("PIN réservé aux administrateurs de la pointeuse : action à faire sur l'appareil.");
   return { mapping, device };
 }
 
@@ -413,18 +477,46 @@ export async function requestFingerprintCapture(actor: Actor, mappingId: string,
 }
 
 /**
- * Retire un agent : fin d'association datée et, par défaut, suppression de
- * l'utilisateur sur la pointeuse (il ne peut plus pointer). Les pointages
- * passés restent conservés et attribués selon l'association.
+ * Retire un agent d'une pointeuse ADMS, IMMÉDIATEMENT et de façon cohérente :
+ *  - l'association prend fin à l'instant du retrait (ses pointages ultérieurs ne
+ *    comptent plus ; les pointages passés restent conservés et attribués) ;
+ *  - la suppression sur l'appareil (et de ses empreintes) part après
+ *    DEVICE_DELETE_DELAY_MINUTES, annulable jusque-là.
+ * Confirmation obligatoire : PIN ressaisi et motif.
  */
-export async function removeAgentFromDevice(actor: Actor, p: { mappingId: string; endDateKey: string; reason: string; deleteFromDevice: boolean }) {
+export async function removeAgentFromDevice(actor: Actor, p: { mappingId: string; reason: string; confirmPin?: string; deleteFromDevice: boolean }) {
   const { mapping, device } = await loadActiveAdmsMapping(actor, p.mappingId);
-  await endMapping(actor, { mappingId: mapping.id, endDateKey: p.endDateKey, reason: p.reason });
+  requireConfirmation(mapping.deviceUserId, p.confirmPin);
+  const reason = p.reason.trim().slice(0, 200);
+  if (reason.length < 3) throw new ForbiddenError("Indiquez le motif du retrait.");
+  const now = new Date();
+  const validTo = new Date(Math.max(now.getTime(), mapping.validFrom.getTime() + 1000));
+  await prisma.deviceUserMapping.update({ where: { id: mapping.id }, data: { validTo, endedById: actor.id, endReason: reason } });
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: "presence.mapping_end",
+    entityType: "DeviceUserMapping",
+    entityId: mapping.id,
+    oldValue: { validTo: null },
+    newValue: { validTo: validTo.toISOString(), reason, immediate: true },
+  });
+  await recomputeForMapping(actor.organizationId, { ...mapping, validTo });
+  let deleteAt: Date | null = null;
   if (p.deleteFromDevice) {
-    await enqueueCommand({ deviceId: device.id, kind: "USER_DELETE", command: userDeleteCommand(mapping.deviceUserId), pin: mapping.deviceUserId, userId: mapping.userId, createdById: actor.id });
+    deleteAt = new Date(now.getTime() + DEVICE_DELETE_DELAY_MINUTES * 60_000);
+    await enqueueCommand({ deviceId: device.id, kind: "USER_DELETE", command: userDeleteCommand(mapping.deviceUserId), pin: mapping.deviceUserId, userId: mapping.userId, createdById: actor.id, notBefore: deleteAt });
     forgetAdmsDevice(device.serialNumber);
   }
-  await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_remove", entityType: "DeviceUserMapping", entityId: mapping.id, newValue: { pin: mapping.deviceUserId, deleteFromDevice: p.deleteFromDevice } });
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: "presence.adms_remove",
+    entityType: "DeviceUserMapping",
+    entityId: mapping.id,
+    newValue: { pin: mapping.deviceUserId, name: mapping.user.name, deleteFromDevice: p.deleteFromDevice, deleteAt: deleteAt?.toISOString() ?? null },
+  });
+  return { pin: mapping.deviceUserId, name: mapping.user.name, deleteAt };
 }
 
 /** Demande à la pointeuse la liste de ses utilisateurs (PIN et privilège seulement). */
@@ -440,17 +532,20 @@ export async function requestDeviceInventory(actor: Actor, deviceId: string) {
  * non autorisés). Un administrateur de l'appareil n'est jamais supprimé à
  * distance (risque de verrouiller le menu) : à faire sur l'appareil.
  */
-export async function deleteUnmappedDeviceUser(actor: Actor, deviceId: string, pin: string) {
+export async function deleteUnmappedDeviceUser(actor: Actor, deviceId: string, pin: string, confirmPin?: string) {
   const device = await loadEnrollDevice(actor, deviceId);
   if (!/^[A-Za-z0-9_.-]{1,64}$/.test(pin)) throw new ForbiddenError("PIN invalide.");
+  requireConfirmation(pin, confirmPin);
   const active = await prisma.deviceUserMapping.findFirst({ where: { deviceId: device.id, deviceUserId: pin, validTo: null } });
   if (active) throw new ForbiddenError("Ce PIN est associé à un agent : terminez d'abord l'association.");
-  if (inventoryOf(device).some((u) => u.pin === pin && isDeviceAdmin(u.privilege))) {
+  if (isReservedAdminPin(pin) || inventoryOf(device).some((u) => u.pin === pin && isDeviceAdmin(u.privilege))) {
     throw new ForbiddenError("Administrateur de la pointeuse : à retirer sur l'appareil lui-même.");
   }
-  await enqueueCommand({ deviceId: device.id, kind: "USER_DELETE", command: userDeleteCommand(pin), pin, createdById: actor.id });
+  const deleteAt = new Date(Date.now() + DEVICE_DELETE_DELAY_MINUTES * 60_000);
+  await enqueueCommand({ deviceId: device.id, kind: "USER_DELETE", command: userDeleteCommand(pin), pin, createdById: actor.id, notBefore: deleteAt });
   forgetAdmsDevice(device.serialNumber);
-  await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_delete_unmapped", entityType: "AttendanceDevice", entityId: device.id, newValue: { pin } });
+  await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_delete_unmapped", entityType: "AttendanceDevice", entityId: device.id, newValue: { pin, deleteAt: deleteAt.toISOString() } });
+  return { deleteAt };
 }
 
 /** Annule une commande pas encore remise à la pointeuse. */

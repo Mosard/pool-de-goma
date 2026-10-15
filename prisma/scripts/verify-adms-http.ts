@@ -11,8 +11,11 @@
 import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../src/lib/prisma";
-import { ROLE_KEYS } from "../../src/lib/rbac-data";
+import { PERMISSIONS, ROLE_KEYS } from "../../src/lib/rbac-data";
+import { loadUserAccess } from "../../src/lib/permissions";
+import { hasPermission } from "../../src/lib/permission-checks";
 import {
+  holdsDeviceAdminRole,
   cancelDeviceCommand,
   createDevice,
   createMapping,
@@ -25,6 +28,7 @@ import {
   setDeviceDisabled,
 } from "../../src/lib/presence/devices";
 import { saveSchedule } from "../../src/lib/presence/config";
+import { getPersonnelRecord } from "../../src/lib/personnel/server";
 import { VALIDATED_SCHEDULE_DEFAULTS } from "../../src/lib/presence/settings";
 import { addDays, dateKeyToDbDate, gomaClock, gomaDateKey } from "../../src/lib/presence/time";
 
@@ -74,6 +78,7 @@ async function main() {
   // Noms fictifs (base locale de test).
   const ipp = await user("ipp", `IPP Test ${RUN}`, ROLE_KEYS.IPP);
   const secr = await user("secr", `Secrétaire Test ${RUN}`, ROLE_KEYS.SECRETAIRE_IPP);
+  const info = await user("info", `Informaticien Test ${RUN}`, ROLE_KEYS.INFORMATICIEN);
   const agent = await user("agent", `Agent Delta ${RUN}`, ROLE_KEYS.AGENT_IPP);
   const as = (u: { id: string }) => ({ id: u.id, organizationId: org.id });
   await saveSchedule(as(ipp), VALIDATED_SCHEDULE_DEFAULTS);
@@ -98,21 +103,21 @@ async function main() {
     assert.ok(await alertOf("SERIE_INCONNUE", { serialNumber: `INCONNU${RUN}` }));
   });
 
-  const apiDevice = await createDevice(as(secr), { label: "Passerelle (test)", siteLabel: "Bureau de l'IPP", serialNumber: `API${RUN}` });
+  const apiDevice = await createDevice(as(info), { label: "Passerelle (test)", siteLabel: "Bureau de l'IPP", serialNumber: `API${RUN}` });
   await check("appareil en mode passerelle : refusé en ADMS ; numéro de série unique ; ADMS exige un numéro valide", async () => {
     assert.equal((await handshake(`API${RUN}`)).status, 401);
     assert.ok(await alertOf("APPAREIL_REFUSE", { deviceId: apiDevice.id }));
-    await assert.rejects(createDevice(as(secr), { label: "Doublon", siteLabel: "Bureau X", serialNumber: `API${RUN}`, protocol: "ADMS" }), /déjà enregistré/);
-    await assert.rejects(createDevice(as(secr), { label: "Sans série", siteLabel: "Bureau X", protocol: "ADMS" }), /numéro de série/);
+    await assert.rejects(createDevice(as(info), { label: "Doublon", siteLabel: "Bureau X", serialNumber: `API${RUN}`, protocol: "ADMS" }), /déjà enregistré/);
+    await assert.rejects(createDevice(as(info), { label: "Sans série", siteLabel: "Bureau X", protocol: "ADMS" }), /numéro de série/);
   });
 
-  const device = await createDevice(as(secr), { label: "UA300 (test)", siteLabel: "Bureau de l'IPP", vendor: "ZKTeco", model: "UA300", serialNumber: SN, protocol: "ADMS" });
-  await createMapping(as(secr), { deviceId: device.id, deviceUserId: "11", userId: agent.id, fromDateKey: addDays(today, -7) });
+  const device = await createDevice(as(info), { label: "UA300 (test)", siteLabel: "Bureau de l'IPP", vendor: "ZKTeco", model: "UA300", serialNumber: SN, protocol: "ADMS" });
+  await createMapping(as(info), { deviceId: device.id, deviceUserId: "11", userId: agent.id, fromDateKey: addDays(today, -7) });
 
   await check("appairage : refus tant qu'il n'est pas ouvert ; ouvert → premier contact accepté, empreinte enregistrée", async () => {
     assert.equal((await handshake()).status, 401);
     assert.ok(await alertOf("APPAIRAGE_REQUIS", { deviceId: device.id }));
-    await openAdmsPairing(as(secr), device.id);
+    await openAdmsPairing(as(info), device.id);
     const r = await handshake();
     assert.equal(r.status, 200);
     assert.match(r.text, new RegExp(`^GET OPTION FROM: ${SN}\\n`));
@@ -232,16 +237,53 @@ async function main() {
     const a = await alertOf("POINTAGE_NON_AUTORISE", { deviceId: device.id });
     assert.ok(a);
     assert.match(JSON.stringify(a.detail), /"55"/);
+    // Un PIN de la plage des agents utilisé sur l'appareil sans association.
+    assert.equal((await attlog(`${line("150", yest, "07:40:00", "0")}\n`)).text, "OK: 1");
+  });
+
+  await check("droits (directive du 15/10) : la secrétaire et le responsable du personnel n'administrent plus les appareils ; la secrétaire consulte toujours", async () => {
+    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: agent2.id, fromDateKey: today }), /Super Admin, l'IPP principal et l'informaticien/);
+    await assert.rejects(openAdmsPairing(as(secr), device.id), /Super Admin, l'IPP principal et l'informaticien/);
+    await assert.rejects(requestDeviceInventory(as(secr), device.id), /Super Admin, l'IPP principal et l'informaticien/);
+    await assert.rejects(createDevice(as(secr), { label: "Refus", siteLabel: "Bureau X" }), /Super Admin, l'IPP principal et l'informaticien/);
+    const p = (await loadUserAccess(secr.id, { viewMode: null })).permissions;
+    assert.ok(hasPermission(p, PERMISSIONS.PRESENCE_READ_ALL), "consultation conservée");
+    assert.equal(hasPermission(p, PERMISSIONS.PRESENCE_DEVICES_MANAGE), false);
+    // Même un ajout individuel en base ne suffit pas : la fonction réelle est revérifiée.
+    const perm = await prisma.permission.findUniqueOrThrow({ where: { key: PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE } });
+    await prisma.userPermission.create({ data: { userId: secr.id, permissionId: perm.id, effect: "GRANT" } });
+    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: agent2.id, fromDateKey: today }), /Super Admin, l'IPP principal et l'informaticien/);
+    await prisma.userPermission.deleteMany({ where: { userId: secr.id, permissionId: perm.id } });
+    // L'IPP principal est autorisé.
+    assert.ok(await holdsDeviceAdminRole(ipp.id));
+    assert.equal(await holdsDeviceAdminRole(secr.id), false);
+  });
+
+  await check("« Voir la fiche » (directive du 15/10) : Super Admin, Admin, IPP, informaticien lisent ; secrétaire et agent refusés ; consultation journalisée", async () => {
+    const sa = await user("sa", `Super Admin Test ${RUN}`, ROLE_KEYS.SUPER_ADMIN);
+    const adm = await user("adm", `Admin Test ${RUN}`, ROLE_KEYS.ADMIN);
+    for (const reader of [sa, adm, ipp, info]) {
+      const rec = await getPersonnelRecord(reader.id, agent2.id);
+      assert.equal(rec?.id, agent2.id, reader.name);
+      assert.equal("passwordHash" in (rec ?? {}), false);
+      assert.ok(await prisma.auditLog.findFirst({ where: { actorId: reader.id, action: "personnel.record.view", entityId: agent2.id } }), reader.name);
+    }
+    for (const refused of [secr, agent]) {
+      await assert.rejects(getPersonnelRecord(refused.id, agent2.id), /réservée aux titulaires/, refused.name);
+    }
   });
 
   let enrolledPin = "";
   await check("inscription depuis l'application : PIN attribué, association datée, commandes remises à l'interrogation suivante", async () => {
-    const { pin } = await enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: agent2.id, fromDateKey: today, captureFingerprint: true, fingerIndex: 1 });
+    const { pin } = await enrollAgentOnDevice(as(info), { deviceId: device.id, userId: agent2.id, fromDateKey: today, captureFingerprint: true, fingerIndex: 1 });
     enrolledPin = pin;
-    assert.equal(pin, "78", "au-dessus du plus grand PIN connu (77)");
+    assert.equal(pin, "151", "plage des agents, au-dessus du PIN 150 déjà vu sur l'appareil");
     assert.ok(await prisma.deviceUserMapping.findFirst({ where: { deviceId: device.id, deviceUserId: pin, userId: agent2.id, validTo: null } }));
-    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: agent2.id, fromDateKey: today }), /déjà inscrit/);
-    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: ipp.id, pin: "55", fromDateKey: today }), /personne non associée/);
+    await assert.rejects(enrollAgentOnDevice(as(info), { deviceId: device.id, userId: agent2.id, fromDateKey: today }), /déjà inscrit/);
+    await assert.rejects(enrollAgentOnDevice(as(info), { deviceId: device.id, userId: ipp.id, pin: "150", fromDateKey: today }), /personne non associée/);
+    await assert.rejects(enrollAgentOnDevice(as(info), { deviceId: device.id, userId: ipp.id, pin: "55", fromDateKey: today }), /101 à 8999/);
+    await assert.rejects(enrollAgentOnDevice(as(info), { deviceId: device.id, userId: ipp.id, pin: "9999", fromDateKey: today }), /réservés aux administrateurs/);
+    await assert.rejects(enrollAgentOnDevice(as(info), { deviceId: device.id, userId: ipp.id, pin: "0152", fromDateKey: today }), /101 à 8999/);
     const r = await poll();
     const lines = r.text.trim().split("\n");
     assert.equal(lines.length, 2);
@@ -276,7 +318,7 @@ async function main() {
     const body = [`USER PIN=1\tName=Chef\tPri=14\tPasswd=${marker}\tCard=[0]`, `FP PIN=1\tFID=6\tTMP=${marker}`, `USER PIN=11\tName=A\tPri=0`, `USER PIN=${enrolledPin}\tName=B\tPri=0`, `USER PIN=55\tName=C\tPri=0`].join("\n");
     assert.equal((await call("POST", `/iclock/cdata?SN=${SN}&table=USERINFO&Stamp=1`, body)).text, "OK");
     assert.equal((await prisma.attendanceDevice.findUniqueOrThrow({ where: { id: device.id } })).admsUsers, null, "pas d'inventaire sans demande");
-    await requestDeviceInventory(as(secr), device.id);
+    await requestDeviceInventory(as(info), device.id);
     assert.match((await poll()).text, /^C:\d+:DATA QUERY USERINFO\n$/);
     assert.equal((await call("POST", `/iclock/cdata?SN=${SN}&table=OPERLOG&Stamp=1`, body)).text, "OK: 4");
     const d = await prisma.attendanceDevice.findUniqueOrThrow({ where: { id: device.id } });
@@ -295,28 +337,61 @@ async function main() {
     assert.equal(Number(found[0].n), 0);
   });
 
-  await check("blocage : retrait à distance d'un PIN non associé ; administrateur ou PIN associé refusés ; annulation avant remise", async () => {
-    await assert.rejects(deleteUnmappedDeviceUser(as(secr), device.id, "1"), /Administrateur/);
-    await assert.rejects(deleteUnmappedDeviceUser(as(secr), device.id, "11"), /associé/);
-    await deleteUnmappedDeviceUser(as(secr), device.id, "55");
+  // Simule l'écoulement du délai de 10 minutes d'une suppression différée.
+  const elapse = (id: string) => prisma.deviceCommand.update({ where: { id }, data: { notBefore: new Date(Date.now() - 1000) } });
+
+  await check("suppression d'un PIN non associé : confirmation exigée ; administrateur ou PIN associé refusés ; différée 10 min et annulable", async () => {
+    await assert.rejects(deleteUnmappedDeviceUser(as(info), device.id, "55", "56"), /Confirmation incorrecte/);
+    await assert.rejects(deleteUnmappedDeviceUser(as(info), device.id, "55"), /Confirmation incorrecte/);
+    await assert.rejects(deleteUnmappedDeviceUser(as(info), device.id, "1", "1"), /Administrateur/);
+    await assert.rejects(deleteUnmappedDeviceUser(as(info), device.id, "9999", "9999"), /Administrateur/);
+    await assert.rejects(deleteUnmappedDeviceUser(as(info), device.id, "11", "11"), /associé/);
+    const { deleteAt } = await deleteUnmappedDeviceUser(as(info), device.id, "55", "55");
+    assert.ok(deleteAt.getTime() - Date.now() > 9 * 60_000, "différée d'environ 10 minutes");
     const pending = (await commandsOf({ status: "PENDING" }))[0];
     assert.equal(pending.command, "DATA DELETE USERINFO PIN=55");
-    await cancelDeviceCommand(as(secr), pending.id);
-    assert.equal((await poll()).text, "OK", "commande annulée : rien n'est remis");
-    await deleteUnmappedDeviceUser(as(secr), device.id, "55");
+    assert.equal((await poll()).text, "OK", "pas remise avant son heure");
+    await cancelDeviceCommand(as(info), pending.id);
+    await elapse(pending.id);
+    assert.equal((await poll()).text, "OK", "annulée : jamais remise");
+    await deleteUnmappedDeviceUser(as(info), device.id, "55", "55");
+    const again = (await commandsOf({ status: "PENDING" }))[0];
+    await elapse(again.id);
     assert.match((await poll()).text, /^C:\d+:DATA DELETE USERINFO PIN=55\n$/);
-    await assert.rejects(enrollAgentOnDevice(as(secr), { deviceId: device.id, userId: ipp.id, pin: "1", fromDateKey: today }), /administrateur de la pointeuse/);
   });
 
-  await check("retrait d'un agent : fin d'association et suppression sur la pointeuse ; ses pointages ultérieurs ne comptent plus", async () => {
+  await check("retrait d'un agent le jour même de son inscription (anomalie du 15/10) : fin immédiate, confirmation, suppression différée ; réinscription possible le jour même", async () => {
     const m = await prisma.deviceUserMapping.findFirstOrThrow({ where: { deviceId: device.id, userId: agent2.id, validTo: null } });
-    await removeAgentFromDevice(as(secr), { mappingId: m.id, endDateKey: addDays(today, 1), reason: "Départ (test)", deleteFromDevice: true });
-    assert.ok((await prisma.deviceUserMapping.findUniqueOrThrow({ where: { id: m.id } })).validTo);
+    await assert.rejects(removeAgentFromDevice(as(info), { mappingId: m.id, reason: "Départ (test)", confirmPin: "999", deleteFromDevice: true }), /Confirmation incorrecte/);
+    await assert.rejects(removeAgentFromDevice(as(info), { mappingId: m.id, reason: "", confirmPin: enrolledPin, deleteFromDevice: true }), /motif/);
+    const before = Date.now();
+    const r = await removeAgentFromDevice(as(info), { mappingId: m.id, reason: "Départ (test)", confirmPin: enrolledPin, deleteFromDevice: true });
+    assert.equal(r.name, `Agent Epsilon ${RUN}`);
+    const ended = await prisma.deviceUserMapping.findUniqueOrThrow({ where: { id: m.id } });
+    assert.ok(ended.validTo && Math.abs(ended.validTo.getTime() - before) < 60_000, "fin à l'instant du retrait, pas à minuit");
+    // Un pointage après le retrait ne compte plus (et il est signalé).
+    // Heure réelle, 2 s APRÈS le retrait (et non l'heure de démarrage du script).
+    await new Promise((res) => setTimeout(res, 2000));
+    const punchAt = new Date();
+    const after = gomaDateKey(punchAt);
+    const dailyBefore = (await prisma.dailyAttendance.findUnique({ where: { userId_date: { userId: agent2.id, date: dateKeyToDbDate(after) } } }))?.punchCount ?? 0;
+    assert.ok(punchAt.getTime() > ended.validTo!.getTime());
+    assert.equal((await attlog(`${line(enrolledPin, after, gomaClock(punchAt), "1")}\n`)).text, "OK: 1");
+    const dailyAfter = (await prisma.dailyAttendance.findUnique({ where: { userId_date: { userId: agent2.id, date: dateKeyToDbDate(after) } } }))?.punchCount ?? 0;
+    assert.equal(dailyAfter, dailyBefore, "pointage après le retrait non compté");
+    // La suppression n'est remise qu'après le délai.
+    assert.equal((await poll()).text, "OK");
+    const del = (await commandsOf({ status: "PENDING", kind: "USER_DELETE" }))[0];
+    assert.equal(del.command, `DATA DELETE USERINFO PIN=${enrolledPin}`);
+    await elapse(del.id);
     assert.match((await poll()).text, new RegExp(`C:\\d+:DATA DELETE USERINFO PIN=${enrolledPin}\\n$`));
+    // Réinscription le jour même sous le même PIN : l'association repart à la fin de la précédente.
+    const again = await enrollAgentOnDevice(as(info), { deviceId: device.id, userId: agent2.id, pin: enrolledPin, fromDateKey: today });
+    assert.equal(again.mapping.validFrom.getTime(), ended.validTo!.getTime());
   });
 
   await check("chemin secret : exigé une fois défini ; faux ou absent = 401 ; bon chemin accepté", async () => {
-    const secret = await issueAdmsPathSecret(as(secr), device.id);
+    const secret = await issueAdmsPathSecret(as(info), device.id);
     assert.equal((await call("GET", `/iclock/getrequest?SN=${SN}`)).status, 401);
     assert.ok(await alertOf("CHEMIN_SECRET_INVALIDE", { deviceId: device.id }));
     assert.equal((await call("GET", `/p/${"x".repeat(32)}/iclock/getrequest?SN=${SN}`)).status, 401);
@@ -327,7 +402,7 @@ async function main() {
   });
 
   await check("appareil désactivé : refus 401, plus aucun pointage accepté", async () => {
-    await setDeviceDisabled(as(secr), device.id, true);
+    await setDeviceDisabled(as(info), device.id, true);
     assert.equal((await handshake()).status, 401);
   });
 

@@ -132,12 +132,13 @@ async function main() {
     }
   });
 
-  await check("vue globale des présences et appareils pour les cinq profils ; calendrier pour IPP et responsable seulement", async () => {
+  await check("vue globale des présences pour les cinq profils ; appareils pour IPP, Super Admin et informaticien seulement (15/10) ; calendrier pour IPP et responsable", async () => {
     for (const u of [ipp, sa, info, secr, ipaPers]) {
       const p = (await loadUserAccess(u.id, { viewMode: null })).permissions;
+      const deviceAdmin = u.id === ipp.id || u.id === sa.id || u.id === info.id;
       assert.ok(hasPermission(p, PERMISSIONS.PRESENCE_READ_ALL), u.name);
-      assert.ok(hasPermission(p, PERMISSIONS.PRESENCE_DEVICES_MANAGE), u.name);
-      assert.ok(hasPermission(p, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE), u.name);
+      assert.equal(hasPermission(p, PERMISSIONS.PRESENCE_DEVICES_MANAGE), deviceAdmin, u.name);
+      assert.equal(hasPermission(p, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE), deviceAdmin, u.name);
       assert.equal(hasPermission(p, PERMISSIONS.PRESENCE_SCHEDULE_MANAGE), u.id === ipp.id || u.id === ipaPers.id, u.name);
     }
   });

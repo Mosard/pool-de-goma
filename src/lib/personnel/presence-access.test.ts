@@ -9,8 +9,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ROLE_PERMISSIONS } from "@/lib/demo-seed";
 import {
+  DEVICE_ADMIN_ROLE_KEYS,
   PERMISSIONS,
   PERSONNEL_HEAD_KEYS,
+  PERSONNEL_RECORD_READER_ROLE_KEYS,
+  PRESENCE_DEVICE_KEYS,
   ROLE_KEYS,
   SUPER_ADMIN_EXCLUDED_PERMISSIONS,
   SUPER_ADMIN_PERMISSIONS,
@@ -19,7 +22,13 @@ import {
 } from "@/lib/rbac-data";
 import { hasPermission, type SessionPermission, type SessionRole } from "@/lib/permission-checks";
 import { applyAdjustments, canAdjustPermission } from "@/lib/access-rules";
-import { awaitingCellAssignment, bindPersonnelHeadPermissions, bindRolePermissions, withoutReservedForSimulation } from "@/lib/cells/rules";
+import {
+  awaitingCellAssignment,
+  bindPersonnelHeadPermissions,
+  bindRecordReaderPermissions,
+  bindRolePermissions,
+  withoutReservedForSimulation,
+} from "@/lib/cells/rules";
 import { diffMemberships } from "@/lib/cells/history";
 import { holdsPersonnelCellManage } from "@/lib/cells/personnel";
 import { changedFieldNames } from "@/lib/audit-fields";
@@ -34,6 +43,7 @@ import {
   displaySex,
   displayText,
   displayYesNo,
+  recordPanelView,
 } from "@/lib/personnel/record";
 
 const ORG = "org";
@@ -78,14 +88,24 @@ test("vue globale des présences : IPP, Super Admin, informaticien, secrétaires
   assert.equal(hasPermission(ipa, P.PRESENCE_READ_CELL, { cellId: "c2" }), false);
 });
 
-test("appareils et associations : IPP, Super Admin, informaticien, secrétaires (le responsable du personnel par sa cellule)", () => {
-  for (const r of GLOBAL_VIEW) {
+test("appareils et associations (directive du 2026-10-15) : Super Admin, Admin, IPP principal, informaticien SEULEMENT", () => {
+  const allowed: RoleKey[] = [ROLE_KEYS.IPP, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN, ROLE_KEYS.INFORMATICIEN];
+  for (const r of allowed) {
     assert.ok(orgWide(rolePerms(r), P.PRESENCE_DEVICES_MANAGE), r);
     assert.ok(orgWide(rolePerms(r), P.PRESENCE_ENROLLMENT_MANAGE), r);
+    assert.ok(DEVICE_ADMIN_ROLE_KEYS.includes(r), r);
   }
-  for (const r of [...NO_PRESENCE, ROLE_KEYS.IPA]) {
-    assert.equal(orgWide(rolePerms(r, { ipaCellId: "c1", cellId: "c1", poolId: "pool-a" }), P.PRESENCE_DEVICES_MANAGE), false, r);
+  for (const r of [...NO_PRESENCE, ROLE_KEYS.IPA, ROLE_KEYS.SECRETAIRE_IPP]) {
+    const perms = rolePerms(r, { ipaCellId: "c1", cellId: "c1", poolId: "pool-a" });
+    assert.equal(orgWide(perms, P.PRESENCE_DEVICES_MANAGE), false, r);
+    assert.equal(orgWide(perms, P.PRESENCE_ENROLLMENT_MANAGE), false, r);
+    assert.equal(DEVICE_ADMIN_ROLE_KEYS.includes(r), false, r);
   }
+  // Le responsable du personnel garde ses pouvoirs administratifs, sans les appareils.
+  for (const k of PRESENCE_DEVICE_KEYS) assert.equal(PERSONNEL_HEAD_KEYS.includes(k), false, k);
+  assert.ok(PERSONNEL_HEAD_KEYS.includes(P.PRESENCE_READ_ALL));
+  // Les secrétaires de l'IPP gardent la consultation des présences.
+  assert.ok(orgWide(rolePerms(ROLE_KEYS.SECRETAIRE_IPP), P.PRESENCE_READ_ALL));
 });
 
 test("seuils et calendrier : seulement l'IPP (fonction) et le responsable du personnel (cellule)", () => {
@@ -107,11 +127,61 @@ test("demandes des agents sans cellule : responsable du personnel, Super Admin, 
   assert.ok(PERSONNEL_HEAD_KEYS.includes(P.PRESENCE_REQUESTS_INITIATE_UNCELLED));
 });
 
-test("fiches détaillées : aucune fonction ne les donne ; seulement la responsabilité de la cellule du personnel", () => {
+test("fiches détaillées : aucune ligne de fonction ne les donne ; fonction réelle (4 profils) ou responsable du personnel", () => {
   for (const r of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) {
     assert.equal(ROLE_PERMISSIONS[r].includes(P.PERSONNEL_RECORDS_READ_ALL), false, r);
   }
   assert.equal(orgWide(rolePerms(ROLE_KEYS.SUPER_ADMIN), P.PERSONNEL_RECORDS_READ_ALL), false);
+  // Directive du 2026-10-15 : Super Admin, Admin, IPP principal, informaticien.
+  for (const r of [ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN, ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN]) {
+    assert.ok(canReadPersonnelRecords(bindRecordReaderPermissions([r], ORG), ORG), r);
+  }
+  assert.deepEqual([...PERSONNEL_RECORD_READER_ROLE_KEYS].sort(), ["admin", "informaticien", "ipp", "super_admin"]);
+  // Tout autre profil : refus (secrétaires de l'IPP, IPA, chef de POOL, inspecteur…).
+  for (const r of (Object.keys(ROLE_PERMISSIONS) as RoleKey[]).filter((k) => !PERSONNEL_RECORD_READER_ROLE_KEYS.includes(k))) {
+    assert.deepEqual(bindRecordReaderPermissions([r], ORG), [], r);
+  }
+  // Lecture seule : aucune autre permission n'est ajoutée.
+  assert.deepEqual(bindRecordReaderPermissions([ROLE_KEYS.IPP], ORG), [{ permissionKey: P.PERSONNEL_RECORDS_READ_ALL, poolId: null, organizationId: ORG }]);
+  // Un retrait individuel reste possible.
+  const revoked = applyAdjustments(bindRecordReaderPermissions([ROLE_KEYS.INFORMATICIEN], ORG), [{ permissionKey: P.PERSONNEL_RECORDS_READ_ALL, poolId: null, effect: "REVOKE" }], ORG);
+  assert.equal(canReadPersonnelRecords(revoked, ORG), false);
+  // En « Voir comme » agissant, le pouvoir réservé n'est jamais simulé.
+  assert.equal(canReadPersonnelRecords(withoutReservedForSimulation(bindRecordReaderPermissions([ROLE_KEYS.IPP], ORG)), ORG), false);
+});
+
+test("panneau « Voir la fiche » : uniquement des textes de la liste blanche, aucun secret", () => {
+  const row = {
+    id: "u1",
+    name: "Agent Test",
+    postnom: null,
+    prenom: "",
+    sex: "F",
+    dateNaissance: null,
+    photoUrl: null,
+    email: "agent@exemple.test",
+    phone: null,
+    nombreEnfants: 0,
+    matricule: null,
+    statutAdministratif: null,
+    mecanise: null,
+    status: "ACTIVE",
+    pool: null,
+    cellLed: null,
+    roles: [],
+    // Champs interdits glissés par erreur : ils ne doivent jamais ressortir.
+    passwordHash: "secret-x",
+    username: "login-y",
+  };
+  const view = recordPanelView(row);
+  const json = JSON.stringify(view);
+  for (const f of FORBIDDEN_FIELDS) assert.equal(json.includes(`"${f}"`), false, f);
+  assert.equal(json.includes("secret-x") || json.includes("login-y"), false);
+  const fields = Object.fromEntries(view.sections.flatMap((s) => s.fields.map((f) => [f.label, f.value])));
+  assert.equal(fields["Nombre d'enfants"], "0");
+  assert.equal(fields["Prénom"], NOT_PROVIDED);
+  assert.equal(fields["Sexe"], "Féminin");
+  assert.equal(view.statusLabel, "Actif");
 });
 
 test("approbation finale et délégation : IPP seulement ; intérim : Super Admin et Admin seulement", () => {

@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { Badge, Card } from "@/components/ui";
+import { RecordPanelButton } from "./record-panel";
 import { PENDING_RULES } from "@/lib/presence/settings";
 import type { DaySummary } from "@/lib/presence/rules";
 import type { PresenceRow } from "@/lib/presence/views";
@@ -117,11 +117,7 @@ export function PresenceTable({ rows, showDate, canOpenRecord }: { rows: Presenc
               <td className="px-4 py-3">
                 <span className="font-medium text-gray-900">{r.name}</span>
                 <span className="block text-xs text-gray-500">{[...r.cells.map((c) => `Cellule ${c}`), ...r.sites].join(" · ") || r.functions.join(", ")}</span>
-                {canOpenRecord && (
-                  <Link href={`/personnel/${r.userId}`} className="text-xs text-blue-700 underline">
-                    Fiche
-                  </Link>
-                )}
+                {canOpenRecord && <RecordPanelButton userId={r.userId} name={r.name} />}
               </td>
               <td className="px-4 py-3">
                 <StatusBadge s={r.summary} />

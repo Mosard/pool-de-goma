@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Badge, Card, EmptyState, Input, PageHeader, Select } from "@/components/ui";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { holdsOrgPermission } from "@/lib/presence/config";
-import { presenceSimulatorEnabled } from "@/lib/presence/devices";
+import { holdsDeviceAdminRole, presenceSimulatorEnabled } from "@/lib/presence/devices";
 import { formatGomaDateTime, gomaDateKey } from "@/lib/presence/time";
 import { loadPresenceViewer } from "@/lib/presence/views";
 import { ActionForm } from "../action-form";
@@ -29,8 +29,11 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
   const viewer = await loadPresenceViewer(session.user.id);
   if (!viewer) redirect("/login");
   const org = viewer.organizationId;
-  const canDevices = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_DEVICES_MANAGE, org);
-  const canEnroll = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, org);
+  // Directive du 2026-10-15 : permission ET fonction réelle (Super Admin, Admin,
+  // IPP principal, informaticien), revérifiées par chaque action côté serveur.
+  const deviceAdmin = await holdsDeviceAdminRole(session.user.id);
+  const canDevices = deviceAdmin && holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_DEVICES_MANAGE, org);
+  const canEnroll = deviceAdmin && holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, org);
   if (!canDevices && !canEnroll) redirect("/presence/moi");
   const sp = await searchParams;
   const nowDate = new Date();
@@ -47,7 +50,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
         commands: {
           orderBy: { seq: "desc" },
           take: 15,
-          select: { id: true, seq: true, kind: true, pin: true, status: true, returnCode: true, createdAt: true, doneAt: true },
+          select: { id: true, seq: true, kind: true, pin: true, status: true, returnCode: true, createdAt: true, doneAt: true, notBefore: true },
         },
       },
     }),
@@ -174,7 +177,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
                           {m.validTo ? ` jusqu'au ${formatGomaDateTime(m.validTo)} (exclu)${m.endReason ? ` — ${m.endReason}` : ""}` : " — en cours"}
                         </span>
                       </span>
-                      {canEnroll && !m.validTo && d.protocol === "ADMS" && d.status !== "DESACTIVE" && <AdmsMappingActions mappingId={m.id} pin={m.deviceUserId} today={today} />}
+                      {canEnroll && !m.validTo && d.protocol === "ADMS" && d.status !== "DESACTIVE" && <AdmsMappingActions mappingId={m.id} pin={m.deviceUserId} name={m.user.name} />}
                       {canEnroll && !m.validTo && (d.protocol !== "ADMS" || d.status === "DESACTIVE") && (
                         <ActionForm action={endMappingAction.bind(null, m.id)} submit="Terminer" variant="ghost" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[30rem] sm:grid-cols-3">
                           <Input type="date" name="end" defaultValue={today} aria-label="Fin (exclue)" />

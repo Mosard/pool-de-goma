@@ -25,11 +25,19 @@ type Tx = Prisma.TransactionClient;
 
 /** Ajoute une commande à la file de l'appareil (dans la transaction de l'appelant si fournie). */
 export async function enqueueCommand(
-  p: { deviceId: string; kind: CommandKind; command: string; pin?: string | null; userId?: string | null; createdById?: string | null },
+  p: { deviceId: string; kind: CommandKind; command: string; pin?: string | null; userId?: string | null; createdById?: string | null; notBefore?: Date | null },
   tx: Tx = prisma
 ) {
   const cmd = await tx.deviceCommand.create({
-    data: { deviceId: p.deviceId, kind: p.kind, command: p.command, pin: p.pin ?? null, userId: p.userId ?? null, createdById: p.createdById ?? null },
+    data: {
+      deviceId: p.deviceId,
+      kind: p.kind,
+      command: p.command,
+      pin: p.pin ?? null,
+      userId: p.userId ?? null,
+      createdById: p.createdById ?? null,
+      notBefore: p.notBefore ?? null,
+    },
   });
   await tx.attendanceDevice.update({ where: { id: p.deviceId }, data: { admsCommandsPending: true } });
   return cmd;
@@ -55,7 +63,8 @@ export async function takeCommandsForDelivery(deviceId: string, now = new Date()
     where: {
       deviceId,
       OR: [
-        { status: "PENDING" },
+        // Suppression différée : remise seulement après son heure (annulable jusque-là).
+        { status: "PENDING", OR: [{ notBefore: null }, { notBefore: { lte: now } }] },
         { status: "SENT", kind: { in: IDEMPOTENT }, attempts: { lt: MAX_ATTEMPTS }, sentAt: { lt: new Date(now.getTime() - RESEND_AFTER_MS) } },
       ],
     },

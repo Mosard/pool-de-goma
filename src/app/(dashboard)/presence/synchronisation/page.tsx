@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { holdsOrgPermission } from "@/lib/presence/config";
+import { holdsDeviceAdminRole } from "@/lib/presence/devices";
 import { PENDING_RULES } from "@/lib/presence/settings";
 import { formatGomaDateTime } from "@/lib/presence/time";
 import { loadChangeCursor, loadPresenceViewer, loadSyncState } from "@/lib/presence/views";
@@ -50,8 +51,11 @@ export default async function SyncPage() {
     holdsOrgPermission(viewer.permissions, k, org)
   );
   if (!allowed) redirect("/presence/moi");
-  const canEnroll = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, org);
-  const canDevices = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_DEVICES_MANAGE, org);
+  // Signalements des appareils et liens d'association : trois profils seulement
+  // (directive du 2026-10-15) ; la consultation de l'état reste ouverte à presence.read_all.
+  const deviceAdmin = await holdsDeviceAdminRole(session.user.id);
+  const canEnroll = deviceAdmin && holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, org);
+  const canDevices = deviceAdmin && holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_DEVICES_MANAGE, org);
   const [{ devices, unmapped, alerts }, cursor] = await Promise.all([loadSyncState(org), loadChangeCursor(org)]);
   const labelOf = new Map(devices.map((d) => [d.id, `${d.label} — ${d.siteLabel}`]));
 

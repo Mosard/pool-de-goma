@@ -115,16 +115,32 @@ export const CELL_PERMISSION_KEYS: readonly string[] = [
   PERMISSIONS.PRESENCE_REQUESTS_INITIATE_CELL,
 ];
 
+// « Appareils et associations » (pointeuses, enrôlement biométrique) :
+// directive de gouvernance du 2026-10-15 — STRICTEMENT réservés au Super
+// Admin (et à la fonction Admin, mêmes droits par décision du 2026-10-13), à
+// l'IPP principal et à l'informaticien de l'IPP. Contrôlé côté serveur deux
+// fois : la permission (base) ET la fonction réelle de la personne (code), de
+// sorte qu'aucune ligne de base, aucun ajustement individuel ni aucun « Voir
+// comme » ne puisse ouvrir cet accès à un autre profil.
+export const PRESENCE_DEVICE_KEYS: readonly PermissionKey[] = [PERMISSIONS.PRESENCE_DEVICES_MANAGE, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE];
+export const DEVICE_ADMIN_ROLE_KEYS: readonly string[] = ["super_admin", "admin", "ipp", "informaticien"];
+
+// Consultation des fiches du personnel (« Voir la fiche » depuis les présences,
+// directive du 2026-10-15) : les mêmes quatre fonctions RÉELLES, en plus de
+// l'IPA chargé du personnel (PERSONNEL_HEAD_KEYS). Ajoutée par loadUserAccess
+// d'après la fonction, jamais par une ligne de base, un ajout individuel ni un
+// « Voir comme » agissant ; un retrait individuel reste possible. Lecture seule.
+export const PERSONNEL_RECORD_READER_ROLE_KEYS: readonly string[] = DEVICE_ADMIN_ROLE_KEYS;
+
 // Pouvoirs du responsable de la cellule du personnel (décisions du 2026-10-10) :
 // ajoutés par loadUserAccess UNIQUEMENT à l'IPA responsable (Cell.ipaId) de la
 // cellule active de vocation PERSONNEL (Cell.mandate), à portée organisation.
 // Jamais par la fonction seule, jamais en « Voir comme ». Ils cessent dès qu'il
-// n'est plus responsable ou que la cellule est archivée.
+// n'est plus responsable ou que la cellule est archivée. Sans les appareils ni
+// les associations biométriques (directive du 2026-10-15).
 export const PERSONNEL_HEAD_KEYS: readonly PermissionKey[] = [
   PERMISSIONS.PRESENCE_READ_ALL,
   PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
-  PERMISSIONS.PRESENCE_DEVICES_MANAGE,
-  PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE,
   PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,
   PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED,
   PERMISSIONS.PRESENCE_REQUESTS_VERIFY,

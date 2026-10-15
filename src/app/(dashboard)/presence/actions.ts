@@ -34,7 +34,9 @@ import {
   setDeviceVerified,
 } from "@/lib/presence/devices";
 import { IngestConflictError, ingestBatch } from "@/lib/presence/ingest";
-import { isDateKey, parseClock } from "@/lib/presence/time";
+import { getPersonnelRecord } from "@/lib/personnel/server";
+import { recordPanelView, type RecordPanelView } from "@/lib/personnel/record";
+import { formatGomaDateTime, isDateKey, parseClock } from "@/lib/presence/time";
 import type { FormState } from "./action-form";
 
 async function actor() {
@@ -55,6 +57,24 @@ async function run(fn: () => Promise<FormState | void>): Promise<FormState> {
 }
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
+
+// ─── « Voir la fiche » depuis les présences (lecture seule, journalisée) ────
+
+export type RecordPanelResult = { record: RecordPanelView } | { error: string };
+
+/** Fiche d'un agent pour le panneau latéral : mêmes droits et même journal que /personnel/[id]. */
+export async function loadRecordPanel(targetId: string): Promise<RecordPanelResult> {
+  const session = await auth();
+  if (!session?.user || session.user.awaitingCell) return { error: "Connexion requise." };
+  if (typeof targetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(targetId)) return { error: "Fiche introuvable." };
+  try {
+    const r = await getPersonnelRecord(session.user.id, targetId);
+    return r ? { record: recordPanelView(r) } : { error: "Fiche introuvable." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
+    throw e;
+  }
+}
 
 // ─── Horaires et calendrier (IPP principal, IPA chargé du personnel) ───────
 
@@ -189,8 +209,12 @@ export async function fingerprintAction(mappingId: string, _p: FormState, fd: Fo
 export async function removeAgentAction(mappingId: string, _p: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
     const deleteFromDevice = fd.get("deleteFromDevice") === "on";
-    await removeAgentFromDevice(await actor(), { mappingId, endDateKey: str(fd, "end"), reason: str(fd, "reason"), deleteFromDevice });
-    return { ok: deleteFromDevice ? "Association terminée ; retrait envoyé à la pointeuse." : "Association terminée (l'agent reste inscrit sur la pointeuse)." };
+    const r = await removeAgentFromDevice(await actor(), { mappingId, reason: str(fd, "reason"), confirmPin: str(fd, "confirmPin"), deleteFromDevice });
+    return {
+      ok: r.deleteAt
+        ? `${r.name} (PIN ${r.pin}) : association terminée maintenant. Suppression sur la pointeuse à ${formatGomaDateTime(r.deleteAt)} — annulable d'ici là dans « Dernières commandes ».`
+        : `${r.name} (PIN ${r.pin}) : association terminée maintenant ; l'agent reste inscrit sur la pointeuse.`,
+    };
   });
 }
 
@@ -201,10 +225,10 @@ export async function inventoryAction(deviceId: string): Promise<FormState> {
   });
 }
 
-export async function deleteDeviceUserAction(deviceId: string, pin: string): Promise<FormState> {
+export async function deleteDeviceUserAction(deviceId: string, pin: string, _p: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
-    await deleteUnmappedDeviceUser(await actor(), deviceId, pin);
-    return { ok: `Retrait du PIN ${pin} envoyé à la pointeuse.` };
+    const { deleteAt } = await deleteUnmappedDeviceUser(await actor(), deviceId, pin, str(fd, "confirmPin"));
+    return { ok: `Suppression du PIN ${pin} sur la pointeuse à ${formatGomaDateTime(deleteAt)} — annulable d'ici là.` };
   });
 }
 

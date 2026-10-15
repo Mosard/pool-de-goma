@@ -16,6 +16,7 @@ import { applyAdjustments } from "@/lib/access-rules";
 import {
   awaitingCellAssignment,
   bindPersonnelHeadPermissions,
+  bindRecordReaderPermissions,
   bindRolePermissions,
   withoutProvincialFallback,
   withoutReservedForSimulation,
@@ -108,6 +109,9 @@ async function loadRealAccess(userId: string) {
   if (userRoles.some((ur) => ur.role.key === ROLE_KEYS.IPA)) {
     fromRoles.push(...bindPersonnelHeadPermissions({ ipaCell, activePersonnelCellCount, organizationId }));
   }
+  // Consultation des fiches du personnel par fonction réelle (Super Admin,
+  // Admin, IPP principal, informaticien ; directive du 2026-10-15).
+  fromRoles.push(...bindRecordReaderPermissions(roles.map((r) => r.key), organizationId));
   // Ajustements individuels (écran « Gérer les accès ») : retraits puis ajouts ;
   // aucun ajout ne redonne un accès provincial à une personne rattachée à une cellule.
   const adjusted = applyAdjustments(

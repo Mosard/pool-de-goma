@@ -26,7 +26,7 @@ import {
   userUpsertCommand,
 } from "@/lib/presence/adms/protocol";
 import { parseEvents } from "@/lib/presence/ingest";
-import { nextFreePin } from "@/lib/presence/devices";
+import { isAgentPin, isReservedAdminPin, nextFreePin } from "@/lib/presence/devices";
 
 test("commandes : inscription d'un utilisateur ORDINAIRE, retrait, capture sur l'appareil ; format C:<n>:", () => {
   assert.equal(userUpsertCommand("12", "Éloïse Kahindo-Mbusa"), "DATA UPDATE USERINFO PIN=12\tName=Eloise Kahindo-Mbusa\tPri=0\tGrp=1");
@@ -66,9 +66,19 @@ test("inventaire : PIN et privilège seulement ; lignes d'empreintes ignorées ;
   assert.equal(isDeviceAdmin(0), false);
 });
 
-test("PIN libre : au-dessus du plus grand PIN numérique utilisé (association ou appareil)", () => {
-  assert.equal(nextFreePin([]), "1");
-  assert.equal(nextFreePin(["1", "2", "A7", "10"]), "11");
+test("PIN : agents de 101 à 8999 ; 9000 et au-delà réservés aux administrateurs ; anciens PIN de test ignorés", () => {
+  assert.equal(nextFreePin([]), "101");
+  assert.equal(nextFreePin(["1", "2", "3", "A7"]), "101", "PIN de test < 101 ignorés");
+  assert.equal(nextFreePin(["101", "102", "9999"]), "103", "le PIN administrateur 9999 n'influe pas");
+  assert.equal(nextFreePin(["8999"]), null, "plage pleine");
+  assert.equal(isAgentPin("101"), true);
+  assert.equal(isAgentPin("8999"), true);
+  assert.equal(isAgentPin("100"), false);
+  assert.equal(isAgentPin("9000"), false);
+  assert.equal(isAgentPin("0101"), false, "pas de zéro en tête");
+  assert.equal(isAgentPin("1e3"), false);
+  assert.equal(isReservedAdminPin("9999"), true);
+  assert.equal(isReservedAdminPin("8999"), false);
 });
 
 test("ATTLOG réel (tabulations, champs réservés) → format canonique, valeurs brutes conservées", () => {
