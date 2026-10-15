@@ -24,6 +24,7 @@ import {
   USER_QUERY_COMMAND,
   cleanSn,
   enrollFingerprintCommand,
+  generatePathSecret,
   hashPathSecret,
   isDeviceAdmin,
   userDeleteCommand,
@@ -291,7 +292,8 @@ export async function openAdmsPairing(actor: Actor, deviceId: string) {
 /** Chemin secret « /p/<secret>/iclock » : affiché UNE fois, stocké haché ; l'ancien cesse aussitôt. */
 export async function issueAdmsPathSecret(actor: Actor, deviceId: string): Promise<string> {
   const device = await loadAdmsDevice(actor, deviceId);
-  const secret = randomBytes(24).toString("base64url");
+  // Minuscules seulement : saisissable au clavier de la pointeuse (test T5, étape A).
+  const secret = generatePathSecret();
   await prisma.attendanceDevice.update({ where: { id: device.id }, data: { admsPathSecretHash: hashPathSecret(secret) } });
   forgetAdmsDevice(device.serialNumber);
   await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_secret_issue", entityType: "AttendanceDevice", entityId: device.id });

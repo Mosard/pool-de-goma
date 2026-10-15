@@ -18,6 +18,7 @@ import {
   transFlagFor,
   deviceDisplayName,
   enrollFingerprintCommand,
+  generatePathSecret,
   formatCommands,
   isDeviceAdmin,
   parseCommandResults,
@@ -27,6 +28,22 @@ import {
 } from "@/lib/presence/adms/protocol";
 import { parseEvents } from "@/lib/presence/ingest";
 import { isAgentPin, isReservedAdminPin, nextFreePin } from "@/lib/presence/devices";
+
+test("chemin secret : 20 lettres minuscules (clavier de l'UA300), aléatoire, accepté par le contrôle", () => {
+  const seen = new Set<string>();
+  const counts = new Array(26).fill(0);
+  for (let i = 0; i < 400; i++) {
+    const s = generatePathSecret();
+    assert.match(s, /^[a-z]{20}$/);
+    assert.equal(cleanPathSecret(s), s);
+    seen.add(s);
+    for (const ch of s) counts[ch.charCodeAt(0) - 97]++;
+  }
+  assert.equal(seen.size, 400, "aucun doublon");
+  // 8 000 lettres : chacune attendue ≈ 308 fois ; aucune absente ni très surreprésentée.
+  assert.ok(Math.min(...counts) > 200 && Math.max(...counts) < 420, `répartition ${counts.join(",")}`);
+  assert.equal(`ippnk1.online/p/${generatePathSecret()}`.length, 36, "adresse de production");
+});
 
 test("commandes : inscription d'un utilisateur ORDINAIRE, retrait, capture sur l'appareil ; format C:<n>:", () => {
   assert.equal(userUpsertCommand("12", "Éloïse Kahindo-Mbusa"), "DATA UPDATE USERINFO PIN=12\tName=Eloise Kahindo-Mbusa\tPri=0\tGrp=1");
