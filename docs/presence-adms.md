@@ -156,12 +156,76 @@ regroupés (une ligne par appareil et par nature).
 - Bout en bout (base et application LOCALES, `ADMS_DEVICE_CACHE_MS=0`) :
   `POSTGRES_URL=<locale> BASE_URL=http://localhost:3100 npx tsx prisma/scripts/verify-adms-http.ts`.
 
-## Mise en service (production : avec l'accord explicite de l'Inspection)
+## Mise en service
 
-1. Sauvegarde complète ; vérifier qu'aucun numéro de série n'est en double
-   (index unique de la migration `20261016120000_presence_adms`).
-2. Fusion vers `master` (le build applique la migration additive).
-3. Présence › Appareils : enregistrer la pointeuse (mode ADMS, numéro de série
-   exact), associer les identifiants, **ouvrir l'appairage**.
-4. Sur la pointeuse : serveur = `ippnk1.online`, port 443, HTTPS.
-5. Pilote 1 à 2 semaines, puis « Marquer vérifié ».
+Module déployé en production le 15/10/2026 (migrations `20261016120000`,
+`20261016130000`, `20261016140000`). Première UA300 appairée le même soir par
+chemin secret (test T5 réussi : le champ « adresse du serveur » de l'UA300,
+micrologiciel 8.0.4.6, accepte environ 60 caractères, la barre oblique et les
+minuscules).
+
+## Procédure : ajouter une pointeuse ZKTeco (UA300 ou équivalente)
+
+Chaque pointeuse a son propre numéro de série, son propre chemin secret et
+ses propres inscriptions. L'ordre des étapes compte.
+
+### A. Préparer l'appareil (sur la pointeuse)
+
+1. Noter le **numéro de série exact** (majuscules comprises).
+2. Menu › Utilisateurs : retirer les utilisateurs de démonstration éventuels.
+   **Jamais** « Restaurer les paramètres d'usine », « Supprimer toutes les
+   données » ni « Réinitialiser ».
+3. Créer un **administrateur local** : PIN **9000 ou plus**, rôle Super Admin,
+   mot de passe connu de l'informaticien seul. Sans administrateur, le menu
+   (enrôlement, réglages) est ouvert à tous. L'application ne crée, ne modifie
+   et ne supprime jamais un PIN ≥ 9000.
+4. Autre modèle ou autre micrologiciel : vérifier, sans enregistrer, que le
+   champ « adresse du serveur » accepte **au moins 36 caractères**, la barre
+   oblique **/** et les **minuscules**. Sinon, appairer sans chemin secret
+   (adresse `ippnk1.online`) et le signaler comme risque.
+
+### B. Déclarer la pointeuse (ippnk1.online, IPP, informaticien ou Super Admin)
+
+5. Présence › Appareils › « Enregistrer une pointeuse » : nom, bureau,
+   fabricant, modèle, **numéro de série exact**, mode **ADMS**.
+6. Sur sa carte : **« Créer un chemin secret »** → noter immédiatement les
+   **20 lettres minuscules** (affichées une seule fois, stockées hachées).
+7. **« Ouvrir l'appairage (15 min) »**.
+
+### C. Configurer la pointeuse (dans les 15 minutes)
+
+8. Communication › Serveur cloud :
+   - Mode serveur : **ADMS** ; Nom de domaine : **activé** ;
+   - Adresse du serveur : **`ippnk1.online/p/<les 20 lettres>`** (36 caractères ;
+     le chiffre **1** dans « ippnk1 ») ;
+   - Port : **443** ; **HTTPS : activé** ; Proxy : désactivé.
+9. Enregistrer. En 1 à 2 minutes, la carte affiche « appairée le … ».
+
+### D. Inscrire les agents
+
+10. « Inscrire un agent » sur **cette** pointeuse : compte existant (aucun
+    second compte), PIN attribué à partir de **101**, capture d'empreinte sur
+    l'appareil (bouton « Capturer une empreinte — PIN n », agent présent).
+    Un agent qui pointe sur plusieurs pointeuses est inscrit, et son
+    empreinte capturée, sur chacune : les empreintes ne circulent pas.
+11. Pilote de quelques jours sans écart (« Synchronisation »), puis
+    **« Marquer vérifié »**.
+
+### Dépannage (page Synchronisation › Signalements)
+
+| Signalement | Cause | Action |
+|---|---|---|
+| Pointeuse non appairée | appairage non ouvert ou expiré | rouvrir l'appairage (15 min) |
+| Chemin secret absent ou faux | faute de frappe ou ancien secret | vérifier les 20 lettres, ou « Nouveau chemin secret » puis ressaisir |
+| Numéro de série inconnu | numéro différent de celui déclaré | corriger la déclaration (numéro exact) |
+| Appareil désactivé ou non déclaré en ADMS | mode passerelle ou appareil désactivé | déclarer en ADMS / réactiver |
+| IP publique différente | IP du bureau variable | information, sans action |
+
+Une pointeuse refusée garde ses pointages et les renvoie dès qu'elle est
+acceptée : rien n'est perdu. Chemin secret perdu : en créer un nouveau
+(l'ancien cesse aussitôt) et le ressaisir sur l'appareil. Ne jamais écrire un
+chemin secret, un numéro de série complet ni une IP dans ce dépôt (public).
+
+Coût : environ 1 440 interrogations par jour et par pointeuse (opérations
+Prisma Postgres facturées), maîtrisées par la mémoire de 60 s et l'écriture
+du dernier contact toutes les 5 minutes.
