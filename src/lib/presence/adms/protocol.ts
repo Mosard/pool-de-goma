@@ -11,7 +11,7 @@
 // Seules les lignes ATTLOG sont lues. Les autres tables (utilisateurs,
 // empreintes, visages, photos, journal d'opérations) ne sont jamais décodées.
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { MAX_EVENTS_PER_BATCH, type CanonicalEvent } from "@/lib/presence/ingest";
 
 const PIN_RE = /^[A-Za-z0-9_.-]{1,64}$/; // même règle que les associations
@@ -28,6 +28,22 @@ export function admsEndpoint(segment: string): AdmsEndpoint {
 /** Numéro de série plausible (lettres, chiffres) ; sinon null. */
 export function cleanSn(sn: string | null | undefined): string | null {
   return typeof sn === "string" && /^[A-Za-z0-9]{4,40}$/.test(sn) ? sn : null;
+}
+
+/**
+ * Nouveau secret de chemin : lettres MINUSCULES seulement (a à z), seul jeu de
+ * caractères saisissable sans erreur au clavier de l'UA300 (vérifié le
+ * 2026-10-15 ; le champ « adresse du serveur » accepte aussi « / »). 20 lettres
+ * ≈ 94 bits. Tirage uniforme par rejet (aucun biais de modulo).
+ */
+export function generatePathSecret(length = 20): string {
+  let out = "";
+  while (out.length < length) {
+    for (const b of randomBytes(length * 2)) {
+      if (b < 234 && out.length < length) out += String.fromCharCode(97 + (b % 26)); // 234 = 9 × 26
+    }
+  }
+  return out;
 }
 
 /** Secret de chemin plausible (base64url, 16 à 64 caractères) ; sinon null. */
