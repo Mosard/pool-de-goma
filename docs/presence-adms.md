@@ -112,6 +112,17 @@ une capture d'empreinte), puis expirée après 30 min ; toute action est journal
 | C5 PIN inconnu | créer un utilisateur au menu de l'appareil sans l'inscrire | son pointage est conservé, non compté, signalé |
 | C6 sans réseau | inscrire un agent pendant une coupure, puis rétablir | la commande est remise au retour du réseau |
 
+### Résultats sur l'appareil réel (UA300 QQD4242900285, Ver 8.0.4.6, 15/10/2026, Preview)
+
+| Test | Résultat | Constat serveur |
+|---|---|---|
+| Appairage | ✅ | appairée à 18:12:02 (Goma) ; empreinte pushver 2.4.1, `iClock Proxy/1.09` |
+| Pointage temps réel | ✅ | PIN 2, reçu en 3 s, décalage d'horloge −3 s ; journée calculée |
+| C1 inscription | ✅ | commande n° 1 `DATA UPDATE USERINFO PIN=3` remise 43 s après la création, résultat `Return=0` en 1 s ; « Agent Test C1 » affiché sur la pointeuse sous le PIN 3 |
+| C2 capture à distance | ✅ commande / ⚠️ PIN à confirmer | commande n° 2 `ENROLL_FP` remise immédiatement, `Return=0` 22 s plus tard (doigt posé) ; compteur d'empreintes 2 → 3. **La commande visait le PIN 1**, non le PIN 3 (bouton de la mauvaise ligne) : à vérifier au menu. Boutons désormais libellés avec le PIN |
+| Biométrie (partiel T9) | ✅ | après une capture réelle, aucune table d'empreintes reçue ; aucun signalement « table non demandée » |
+| IP publique | ⚠️ | adresse variable (206.42.85.153, 169.239.159.39, 169.239.159.4, 206.42.84.233) : 39 signalements en une soirée |
+
 ## Limites connues
 
 - Le protocole n'est pas authentifié : sans chemin secret, quiconque connaît

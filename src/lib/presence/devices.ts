@@ -409,6 +409,7 @@ export async function requestFingerprintCapture(actor: Actor, mappingId: string,
   await enqueueCommand({ deviceId: device.id, kind: "ENROLL_FP", command: enrollFingerprintCommand(mapping.deviceUserId, fingerIndex), pin: mapping.deviceUserId, userId: mapping.userId, createdById: actor.id });
   forgetAdmsDevice(device.serialNumber);
   await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_fp_request", entityType: "DeviceUserMapping", entityId: mapping.id, newValue: { pin: mapping.deviceUserId, fingerIndex } });
+  return { pin: mapping.deviceUserId, name: mapping.user.name };
 }
 
 /**

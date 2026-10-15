@@ -174,7 +174,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
                           {m.validTo ? ` jusqu'au ${formatGomaDateTime(m.validTo)} (exclu)${m.endReason ? ` — ${m.endReason}` : ""}` : " — en cours"}
                         </span>
                       </span>
-                      {canEnroll && !m.validTo && d.protocol === "ADMS" && d.status !== "DESACTIVE" && <AdmsMappingActions mappingId={m.id} today={today} />}
+                      {canEnroll && !m.validTo && d.protocol === "ADMS" && d.status !== "DESACTIVE" && <AdmsMappingActions mappingId={m.id} pin={m.deviceUserId} today={today} />}
                       {canEnroll && !m.validTo && (d.protocol !== "ADMS" || d.status === "DESACTIVE") && (
                         <ActionForm action={endMappingAction.bind(null, m.id)} submit="Terminer" variant="ghost" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[30rem] sm:grid-cols-3">
                           <Input type="date" name="end" defaultValue={today} aria-label="Fin (exclue)" />

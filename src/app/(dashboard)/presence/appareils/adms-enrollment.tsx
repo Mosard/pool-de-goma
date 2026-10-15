@@ -47,15 +47,19 @@ export function FingerSelect() {
   );
 }
 
-/** Actions sur une association en cours d'une pointeuse ADMS. */
-export function AdmsMappingActions({ mappingId, today }: { mappingId: string; today: string }) {
+/**
+ * Actions sur une association en cours d'une pointeuse ADMS. Chaque bouton
+ * porte le PIN visé : la capture d'empreinte s'adresse à un utilisateur précis
+ * de l'appareil (test réel du 15/10 : capture lancée par erreur sur un autre PIN).
+ */
+export function AdmsMappingActions({ mappingId, pin, today }: { mappingId: string; pin: string; today: string }) {
   return (
     <div className="flex w-full flex-wrap items-start gap-2 sm:w-auto">
-      <ActionForm action={resendEnrollmentAction.bind(null, mappingId)} submit="Renvoyer l'inscription" variant="ghost" />
-      <ActionForm action={fingerprintAction.bind(null, mappingId)} submit="Capturer une empreinte" variant="ghost" className="flex items-end gap-2">
+      <ActionForm action={resendEnrollmentAction.bind(null, mappingId)} submit={`Renvoyer l'inscription (PIN ${pin})`} variant="ghost" />
+      <ActionForm action={fingerprintAction.bind(null, mappingId)} submit={`Capturer une empreinte — PIN ${pin}`} variant="ghost" className="flex items-end gap-2">
         <FingerSelect />
       </ActionForm>
-      <ActionForm action={removeAgentAction.bind(null, mappingId)} submit="Retirer" variant="danger" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[34rem] sm:grid-cols-4">
+      <ActionForm action={removeAgentAction.bind(null, mappingId)} submit={`Retirer le PIN ${pin}`} variant="danger" className="grid w-full grid-cols-1 items-end gap-2 sm:w-[34rem] sm:grid-cols-4">
         <Input type="date" name="end" defaultValue={today} aria-label="Fin (exclue)" />
         <Input name="reason" placeholder="Motif" aria-label="Motif" />
         <label className="flex items-center gap-1 text-xs text-gray-600">

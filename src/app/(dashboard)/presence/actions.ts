@@ -181,8 +181,8 @@ export async function resendEnrollmentAction(mappingId: string): Promise<FormSta
 
 export async function fingerprintAction(mappingId: string, _p: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
-    await requestFingerprintCapture(await actor(), mappingId, finger(fd));
-    return { ok: "Capture demandée : l'agent pose son doigt sur la pointeuse dans les minutes qui suivent." };
+    const { pin, name } = await requestFingerprintCapture(await actor(), mappingId, finger(fd));
+    return { ok: `Capture demandée pour le PIN ${pin} (${name}) : l'agent pose son doigt sur la pointeuse dans les minutes qui suivent.` };
   });
 }
 
