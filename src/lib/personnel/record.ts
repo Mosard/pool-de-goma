@@ -106,6 +106,71 @@ type RoleRow = {
   role: { key: string; label: string };
 };
 
+export type RecordPanelSection = { title: string; fields: { label: string; value: string }[] };
+/** Fiche prête à afficher (panneau « Voir la fiche ») : uniquement des textes déjà mis en forme. */
+export type RecordPanelView = { id: string; name: string; photoUrl: string | null; statusLabel: string; active: boolean; functions: string[]; sections: RecordPanelSection[] };
+
+type RecordRow = {
+  id: string;
+  name: string;
+  postnom: string | null;
+  prenom: string | null;
+  sex: string | null;
+  dateNaissance: Date | null;
+  photoUrl: string | null;
+  email: string | null;
+  phone: string | null;
+  nombreEnfants: number | null;
+  matricule: string | null;
+  statutAdministratif: string | null;
+  mecanise: boolean | null;
+  status: string;
+  pool: { name: string } | null;
+  cellLed: { code: string; name: string; active: boolean } | null;
+  roles: RoleRow[];
+};
+
+/** Fonction pure : mêmes champs et mêmes libellés que la page /personnel/[id], rien de plus. */
+export function recordPanelView(r: RecordRow): RecordPanelView {
+  return {
+    id: r.id,
+    name: r.name,
+    photoUrl: r.photoUrl,
+    statusLabel: STATUS_LABELS[r.status] ?? r.status,
+    active: r.status === "ACTIVE",
+    functions: functionLabels(r),
+    sections: [
+      {
+        title: "Identité",
+        fields: [
+          { label: "Nom complet", value: displayText(r.name) },
+          { label: "Postnom", value: displayText(r.postnom) },
+          { label: "Prénom", value: displayText(r.prenom) },
+          { label: "Sexe", value: displaySex(r.sex) },
+          { label: "Date de naissance", value: displayBirthDate(r.dateNaissance) },
+        ],
+      },
+      {
+        title: "Coordonnées",
+        fields: [
+          { label: "Adresse e-mail", value: displayText(r.email) },
+          { label: "Téléphone", value: displayText(r.phone) },
+        ],
+      },
+      { title: "Affectation", fields: [{ label: "POOL de rattachement", value: displayText(r.pool?.name) }] },
+      { title: "Informations familiales", fields: [{ label: "Nombre d'enfants", value: displayText(r.nombreEnfants) }] },
+      {
+        title: "Informations administratives",
+        fields: [
+          { label: "Matricule", value: displayText(r.matricule) },
+          { label: "Statut administratif", value: displayText(r.statutAdministratif) },
+          { label: "Mécanisé", value: displayYesNo(r.mecanise) },
+        ],
+      },
+    ],
+  };
+}
+
 /** Fonctions et affectation lisibles : « Exploitant — Cellule X », « Inspecteur — POOL Goma ». */
 export function functionLabels(p: { roles: RoleRow[]; cellLed: { code: string; name: string; active: boolean } | null }): string[] {
   return p.roles.map((r) => {

@@ -10,6 +10,7 @@ import {
   IPA_CELL_BOUND_KEYS,
   PERMISSIONS,
   PERSONNEL_HEAD_KEYS,
+  PERSONNEL_RECORD_READER_ROLE_KEYS,
   ROLE_KEYS,
   SIGNED_ONLY_READER_ROLE_KEYS,
   SUPER_ADMIN_EXCLUDED_PERMISSIONS,
@@ -133,6 +134,16 @@ export function bindPersonnelHeadPermissions(p: {
   if (!c || !c.active || c.mandate !== "PERSONNEL" || c.organizationId !== p.organizationId) return [];
   if (p.activePersonnelCellCount !== 1) return [];
   return PERSONNEL_HEAD_KEYS.map((key) => ({ permissionKey: key, poolId: null, organizationId: p.organizationId }));
+}
+
+/**
+ * Consultation des fiches du personnel par fonction RÉELLE (directive du
+ * 2026-10-15) : Super Admin, Admin, IPP principal, informaticien. Portée
+ * organisation, lecture seule ; rien pour toute autre fonction.
+ */
+export function bindRecordReaderPermissions(roleKeys: readonly string[], organizationId: string): SessionPermission[] {
+  if (!roleKeys.some((k) => PERSONNEL_RECORD_READER_ROLE_KEYS.includes(k))) return [];
+  return [{ permissionKey: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL, poolId: null, organizationId }];
 }
 
 /**

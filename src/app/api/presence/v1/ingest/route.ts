@@ -6,7 +6,7 @@
 // POST /api/presence/v1/ingest
 //   Authorization: Bearer <jeton>   Idempotency-Key: <identifiant unique du lot>
 //   { "sentAt"?: ISO, "events": [{ "externalEventId"?, "deviceUserId", "localTime": "AAAA-MM-JJTHH:MM:SS", "direction"?: "IN"|"OUT"|"UNKNOWN", "verifyMode"? }] }
-// → 200 { batchId, accepted, duplicates, rejected[], replayed, serverTime }
+// → 200 { batchId, accepted, duplicates, rejected[], clockSuspect, replayed, serverTime }
 //   401 jeton invalide · 409 clé réutilisée, contenu différent · 413 trop d'événements · 422 format
 
 import { authenticateDevice } from "@/lib/presence/devices";

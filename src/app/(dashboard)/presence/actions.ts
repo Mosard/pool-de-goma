@@ -11,9 +11,32 @@ import { prisma } from "@/lib/prisma";
 import { ForbiddenError, loadUserAccess } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { addCalendarDay, holdsOrgPermission, removeCalendarDay, saveSchedule } from "@/lib/presence/config";
-import { createDevice, createMapping, endMapping, issueDeviceToken, presenceSimulatorEnabled, revokeDeviceToken, setDeviceDisabled } from "@/lib/presence/devices";
+import {
+  ADMS_PAIRING_MINUTES,
+  clearAdmsPathSecret,
+  createDevice,
+  createMapping,
+  endMapping,
+  issueAdmsPathSecret,
+  issueDeviceToken,
+  openAdmsPairing,
+  cancelDeviceCommand,
+  deleteUnmappedDeviceUser,
+  enrollAgentOnDevice,
+  removeAgentFromDevice,
+  requestDeviceInventory,
+  requestFingerprintCapture,
+  resendEnrollment,
+  presenceSimulatorEnabled,
+  resolveDeviceAlert,
+  revokeDeviceToken,
+  setDeviceDisabled,
+  setDeviceVerified,
+} from "@/lib/presence/devices";
 import { IngestConflictError, ingestBatch } from "@/lib/presence/ingest";
-import { isDateKey, parseClock } from "@/lib/presence/time";
+import { getPersonnelRecord } from "@/lib/personnel/server";
+import { recordPanelView, type RecordPanelView } from "@/lib/personnel/record";
+import { formatGomaDateTime, isDateKey, parseClock } from "@/lib/presence/time";
 import type { FormState } from "./action-form";
 
 async function actor() {
@@ -34,6 +57,24 @@ async function run(fn: () => Promise<FormState | void>): Promise<FormState> {
 }
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
+
+// ─── « Voir la fiche » depuis les présences (lecture seule, journalisée) ────
+
+export type RecordPanelResult = { record: RecordPanelView } | { error: string };
+
+/** Fiche d'un agent pour le panneau latéral : mêmes droits et même journal que /personnel/[id]. */
+export async function loadRecordPanel(targetId: string): Promise<RecordPanelResult> {
+  const session = await auth();
+  if (!session?.user || session.user.awaitingCell) return { error: "Connexion requise." };
+  if (typeof targetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(targetId)) return { error: "Fiche introuvable." };
+  try {
+    const r = await getPersonnelRecord(session.user.id, targetId);
+    return r ? { record: recordPanelView(r) } : { error: "Fiche introuvable." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
+    throw e;
+  }
+}
 
 // ─── Horaires et calendrier (IPP principal, IPA chargé du personnel) ───────
 
@@ -69,7 +110,14 @@ export async function removeCalendarDayAction(id: string): Promise<FormState> {
 
 export async function createDeviceAction(_p: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
-    await createDevice(await actor(), { label: str(fd, "label"), siteLabel: str(fd, "siteLabel"), vendor: str(fd, "vendor"), model: str(fd, "model"), serialNumber: str(fd, "serialNumber") });
+    await createDevice(await actor(), {
+      label: str(fd, "label"),
+      siteLabel: str(fd, "siteLabel"),
+      vendor: str(fd, "vendor"),
+      model: str(fd, "model"),
+      serialNumber: str(fd, "serialNumber"),
+      protocol: str(fd, "protocol") === "ADMS" ? "ADMS" : "API",
+    });
     return { ok: "Appareil enregistré (non vérifié)." };
   });
 }
@@ -89,6 +137,105 @@ export async function toggleDeviceAction(deviceId: string, disabled: boolean): P
   return run(async () => {
     await setDeviceDisabled(await actor(), deviceId, disabled);
     return { ok: disabled ? "Appareil désactivé." : "Appareil réactivé (non vérifié)." };
+  });
+}
+
+// ─── Pointeuses ADMS ───────────────────────────────────────────────────────
+
+export async function openPairingAction(deviceId: string): Promise<FormState> {
+  return run(async () => {
+    await openAdmsPairing(await actor(), deviceId);
+    return { ok: `Appairage ouvert ${ADMS_PAIRING_MINUTES} minutes : la pointeuse doit contacter le serveur pendant ce délai.` };
+  });
+}
+
+export async function issuePathSecretAction(deviceId: string): Promise<FormState> {
+  return run(async () => ({ secretPath: `/p/${await issueAdmsPathSecret(await actor(), deviceId)}` }));
+}
+
+export async function clearPathSecretAction(deviceId: string): Promise<FormState> {
+  return run(async () => {
+    await clearAdmsPathSecret(await actor(), deviceId);
+    return { ok: "Chemin secret supprimé : la pointeuse est acceptée sur /iclock." };
+  });
+}
+
+export async function verifyDeviceAction(deviceId: string, verified: boolean): Promise<FormState> {
+  return run(async () => {
+    await setDeviceVerified(await actor(), deviceId, verified);
+    return { ok: verified ? "Appareil marqué vérifié." : "Appareil remis à « non vérifié »." };
+  });
+}
+
+export async function resolveAlertAction(alertId: string): Promise<FormState> {
+  return run(async () => {
+    await resolveDeviceAlert(await actor(), alertId);
+    return { ok: "Signalement traité." };
+  });
+}
+
+// ─── Enrôlement ADMS géré depuis l'application ─────────────────────────────
+
+const finger = (fd: FormData) => Math.min(9, Math.max(0, Number(str(fd, "finger") || 0) || 0));
+
+export async function enrollAgentAction(deviceId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const { pin } = await enrollAgentOnDevice(await actor(), {
+      deviceId,
+      userId: str(fd, "userId"),
+      pin: str(fd, "pin") || undefined,
+      fromDateKey: str(fd, "from"),
+      captureFingerprint: fd.get("capture") === "on",
+      fingerIndex: finger(fd),
+    });
+    return { ok: `Agent inscrit sous le PIN ${pin} : la pointeuse le recevra à sa prochaine interrogation (environ 1 minute).` };
+  });
+}
+
+export async function resendEnrollmentAction(mappingId: string): Promise<FormState> {
+  return run(async () => {
+    await resendEnrollment(await actor(), mappingId);
+    return { ok: "Inscription renvoyée à la pointeuse." };
+  });
+}
+
+export async function fingerprintAction(mappingId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const { pin, name } = await requestFingerprintCapture(await actor(), mappingId, finger(fd));
+    return { ok: `Capture demandée pour le PIN ${pin} (${name}) : l'agent pose son doigt sur la pointeuse dans les minutes qui suivent.` };
+  });
+}
+
+export async function removeAgentAction(mappingId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const deleteFromDevice = fd.get("deleteFromDevice") === "on";
+    const r = await removeAgentFromDevice(await actor(), { mappingId, reason: str(fd, "reason"), confirmPin: str(fd, "confirmPin"), deleteFromDevice });
+    return {
+      ok: r.deleteAt
+        ? `${r.name} (PIN ${r.pin}) : association terminée maintenant. Suppression sur la pointeuse à ${formatGomaDateTime(r.deleteAt)} — annulable d'ici là dans « Dernières commandes ».`
+        : `${r.name} (PIN ${r.pin}) : association terminée maintenant ; l'agent reste inscrit sur la pointeuse.`,
+    };
+  });
+}
+
+export async function inventoryAction(deviceId: string): Promise<FormState> {
+  return run(async () => {
+    await requestDeviceInventory(await actor(), deviceId);
+    return { ok: "Inventaire demandé : résultat dans 1 à 2 minutes (rechargez la page)." };
+  });
+}
+
+export async function deleteDeviceUserAction(deviceId: string, pin: string, _p: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const { deleteAt } = await deleteUnmappedDeviceUser(await actor(), deviceId, pin, str(fd, "confirmPin"));
+    return { ok: `Suppression du PIN ${pin} sur la pointeuse à ${formatGomaDateTime(deleteAt)} — annulable d'ici là.` };
+  });
+}
+
+export async function cancelCommandAction(commandId: string): Promise<FormState> {
+  return run(async () => {
+    await cancelDeviceCommand(await actor(), commandId);
+    return { ok: "Commande annulée." };
   });
 }
 

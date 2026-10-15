@@ -227,11 +227,23 @@ export async function loadSyncState(organizationId: string) {
       lastEventReceivedAt: true,
       lastClockOffsetSec: true,
       lastClockCheckAt: true,
+      protocol: true,
+      admsInfo: true,
       _count: { select: { punches: true, batches: true } },
     },
   });
-  const unmapped = await loadUnmappedIdentifiers(organizationId);
-  return { devices, unmapped };
+  const [unmapped, alerts, suspects] = await Promise.all([
+    loadUnmappedIdentifiers(organizationId),
+    // Signalements ouverts ; les numéros de série inconnus n'ont pas d'organisation.
+    prisma.attendanceDeviceAlert.findMany({
+      where: { resolvedAt: null, OR: [{ organizationId }, { organizationId: null }] },
+      orderBy: { lastSeenAt: "desc" },
+      take: 50,
+    }),
+    prisma.rawPunch.groupBy({ by: ["deviceId"], where: { organizationId, clockSuspect: true }, _count: { _all: true } }),
+  ]);
+  const suspectByDevice = new Map(suspects.map((x) => [x.deviceId, x._count._all]));
+  return { devices: devices.map((d) => ({ ...d, clockSuspect: suspectByDevice.get(d.id) ?? 0 })), unmapped, alerts };
 }
 
 /** Identifiants ayant pointé hors de toute association valide : signalés, jamais rapprochés par le nom. */
