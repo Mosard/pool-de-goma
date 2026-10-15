@@ -39,6 +39,9 @@ export default auth((req) => {
   return NextResponse.next();
 });
 
+// Pointeuses ADMS (/iclock/*, /p/<secret>/iclock/*) : exclues du matcher —
+// aucune session ni redirection, et pas d'appel à auth() à chaque
+// interrogation ; les contrôles sont faits dans src/lib/presence/adms/handler.ts.
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|robots\\.txt$|sitemap\\.xml$|.*\\.(?:svg|png|jpg|jpeg|webp)).*)"],
+  matcher: ["/((?!api/auth|iclock/|p/[^/]+/iclock/|_next/static|_next/image|favicon.ico|robots\\.txt$|sitemap\\.xml$|.*\\.(?:svg|png|jpg|jpeg|webp)).*)"],
 };

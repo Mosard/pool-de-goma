@@ -10,7 +10,14 @@ import { formatGomaDateTime, gomaDateKey } from "@/lib/presence/time";
 import { loadPresenceViewer } from "@/lib/presence/views";
 import { ActionForm } from "../action-form";
 import { SimulatedBadge } from "../presence-ui";
+import { AdmsPanel } from "./adms-panel";
 import { createDeviceAction, createMappingAction, endMappingAction, issueTokenAction, revokeTokenAction, toggleDeviceAction } from "../actions";
+
+const STATUS_BADGE = {
+  NON_VERIFIE: { label: "Non vérifié", color: "orange" },
+  VERIFIE: { label: "Vérifié", color: "green" },
+  DESACTIVE: { label: "Désactivé", color: "gray" },
+} as const;
 
 // Appareils et associations. Administration des appareils et des jetons :
 // presence.devices.manage ; associations d'identifiants : presence.enrollment.manage.
@@ -25,7 +32,8 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
   const canEnroll = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, org);
   if (!canDevices && !canEnroll) redirect("/presence/moi");
   const sp = await searchParams;
-  const today = gomaDateKey(new Date());
+  const nowDate = new Date();
+  const today = gomaDateKey(nowDate);
 
   const [devices, accounts] = await Promise.all([
     prisma.attendanceDevice.findMany({
@@ -34,6 +42,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
       include: {
         credentials: { orderBy: { createdAt: "desc" }, select: { id: true, prefix: true, createdAt: true, revokedAt: true, lastUsedAt: true } },
         mappings: { orderBy: [{ validTo: "asc" }, { validFrom: "desc" }], include: { user: { select: { name: true } } } },
+        _count: { select: { punches: true } },
       },
     }),
     canEnroll
@@ -65,7 +74,11 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
             <Input name="siteLabel" required placeholder="Bureau (ex. Bureau de l'IPP)" aria-label="Bureau" className="sm:col-span-2" />
             <Input name="vendor" placeholder="Fabricant (si connu)" aria-label="Fabricant" />
             <Input name="model" placeholder="Modèle exact (si connu)" aria-label="Modèle" />
-            <Input name="serialNumber" placeholder="N° de série (si connu)" aria-label="Numéro de série" className="sm:col-span-2" />
+            <Input name="serialNumber" placeholder="N° de série (obligatoire en ADMS)" aria-label="Numéro de série" className="sm:col-span-2" />
+            <Select name="protocol" defaultValue="API" aria-label="Mode de transmission" className="sm:col-span-2">
+              <option value="API">Passerelle (jeton technique)</option>
+              <option value="ADMS">ADMS — la pointeuse envoie elle-même (ZKTeco)</option>
+            </Select>
           </ActionForm>
         </Card>
       )}
@@ -78,14 +91,38 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-gray-900">
                 {d.label} — {d.siteLabel} {d.isSimulator && <SimulatedBadge />}{" "}
-                <Badge color={d.status === "DESACTIVE" ? "gray" : "orange"}>{d.status === "DESACTIVE" ? "Désactivé" : "Non vérifié"}</Badge>
+                <Badge color={STATUS_BADGE[d.status].color}>{STATUS_BADGE[d.status].label}</Badge>{" "}
+                {d.protocol === "ADMS" && <Badge color="blue">ADMS</Badge>}
               </h2>
               {canDevices && !d.isSimulator && (
                 <ActionForm action={toggleDeviceAction.bind(null, d.id, d.status !== "DESACTIVE")} submit={d.status === "DESACTIVE" ? "Réactiver" : "Désactiver"} variant="ghost" />
               )}
             </div>
 
-            {canDevices && !d.isSimulator && (
+            {d.protocol === "ADMS" && (
+              <AdmsPanel
+                device={{
+                  id: d.id,
+                  status: d.status,
+                  serialNumber: d.serialNumber,
+                  firmware: d.firmware,
+                  admsPairingUntil: d.admsPairingUntil,
+                  admsPairedAt: d.admsPairedAt,
+                  admsPushVersion: d.admsPushVersion,
+                  admsUserAgent: d.admsUserAgent,
+                  admsLocalIp: d.admsLocalIp,
+                  admsPublicIp: d.admsPublicIp,
+                  hasPathSecret: Boolean(d.admsPathSecretHash),
+                  admsInfo: d.admsInfo,
+                  admsInfoAt: d.admsInfoAt,
+                  received: d._count.punches,
+                }}
+                canManage={canDevices}
+                now={nowDate.getTime()}
+              />
+            )}
+
+            {canDevices && !d.isSimulator && d.protocol !== "ADMS" && (
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold uppercase text-gray-500">Jetons techniques (stockés hachés)</h3>
                 {d.credentials.length === 0 && <p className="text-xs text-gray-500">Aucun jeton.</p>}

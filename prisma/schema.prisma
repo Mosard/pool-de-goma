@@ -860,32 +860,77 @@ enum DeviceStatus {
 }
 
 model AttendanceDevice {
-  id                  String       @id @default(cuid())
+  id                  String         @id @default(cuid())
   organizationId      String
-  organization        Organization @relation(fields: [organizationId], references: [id])
+  organization        Organization   @relation(fields: [organizationId], references: [id])
   label               String
   // Bureau d'installation : le lieu est porté par l'appareil, pas par la cellule.
   siteLabel           String
   vendor              String?
   model               String?
-  serialNumber        String?
+  // Unique : c'est l'identité annoncée par une pointeuse ADMS.
+  serialNumber        String?        @unique
   firmware            String?
-  status              DeviceStatus @default(NON_VERIFIE)
+  status              DeviceStatus   @default(NON_VERIFIE)
+  // API : jeton « ppt_ » (passerelle) ; ADMS : la pointeuse ZKTeco envoie
+  // elle-même ses pointages (src/lib/presence/adms/).
+  protocol            DeviceProtocol @default(API)
+  // Appairage ADMS : le premier contact n'est accepté qu'avant cette heure ;
+  // il fixe l'empreinte de l'appareil (version du protocole, client, IP).
+  admsPairingUntil    DateTime?
+  admsPairedAt        DateTime?
+  admsPushVersion     String?
+  admsUserAgent       String?
+  admsLocalIp         String?
+  admsPublicIp        String?
+  // Chemin secret « /p/<secret>/iclock/... » (haché) : exigé s'il est défini.
+  admsPathSecretHash  String?
+  // Compteurs annoncés par la pointeuse (INFO) : utilisateurs, empreintes, pointages en mémoire.
+  admsInfo            Json?
+  admsInfoAt          DateTime?
   // Appareil du simulateur de développement : ses pointages sont SIMULATOR, jamais présentés comme réels.
-  isSimulator         Boolean      @default(false)
+  isSimulator         Boolean        @default(false)
   lastContactAt       DateTime?
   lastEventReceivedAt DateTime?
   // Heure de l'appareil moins heure du serveur, en secondes (dernier contrôle).
   lastClockOffsetSec  Int?
   lastClockCheckAt    DateTime?
   createdById         String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
   credentials DeviceCredential[]
   mappings    DeviceUserMapping[]
   batches     IngestBatch[]
   punches     RawPunch[]
+  alerts      AttendanceDeviceAlert[]
+}
+
+enum DeviceProtocol {
+  API
+  ADMS
+}
+
+// Signalement technique sur un appareil (ou un numéro de série inconnu) :
+// une ligne par (appareil ou série, nature), compteur et dernière occurrence
+// mis à jour ; aucun contenu biométrique, seulement des métadonnées.
+model AttendanceDeviceAlert {
+  id             String            @id @default(cuid())
+  organizationId String?
+  deviceId       String?
+  device         AttendanceDevice? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  // Clé de regroupement : « <appareil ou série>|<nature> ».
+  dedupKey       String            @unique
+  serialNumber   String?
+  kind           String
+  detail         Json?
+  count          Int               @default(1)
+  firstSeenAt    DateTime          @default(now())
+  lastSeenAt     DateTime          @default(now())
+  resolvedAt     DateTime?
+  resolvedById   String?
+
+  @@index([organizationId, resolvedAt])
 }
 
 // Identifiant technique d'un appareil (séparé des comptes utilisateurs) :
@@ -936,6 +981,8 @@ model IngestBatch {
   accepted       Int
   duplicates     Int
   rejected       Int
+  // Synthèses recalculées pour ce lot ; null = à refaire (un renvoi du lot le relance).
+  recomputedAt   DateTime?
 
   punches RawPunch[]
 
@@ -959,6 +1006,12 @@ model RawPunch {
   externalEventId String?
   direction       PunchDirection
   verifyMode      String?
+  // Valeurs ADMS brutes (état du pointage, code de travail), sans interprétation.
+  rawStatus       String?
+  workCode        String?
+  // Heure de l'appareil manifestement fausse (en avance sur la réception) :
+  // conservé mais EXCLU du calcul des journées.
+  clockSuspect    Boolean          @default(false)
   source          PunchSource
   // Déduplication documentée (src/lib/presence/ingest.ts).
   dedupKey        String           @unique

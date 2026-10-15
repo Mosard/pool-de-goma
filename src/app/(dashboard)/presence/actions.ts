@@ -11,7 +11,21 @@ import { prisma } from "@/lib/prisma";
 import { ForbiddenError, loadUserAccess } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { addCalendarDay, holdsOrgPermission, removeCalendarDay, saveSchedule } from "@/lib/presence/config";
-import { createDevice, createMapping, endMapping, issueDeviceToken, presenceSimulatorEnabled, revokeDeviceToken, setDeviceDisabled } from "@/lib/presence/devices";
+import {
+  ADMS_PAIRING_MINUTES,
+  clearAdmsPathSecret,
+  createDevice,
+  createMapping,
+  endMapping,
+  issueAdmsPathSecret,
+  issueDeviceToken,
+  openAdmsPairing,
+  presenceSimulatorEnabled,
+  resolveDeviceAlert,
+  revokeDeviceToken,
+  setDeviceDisabled,
+  setDeviceVerified,
+} from "@/lib/presence/devices";
 import { IngestConflictError, ingestBatch } from "@/lib/presence/ingest";
 import { isDateKey, parseClock } from "@/lib/presence/time";
 import type { FormState } from "./action-form";
@@ -69,7 +83,14 @@ export async function removeCalendarDayAction(id: string): Promise<FormState> {
 
 export async function createDeviceAction(_p: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
-    await createDevice(await actor(), { label: str(fd, "label"), siteLabel: str(fd, "siteLabel"), vendor: str(fd, "vendor"), model: str(fd, "model"), serialNumber: str(fd, "serialNumber") });
+    await createDevice(await actor(), {
+      label: str(fd, "label"),
+      siteLabel: str(fd, "siteLabel"),
+      vendor: str(fd, "vendor"),
+      model: str(fd, "model"),
+      serialNumber: str(fd, "serialNumber"),
+      protocol: str(fd, "protocol") === "ADMS" ? "ADMS" : "API",
+    });
     return { ok: "Appareil enregistré (non vérifié)." };
   });
 }
@@ -89,6 +110,40 @@ export async function toggleDeviceAction(deviceId: string, disabled: boolean): P
   return run(async () => {
     await setDeviceDisabled(await actor(), deviceId, disabled);
     return { ok: disabled ? "Appareil désactivé." : "Appareil réactivé (non vérifié)." };
+  });
+}
+
+// ─── Pointeuses ADMS ───────────────────────────────────────────────────────
+
+export async function openPairingAction(deviceId: string): Promise<FormState> {
+  return run(async () => {
+    await openAdmsPairing(await actor(), deviceId);
+    return { ok: `Appairage ouvert ${ADMS_PAIRING_MINUTES} minutes : la pointeuse doit contacter le serveur pendant ce délai.` };
+  });
+}
+
+export async function issuePathSecretAction(deviceId: string): Promise<FormState> {
+  return run(async () => ({ secretPath: `/p/${await issueAdmsPathSecret(await actor(), deviceId)}` }));
+}
+
+export async function clearPathSecretAction(deviceId: string): Promise<FormState> {
+  return run(async () => {
+    await clearAdmsPathSecret(await actor(), deviceId);
+    return { ok: "Chemin secret supprimé : la pointeuse est acceptée sur /iclock." };
+  });
+}
+
+export async function verifyDeviceAction(deviceId: string, verified: boolean): Promise<FormState> {
+  return run(async () => {
+    await setDeviceVerified(await actor(), deviceId, verified);
+    return { ok: verified ? "Appareil marqué vérifié." : "Appareil remis à « non vérifié »." };
+  });
+}
+
+export async function resolveAlertAction(alertId: string): Promise<FormState> {
+  return run(async () => {
+    await resolveDeviceAlert(await actor(), alertId);
+    return { ok: "Signalement traité." };
   });
 }
 

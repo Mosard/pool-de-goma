@@ -7,6 +7,8 @@ import { holdsOrgPermission } from "@/lib/presence/config";
 import { PENDING_RULES } from "@/lib/presence/settings";
 import { formatGomaDateTime } from "@/lib/presence/time";
 import { loadChangeCursor, loadPresenceViewer, loadSyncState } from "@/lib/presence/views";
+import { ActionForm } from "../action-form";
+import { resolveAlertAction } from "../actions";
 import { PresenceRefresher } from "../refresher";
 import { SimulatedBadge } from "../presence-ui";
 
@@ -17,6 +19,19 @@ const STATUS: Record<string, { label: string; color: "gray" | "orange" | "green"
 };
 
 const when = (d: Date | null) => (d ? formatGomaDateTime(d) : "Jamais");
+
+// Signalements des pointeuses ADMS (src/lib/presence/adms/handler.ts).
+const ALERT_LABEL: Record<string, string> = {
+  SERIE_INCONNUE: "Numéro de série inconnu — appel refusé",
+  APPAREIL_REFUSE: "Appareil désactivé ou non déclaré en ADMS — appel refusé",
+  APPAIRAGE_REQUIS: "Pointeuse non appairée — appel refusé (ouvrez l'appairage)",
+  CHEMIN_SECRET_INVALIDE: "Chemin secret absent ou faux — appel refusé",
+  EMPREINTE_MODIFIEE: "Empreinte de l'appareil modifiée (protocole ou client)",
+  IP_PUBLIQUE_CHANGEE: "IP publique différente de celle de l'appairage",
+  TABLE_NON_ATTENDUE: "Envoi d'une table non demandée — ignoré sans lecture",
+  LIGNES_ILLISIBLES: "Lignes de pointage illisibles",
+  HORLOGE_EN_AVANCE: "Horloge de l'appareil en avance — pointages en quarantaine",
+};
 
 // État de synchronisation : dernier contact, dernier pointage reçu, décalage
 // d'horloge BRUT (aucun seuil d'alerte décidé), identifiants non associés.
@@ -31,7 +46,8 @@ export default async function SyncPage() {
   );
   if (!allowed) redirect("/presence/moi");
   const canEnroll = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, org);
-  const [{ devices, unmapped }, cursor] = await Promise.all([loadSyncState(org), loadChangeCursor(org)]);
+  const canDevices = holdsOrgPermission(viewer.permissions, PERMISSIONS.PRESENCE_DEVICES_MANAGE, org);
+  const [{ devices, unmapped, alerts }, cursor] = await Promise.all([loadSyncState(org), loadChangeCursor(org)]);
   const labelOf = new Map(devices.map((d) => [d.id, `${d.label} — ${d.siteLabel}`]));
 
   return (
@@ -76,11 +92,39 @@ export default async function SyncPage() {
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {d._count.punches} / {d._count.batches}
+                    {d.protocol === "ADMS" && typeof (d.admsInfo as { attLogs?: unknown } | null)?.attLogs === "number" && (
+                      <span className="block text-gray-400">en mémoire sur l&apos;appareil : {(d.admsInfo as { attLogs: number }).attLogs}</span>
+                    )}
+                    {d.clockSuspect > 0 && <span className="block text-amber-700">{d.clockSuspect} en quarantaine (horloge)</span>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </Card>
+      )}
+
+      {canDevices && (
+        <Card>
+          <h2 className="mb-2 text-sm font-semibold text-gray-900">Signalements des pointeuses ({alerts.length})</h2>
+          {alerts.length === 0 ? (
+            <p className="text-sm text-gray-500">Aucun signalement ouvert.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 text-sm">
+              {alerts.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span>
+                    <Badge color={a.kind === "TABLE_NON_ATTENDUE" || a.kind === "LIGNES_ILLISIBLES" ? "orange" : "red"}>{ALERT_LABEL[a.kind] ?? a.kind}</Badge>
+                    <span className="ml-2 text-xs text-gray-600">
+                      {a.deviceId ? labelOf.get(a.deviceId) ?? "appareil" : `série ${a.serialNumber ?? "?"}`} · {a.count} fois · dernière le {formatGomaDateTime(a.lastSeenAt)}
+                    </span>
+                    {a.detail && <code className="mt-1 block break-all text-xs text-gray-500">{JSON.stringify(a.detail)}</code>}
+                  </span>
+                  <ActionForm action={resolveAlertAction.bind(null, a.id)} submit="Marquer traité" variant="ghost" />
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       )}
 

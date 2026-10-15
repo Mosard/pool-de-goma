@@ -15,6 +15,8 @@ import { PERMISSIONS } from "@/lib/rbac-data";
 import { holdsOrgPermission } from "@/lib/presence/config";
 import { recomputeForMapping } from "@/lib/presence/daily";
 import { gomaDayStartUtc, isDateKey } from "@/lib/presence/time";
+import { forgetAdmsDevice } from "@/lib/presence/adms/handler";
+import { cleanSn, hashPathSecret } from "@/lib/presence/adms/protocol";
 
 type Actor = { id: string; organizationId: string };
 
@@ -69,13 +71,23 @@ export async function authenticateDevice(authorization: string | null) {
 
 // ─── Appareils ─────────────────────────────────────────────────────────────
 
-export async function createDevice(actor: Actor, p: { label: string; siteLabel: string; vendor?: string; model?: string; serialNumber?: string; simulator?: boolean }) {
+export async function createDevice(
+  actor: Actor,
+  p: { label: string; siteLabel: string; vendor?: string; model?: string; serialNumber?: string; simulator?: boolean; protocol?: "API" | "ADMS" }
+) {
   await requireOrgPermission(actor, PERMISSIONS.PRESENCE_DEVICES_MANAGE, DEVICE_REFUSAL);
   const label = p.label.trim().slice(0, 80);
   const siteLabel = p.siteLabel.trim().slice(0, 80);
   if (label.length < 2 || siteLabel.length < 2) throw new ForbiddenError("Nom de l'appareil et bureau : au moins 2 caractères.");
   if (p.simulator && !presenceSimulatorEnabled()) throw new ForbiddenError("Simulateur indisponible dans cet environnement.");
   if (!p.simulator) await requireOfficialActorUnlessDemoTarget(actor.id, false);
+  const protocol = p.simulator ? "API" : (p.protocol ?? "API");
+  const serialNumber = p.serialNumber?.trim() || null;
+  // ADMS : le numéro de série est l'identité annoncée par la pointeuse elle-même.
+  if (protocol === "ADMS" && !cleanSn(serialNumber)) throw new ForbiddenError("Pointeuse ADMS : numéro de série exact requis (lettres et chiffres, tel qu'affiché par l'appareil).");
+  if (serialNumber && (await prisma.attendanceDevice.findUnique({ where: { serialNumber }, select: { id: true } }))) {
+    throw new ForbiddenError("Ce numéro de série est déjà enregistré.");
+  }
   const device = await prisma.attendanceDevice.create({
     data: {
       organizationId: actor.organizationId,
@@ -83,7 +95,8 @@ export async function createDevice(actor: Actor, p: { label: string; siteLabel: 
       siteLabel,
       vendor: p.vendor?.trim() || null,
       model: p.model?.trim() || null,
-      serialNumber: p.serialNumber?.trim() || null,
+      serialNumber,
+      protocol,
       isSimulator: Boolean(p.simulator),
       createdById: actor.id,
     },
@@ -94,7 +107,7 @@ export async function createDevice(actor: Actor, p: { label: string; siteLabel: 
     action: "presence.device_create",
     entityType: "AttendanceDevice",
     entityId: device.id,
-    newValue: { label: device.label, siteLabel, isSimulator: device.isSimulator },
+    newValue: { label: device.label, siteLabel, isSimulator: device.isSimulator, protocol, serialNumber },
   });
   return device;
 }
@@ -201,4 +214,92 @@ export async function endMapping(actor: Actor, p: { mappingId: string; endDateKe
     newValue: { validTo: p.endDateKey, ...(reason ? { reason } : {}) },
   });
   await recomputeForMapping(actor.organizationId, { ...mapping, validTo });
+}
+
+// ─── Pointeuses ADMS : appairage, chemin secret, vérification, signalements ─
+
+export const ADMS_PAIRING_MINUTES = 15;
+
+async function loadAdmsDevice(actor: Actor, deviceId: string) {
+  await requireOrgPermission(actor, PERMISSIONS.PRESENCE_DEVICES_MANAGE, DEVICE_REFUSAL);
+  const device = await prisma.attendanceDevice.findFirst({ where: { id: deviceId, organizationId: actor.organizationId } });
+  if (!device) throw new ForbiddenError("Appareil introuvable.");
+  if (device.protocol !== "ADMS") throw new ForbiddenError("Action réservée aux pointeuses ADMS.");
+  await requireOfficialActorUnlessDemoTarget(actor.id, false);
+  return device;
+}
+
+/**
+ * Ouvre une fenêtre d'appairage de 15 minutes : le premier contact de la
+ * pointeuse (numéro de série enregistré) fixera son empreinte. Un nouvel
+ * appairage remplace l'empreinte précédente (changement de carte réseau,
+ * mise à jour du micrologiciel…).
+ */
+export async function openAdmsPairing(actor: Actor, deviceId: string) {
+  const device = await loadAdmsDevice(actor, deviceId);
+  const until = new Date(Date.now() + ADMS_PAIRING_MINUTES * 60_000);
+  await prisma.attendanceDevice.update({ where: { id: device.id }, data: { admsPairingUntil: until, admsPairedAt: null } });
+  forgetAdmsDevice(device.serialNumber);
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: "presence.adms_pairing_open",
+    entityType: "AttendanceDevice",
+    entityId: device.id,
+    oldValue: { pairedAt: device.admsPairedAt, pushVersion: device.admsPushVersion, userAgent: device.admsUserAgent, publicIp: device.admsPublicIp },
+    newValue: { until: until.toISOString() },
+  });
+  return until;
+}
+
+/** Chemin secret « /p/<secret>/iclock » : affiché UNE fois, stocké haché ; l'ancien cesse aussitôt. */
+export async function issueAdmsPathSecret(actor: Actor, deviceId: string): Promise<string> {
+  const device = await loadAdmsDevice(actor, deviceId);
+  const secret = randomBytes(24).toString("base64url");
+  await prisma.attendanceDevice.update({ where: { id: device.id }, data: { admsPathSecretHash: hashPathSecret(secret) } });
+  forgetAdmsDevice(device.serialNumber);
+  await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_secret_issue", entityType: "AttendanceDevice", entityId: device.id });
+  return secret;
+}
+
+export async function clearAdmsPathSecret(actor: Actor, deviceId: string) {
+  const device = await loadAdmsDevice(actor, deviceId);
+  if (!device.admsPathSecretHash) return;
+  await prisma.attendanceDevice.update({ where: { id: device.id }, data: { admsPathSecretHash: null } });
+  forgetAdmsDevice(device.serialNumber);
+  await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.adms_secret_clear", entityType: "AttendanceDevice", entityId: device.id });
+}
+
+/** Validation humaine après le pilote : « Vérifié » (ou retour à « Non vérifié »). */
+export async function setDeviceVerified(actor: Actor, deviceId: string, verified: boolean) {
+  await requireOrgPermission(actor, PERMISSIONS.PRESENCE_DEVICES_MANAGE, DEVICE_REFUSAL);
+  const device = await prisma.attendanceDevice.findFirst({ where: { id: deviceId, organizationId: actor.organizationId } });
+  if (!device) throw new ForbiddenError("Appareil introuvable.");
+  if (device.isSimulator) throw new ForbiddenError("L'appareil de simulation ne peut pas être vérifié.");
+  if (device.status === "DESACTIVE") throw new ForbiddenError("Réactivez d'abord l'appareil.");
+  if (verified && device.protocol === "ADMS" && !device.admsPairedAt) throw new ForbiddenError("Appairez d'abord la pointeuse.");
+  await requireOfficialActorUnlessDemoTarget(actor.id, false);
+  const status = verified ? "VERIFIE" : "NON_VERIFIE";
+  if (device.status === status) return;
+  await prisma.attendanceDevice.update({ where: { id: device.id }, data: { status } });
+  forgetAdmsDevice(device.serialNumber);
+  await logAudit({
+    actorId: actor.id,
+    organizationId: actor.organizationId,
+    action: verified ? "presence.device_verify" : "presence.device_unverify",
+    entityType: "AttendanceDevice",
+    entityId: device.id,
+    oldValue: { status: device.status },
+    newValue: { status },
+  });
+}
+
+/** Signalement traité (il se rouvre s'il se reproduit). Numéros de série inconnus : visibles par toute l'organisation. */
+export async function resolveDeviceAlert(actor: Actor, alertId: string) {
+  await requireOrgPermission(actor, PERMISSIONS.PRESENCE_DEVICES_MANAGE, DEVICE_REFUSAL);
+  const alert = await prisma.attendanceDeviceAlert.findFirst({ where: { id: alertId, OR: [{ organizationId: actor.organizationId }, { organizationId: null }] } });
+  if (!alert) throw new ForbiddenError("Signalement introuvable.");
+  if (alert.resolvedAt) return;
+  await prisma.attendanceDeviceAlert.update({ where: { id: alert.id }, data: { resolvedAt: new Date(), resolvedById: actor.id } });
+  await logAudit({ actorId: actor.id, organizationId: actor.organizationId, action: "presence.alert_resolve", entityType: "AttendanceDeviceAlert", entityId: alert.id, newValue: { kind: alert.kind } });
 }

@@ -44,6 +44,8 @@ export async function recomputeUserDates(organizationId: string, userId: string,
           where: {
             organizationId,
             punchedAt: { gte: gomaDayStartUtc(from), lt: gomaDayStartUtc(addDays(to, 1)) },
+            // Heure d'appareil manifestement fausse : conservé, jamais compté.
+            clockSuspect: false,
             OR: mappings.map((m) => ({ deviceId: m.deviceId, deviceUserId: m.deviceUserId })),
           },
           select: { deviceId: true, deviceUserId: true, punchedAt: true, direction: true, source: true },
