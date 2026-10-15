@@ -69,6 +69,70 @@ pointages. Ils restent tracés (pointages bruts, lot, IP signalée si différent
 - Les pointages comptent dès l'appairage, que l'appareil soit « Vérifié » ou non
   (comportement inchangé du module).
 
+## Gestion centralisée des enrôlements (Présence › Appareils)
+
+L'application décide **qui** est inscrit sur la pointeuse et sous **quel PIN** ;
+la pointeuse reçoit des commandes (`DeviceCommand`) à sa prochaine
+interrogation (≈ 1 minute) et renvoie leur résultat (`/iclock/devicecmd`).
+
+| Action | Effet |
+|---|---|
+| Inscrire un agent | PIN attribué (au-dessus de tous les PIN connus : associés, inventoriés, ayant pointé) ou saisi ; association datée ; `DATA UPDATE USERINFO … Pri=0` (jamais administrateur) ; capture d'empreinte facultative |
+| Capturer une empreinte | `ENROLL_FP` : l'agent pose son doigt **sur la pointeuse** ; l'empreinte reste sur l'appareil |
+| Renvoyer l'inscription | après une réinitialisation de l'appareil |
+| Retirer | fin d'association datée + `DATA DELETE USERINFO` (par défaut) |
+| Demander l'inventaire | `DATA QUERY USERINFO` : liste des PIN de l'appareil avec leur privilège |
+| Retirer de la pointeuse (PIN non associé) | `DATA DELETE USERINFO` ; refusé pour un administrateur de l'appareil |
+
+Protections : un PIN ne peut pas contenir de séparateur (aucune injection de
+champ, p. ex. `Pri=14`) ; un PIN administrateur ou déjà utilisé par une
+personne non associée n'est jamais réattribué ; une commande remise sans
+résultat est renvoyée après 5 min si elle est sans effet en double (jamais
+une capture d'empreinte), puis expirée après 30 min ; toute action est journalisée.
+
+## Blocage des pointages non autorisés
+
+- **Dans l'application (garanti)** : un pointage n'entre dans une journée que si
+  son PIN est associé à un agent à l'heure du pointage. Sinon, il est conservé
+  (preuve), exclu du calcul, et signalé « Pointage d'un PIN sans association ».
+- **Sur l'appareil (à distance)** : l'inventaire signale les PIN présents sans
+  association, les administrateurs de l'appareil, et l'absence d'administrateur
+  (« menu accessible à tous ») ; un PIN non associé peut être retiré à distance.
+
+## Tests matériels restants (environnement Preview)
+
+| Test | Procédure | Attendu |
+|---|---|---|
+| T9 biométrie | enrôler un utilisateur 3 au menu de l'appareil | aucune table d'empreintes reçue ; aucun pointage parasite |
+| T5 chemin secret | « Créer un chemin secret », saisir `…vercel.app/p/<secret>` comme adresse | accepté → contacts sur `/p/…` ; refusé → rester sans chemin secret |
+| C1 inscription | « Inscrire un agent » sans capture | l'agent apparaît sur la pointeuse avec son nom ; commande « réussie » |
+| C2 capture | « Capturer une empreinte », l'agent devant l'appareil | l'appareil demande le doigt ; commande « réussie » ou code d'échec |
+| C3 inventaire | « Demander l'inventaire » | liste des PIN et privilèges ; administrateurs signalés |
+| C4 retrait | « Retirer » un agent de test | l'agent disparaît de la pointeuse ; il ne peut plus pointer |
+| C5 PIN inconnu | créer un utilisateur au menu de l'appareil sans l'inscrire | son pointage est conservé, non compté, signalé |
+| C6 sans réseau | inscrire un agent pendant une coupure, puis rétablir | la commande est remise au retour du réseau |
+
+## Limites connues
+
+- Le protocole n'est pas authentifié : sans chemin secret, quiconque connaît
+  le numéro de série et l'adresse peut imiter la pointeuse. L'IP publique du
+  bureau change (observé : 206.42.85.153 puis 169.239.159.39) : un filtrage
+  par IP au pare-feu n'est pas possible en l'état.
+- Les commandes `ENROLL_FP` et `DATA QUERY USERINFO` dépendent du
+  micrologiciel ; leur prise en charge par l'UA300 (Ver 8.0.4.6) n'est pas
+  encore vérifiée (tests C2, C3). Format de l'inventaire toléré : trois variantes.
+- La réponse à un inventaire demandé est lue en mémoire (PIN et privilège
+  retenus, le reste ignoré) : c'est la seule exception à « tables non lues ».
+- Un administrateur de l'appareil peut toujours créer un utilisateur au menu :
+  l'application le détecte (inventaire, pointages non autorisés) mais ne peut
+  pas l'empêcher. D'où l'importance d'un administrateur sur la pointeuse,
+  dont le mot de passe est connu de l'informaticien seul.
+- Le délai d'une commande dépend de l'interrogation (≈ 1 min, jusqu'à ≈ 2 min
+  avec la mémoire de 60 s par instance).
+- Le compteur « pointages en mémoire » de l'appareil inclut les pointages
+  antérieurs à l'appairage (déjà transmis ailleurs) : il n'est pas égal au
+  nombre reçu.
+
 ## Coûts (opérations Prisma Postgres facturées)
 
 ~1 440 interrogations par jour et par appareil : appareil gardé en mémoire
