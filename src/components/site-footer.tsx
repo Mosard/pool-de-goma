@@ -6,6 +6,7 @@ const NAV_LINKS = [
   { label: "L'Inspection", href: "#inspection" },
   { label: "Direction", href: "#direction" },
   { label: "Actualités", href: "/actualites" },
+  { label: "Diplômes", href: "/diplomes" },
 ];
 
 const RESOURCE_LINKS = [

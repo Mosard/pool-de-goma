@@ -16,6 +16,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     { url: BASE_URL, changeFrequency: "weekly", priority: 1 },
     { url: `${BASE_URL}/actualites`, changeFrequency: "daily", priority: 0.9 },
+    { url: `${BASE_URL}/diplomes`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${BASE_URL}/inuka-tech`, changeFrequency: "monthly", priority: 0.8 },
     ...slugs.map((slug) => ({
       url: `${BASE_URL}/pools/${slug}`,
