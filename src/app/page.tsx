@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { LeadershipSection } from "@/components/homepage/leadership-section";
 import { PoolsSection } from "@/components/homepage/pools-section";
+import { DiplomasAccessSection } from "@/components/homepage/diplomas-access-section";
 import { SectionDivider } from "@/components/section-divider";
 import {
   IppIntroSection,
@@ -58,6 +59,9 @@ export default async function Home() {
           </Link>
         </div>
       </section>
+
+      {/* Service public : accès rapide à la recherche des diplômes */}
+      <DiplomasAccessSection />
 
       {/* L'Inspection : qui elle est, sa mission, ses piliers */}
       <section id="inspection">

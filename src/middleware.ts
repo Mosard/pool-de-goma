@@ -19,6 +19,8 @@ const PUBLIC_PREFIXES = [
   // Vignettes publiques de la Direction de l'Inspection (revérifiées par la route).
   "/photos/direction/",
   "/inuka-tech",
+  // Recherche publique des diplômes : aucun compte requis.
+  "/diplomes",
   // Réception des pointeuses : authentification technique par jeton, contrôlée
   // dans chaque route (src/app/api/presence/v1/*), jamais par session.
   "/api/presence/v1/",
