@@ -1,14 +1,28 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Plus } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Button, Card, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { Alert, Badge, buttonClasses, Card, EmptyState, PageHeader, TABLE_HEAD } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
-import { canOpenAccessScreen } from "@/lib/access-rules";
 import { deleteFunctionAction, togglePoolStatusAction } from "./actions";
-import { Alert } from "@/components/ui";
+
+function SectionHeader({ title, description, href, action }: { title: string; description: string; href: string; action: string }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <p className="text-sm text-gray-500">{description}</p>
+      </div>
+      <Link href={href} className={buttonClasses({ size: "sm", className: "min-h-10" })}>
+        <Plus size={16} aria-hidden />
+        {action}
+      </Link>
+    </div>
+  );
+}
 
 export default async function ParametresPage({ searchParams }: { searchParams: Promise<{ fonction?: string; erreur?: string }> }) {
   const sp = await searchParams;
@@ -32,82 +46,64 @@ export default async function ParametresPage({ searchParams }: { searchParams: P
   ]);
 
   const scopeLabel: Record<string, string> = { PROVINCE: "Provincial", POOL: "Pool", CELL: "Cellule" };
+  const th = "px-5 py-3 whitespace-nowrap";
+  const td = "px-5 py-3";
+  const small = "!min-h-8 !px-3 !py-1 text-xs";
 
   return (
     <div className="space-y-10">
-      <PageHeader
-        title="Paramètres"
-        description="Organisation provinciale — pools, cellules et fonctions"
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Link href="/parametres/cellules">
-              <Button type="button" variant="secondary">
-                Cellules de l&apos;IPP
-              </Button>
-            </Link>
-            {canOpenAccessScreen(user.roles) && (
-              <Link href="/parametres/acces">
-                <Button type="button">Gérer les accès</Button>
-              </Link>
-            )}
-          </div>
-        }
-      />
+      <PageHeader title="Paramètres" description="Organisation provinciale — pools, cellules et fonctions" />
 
-      <div>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Pools</h2>
-          <Link href="/parametres/nouveau">
-            <Button>Nouveau pool</Button>
-          </Link>
-        </div>
-
+      <section>
+        <SectionHeader title="Pools" description={`${pools.length} pool(s) — fiche publique, chef et personnel de chacun.`} href="/parametres/nouveau" action="Nouveau pool" />
         {pools.length === 0 ? (
           <EmptyState message="Aucun pool enregistré pour le moment." />
         ) : (
           <Card className="overflow-x-auto p-0">
             <table className="w-full text-sm">
-              <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-6 py-3">Nom</th>
-                  <th className="px-6 py-3">Code</th>
-                  <th className="px-6 py-3">Écoles</th>
-                  <th className="px-6 py-3">Utilisateurs</th>
-                  <th className="px-6 py-3">Statut</th>
-                  <th className="px-6 py-3">Site public</th>
-                  <th className="px-6 py-3" />
+                  <th className={th}>Nom</th>
+                  <th className={th}>Code</th>
+                  <th className={`${th} text-right`}>Écoles</th>
+                  <th className={`${th} text-right`}>Utilisateurs</th>
+                  <th className={th}>Statut</th>
+                  <th className={th}>Site public</th>
+                  <th className={th}>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {pools.map((p) => (
-                  <tr key={p.id} className="hover:bg-blue-50/40">
-                    <td className="px-6 py-3 font-medium text-gray-900">
+                  <tr key={p.id} className="transition-colors hover:bg-gray-50/70">
+                    <td className={`${td} font-medium text-gray-900`}>
                       <Link href={`/parametres/pools/${p.id}`} className="hover:text-blue-700 hover:underline">
                         {p.name}
                       </Link>
                     </td>
-                    <td className="px-6 py-3 text-gray-600">{p.code}</td>
-                    <td className="px-6 py-3 text-gray-600">{p._count.schools}</td>
-                    <td className="px-6 py-3 text-gray-600">{p._count.users}</td>
-                    <td className="px-6 py-3">
+                    <td className={`${td} font-mono text-xs text-gray-600`}>{p.code}</td>
+                    <td className={`${td} text-right tabular-nums text-gray-700`}>{p._count.schools}</td>
+                    <td className={`${td} text-right tabular-nums text-gray-700`}>{p._count.users}</td>
+                    <td className={td}>
                       <Badge color={p.active ? "green" : "gray"}>{p.active ? "Actif" : "Inactif"}</Badge>
                     </td>
-                    <td className="px-6 py-3 text-gray-600">
-                      {p.slug && p.active ? `/pools/${p.slug}` : <span className="text-gray-400">Non publié</span>}
+                    <td className={`${td} text-gray-600`}>
+                      {p.slug && p.active ? <span className="font-mono text-xs">/pools/{p.slug}</span> : <span className="text-gray-400">Non publié</span>}
                     </td>
-                    <td className="space-x-2 whitespace-nowrap px-6 py-3 text-right">
-                      <Link href={`/parametres/pools/${p.id}`}>
-                        <Button variant="secondary" className="!min-h-0 px-3 py-1.5 text-xs">
+                    <td className={`${td} whitespace-nowrap text-right`}>
+                      <div className="flex items-center justify-end gap-2">
+                        <Link href={`/parametres/pools/${p.id}`} className={buttonClasses({ variant: "outline", size: "sm", className: small })}>
                           Fiche et chef
-                        </Button>
-                      </Link>
-                      <ConfirmButton
-                        label={p.active ? "Désactiver" : "Activer"}
-                        confirmLabel={p.active ? "Désactiver" : "Activer"}
-                        variant={p.active ? "danger" : "primary"}
-                        className="!min-h-0 px-3 py-1.5 text-xs"
-                        formAction={togglePoolStatusAction.bind(null, p.id)}
-                      />
+                        </Link>
+                        <ConfirmButton
+                          label={p.active ? "Désactiver" : "Activer"}
+                          confirmLabel={p.active ? "Désactiver" : "Activer"}
+                          variant={p.active ? "danger" : "primary"}
+                          className={small}
+                          formAction={togglePoolStatusAction.bind(null, p.id)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -115,17 +111,19 @@ export default async function ParametresPage({ searchParams }: { searchParams: P
             </table>
           </Card>
         )}
-      </div>
+      </section>
 
-      <div>
-        {sp.fonction === "supprimee" && <Alert variant="success">Fonction supprimée ; elle a été retirée à tous ses titulaires.</Alert>}
-        {sp.fonction === "modifiee" && <Alert variant="success">Fonction modifiée ; ses titulaires en héritent dès leur prochaine action.</Alert>}
-        {sp.erreur && <Alert variant="error">{sp.erreur}</Alert>}
-        <div className="mb-4 mt-2 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Fonctions</h2>
-          <Link href="/parametres/fonctions/nouveau">
-            <Button>Nouvelle fonction</Button>
-          </Link>
+      <section>
+        <SectionHeader
+          title="Fonctions"
+          description="Les fonctions système ne se modifient pas ; une fonction ajoutée s'ajuste et se transmet à ses titulaires."
+          href="/parametres/fonctions/nouveau"
+          action="Nouvelle fonction"
+        />
+        <div className="mb-4 space-y-2 empty:hidden">
+          {sp.fonction === "supprimee" && <Alert variant="success">Fonction supprimée ; elle a été retirée à tous ses titulaires.</Alert>}
+          {sp.fonction === "modifiee" && <Alert variant="success">Fonction modifiée ; ses titulaires en héritent dès leur prochaine action.</Alert>}
+          {sp.erreur && <Alert variant="error">{sp.erreur}</Alert>}
         </div>
 
         {functions.length === 0 ? (
@@ -133,44 +131,48 @@ export default async function ParametresPage({ searchParams }: { searchParams: P
         ) : (
           <Card className="overflow-x-auto p-0">
             <table className="w-full text-sm">
-              <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-6 py-3">Nom</th>
-                  <th className="px-6 py-3">Portée</th>
-                  <th className="px-6 py-3">Permissions</th>
-                  <th className="px-6 py-3">Titulaires</th>
-                  <th className="px-6 py-3">Origine</th>
-                  <th className="px-6 py-3" />
+                  <th className={th}>Nom</th>
+                  <th className={th}>Portée</th>
+                  <th className={`${th} text-right`}>Permissions</th>
+                  <th className={`${th} text-right`}>Titulaires</th>
+                  <th className={th}>Origine</th>
+                  <th className={th}>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {functions.map((f) => (
-                  <tr key={f.id} className="hover:bg-blue-50/40">
-                    <td className="px-6 py-3">
-                      <p className="font-medium text-gray-900">{f.label}</p>
-                      {f.description && <p className="text-xs text-gray-400">{f.description}</p>}
+                  <tr key={f.id} className="transition-colors hover:bg-gray-50/70">
+                    <td className={`${td} min-w-56`}>
+                      <Link href={`/parametres/fonctions/${f.id}`} className="font-medium text-gray-900 hover:text-blue-700 hover:underline">
+                        {f.label}
+                      </Link>
+                      {f.description && <p className="text-pretty text-xs text-gray-500">{f.description}</p>}
                     </td>
-                    <td className="px-6 py-3 text-gray-600">{scopeLabel[f.scope] ?? f.scope}</td>
-                    <td className="px-6 py-3 text-gray-600">
-                      {f.rolePermissions.length > 0 ? `${f.rolePermissions.length} permission(s)` : "Aucune"}
-                    </td>
-                    <td className="px-6 py-3 text-gray-600">{f._count.userRoles}</td>
-                    <td className="px-6 py-3">
+                    <td className={`${td} text-gray-600`}>{scopeLabel[f.scope] ?? f.scope}</td>
+                    <td className={`${td} text-right tabular-nums text-gray-700`}>{f.rolePermissions.length > 0 ? f.rolePermissions.length : <span className="text-gray-400">Aucune</span>}</td>
+                    <td className={`${td} text-right tabular-nums text-gray-700`}>{f._count.userRoles}</td>
+                    <td className={td}>
                       <Badge color={f.isSystem ? "blue" : "green"}>{f.isSystem ? "Système" : "Ajoutée"}</Badge>
                     </td>
-                    <td className="px-6 py-3 text-right">
+                    <td className={`${td} whitespace-nowrap text-right`}>
                       <div className="flex items-center justify-end gap-2">
-                        <Link href={`/parametres/fonctions/${f.id}`} className="text-xs font-medium text-blue-700 underline">
+                        <Link href={`/parametres/fonctions/${f.id}`} className={buttonClasses({ variant: "outline", size: "sm", className: small })}>
                           {f.isSystem ? "Voir" : "Modifier"}
                         </Link>
                         {f.isSystem ? (
-                          <span className="text-xs text-gray-400" title="Le logiciel s'appuie sur les fonctions système.">Non supprimable</span>
+                          <span className="text-xs text-gray-400" title="Le logiciel s'appuie sur les fonctions système.">
+                            Non supprimable
+                          </span>
                         ) : (
                           <ConfirmButton
                             label="Supprimer"
                             confirmLabel={f._count.userRoles > 0 ? `Supprimer et retirer à ${f._count.userRoles} titulaire(s)` : "Supprimer"}
                             variant="danger"
-                            className="!min-h-0 !px-3 !py-1.5 text-xs"
+                            className={small}
                             formAction={deleteFunctionAction.bind(null, f.id)}
                           />
                         )}
@@ -182,7 +184,7 @@ export default async function ParametresPage({ searchParams }: { searchParams: P
             </table>
           </Card>
         )}
-      </div>
+      </section>
     </div>
   );
 }

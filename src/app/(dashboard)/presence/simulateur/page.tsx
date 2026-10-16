@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, Input, PageHeader, Select } from "@/components/ui";
+import { Card, Input, Notice, PageHeader, Select } from "@/components/ui";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { holdsOrgPermission } from "@/lib/presence/config";
 import { presenceSimulatorEnabled } from "@/lib/presence/devices";
@@ -24,10 +24,12 @@ export default async function SimulatorPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Simulateur de pointages" description="Développement local uniquement — données de test, jamais présentées comme réelles, indisponibles en production." />
-      <Card className="border-orange-300 bg-orange-50 text-sm text-orange-900">
-        SIMULATION : chaque pointage créé ici est marqué « Simulation » dans toutes les vues. Le sens (entrée / sortie) est transmis explicitement, comme le ferait un
-        appareil ; le moteur n&apos;en déduit jamais aucun.
-      </Card>
+      <Notice tone="warning" title="Simulation">
+        <p>
+          Chaque pointage créé ici est marqué « Simulation » dans toutes les vues. Le sens (entrée / sortie) est transmis explicitement, comme le ferait un appareil ; le
+          moteur n&apos;en déduit jamais aucun.
+        </p>
+      </Notice>
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Appareil de simulation</h2>

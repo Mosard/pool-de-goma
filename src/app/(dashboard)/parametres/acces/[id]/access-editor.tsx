@@ -6,7 +6,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Card } from "@/components/ui";
+import { Alert, Button, Card, Select } from "@/components/ui";
 import { canAdjustPermission, type Adjustment, type AdjustmentEffect } from "@/lib/access-rules";
 import type { SessionPermission, SessionRole } from "@/lib/permission-checks";
 import { saveAccessChangesAction } from "../actions";
@@ -142,33 +142,33 @@ export function AccessEditor(p: Props) {
         </ul>
         {p.addableRoles.length > 0 && (
           <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 sm:flex-row">
-            <select className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm" value={newRole.roleId} onChange={(e) => setNewRole({ roleId: e.target.value, poolId: "", cellId: "" })}>
+            <Select aria-label="Fonction à ajouter" className="sm:flex-1" value={newRole.roleId} onChange={(e) => setNewRole({ roleId: e.target.value, poolId: "", cellId: "" })}>
               <option value="">Ajouter une fonction…</option>
               {p.addableRoles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.label}
                 </option>
               ))}
-            </select>
+            </Select>
             {selectedRole?.scope === "POOL" && (
-              <select className="rounded-xl border border-gray-200 px-3 py-2 text-sm" value={newRole.poolId} onChange={(e) => setNewRole((n) => ({ ...n, poolId: e.target.value }))}>
+              <Select aria-label="POOL de la fonction" className="sm:w-56" value={newRole.poolId} onChange={(e) => setNewRole((n) => ({ ...n, poolId: e.target.value }))}>
                 <option value="">POOL…</option>
                 {selectedRole.pools.map((pl) => (
                   <option key={pl.id} value={pl.id}>
                     {pl.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
             {selectedRole?.scope === "CELL" && (
-              <select className="rounded-xl border border-gray-200 px-3 py-2 text-sm" value={newRole.cellId} onChange={(e) => setNewRole((n) => ({ ...n, cellId: e.target.value }))}>
+              <Select aria-label="Cellule de la fonction" className="sm:w-64" value={newRole.cellId} onChange={(e) => setNewRole((n) => ({ ...n, cellId: e.target.value }))}>
                 <option value="">Cellule (obligatoire)…</option>
                 {selectedRole.cells.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.code} — {c.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
             <Button
               type="button"

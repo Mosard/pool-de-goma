@@ -27,7 +27,8 @@ export function SectionTabs({
   const ctx = { permissions, roleKeys };
   const tabs = visibleTabs(section.tabs, ctx);
   if (tabs.length === 0) return null;
-  const current = tabs.find((t) => tabMatches(t, pathname));
+  // L'adresse la plus précise l'emporte : « /parametres » couvre aussi « /parametres/cellules ».
+  const current = tabs.filter((t) => tabMatches(t, pathname)).sort((a, b) => b.href.length - a.href.length)[0];
   const subTabs = current ? visibleSubTabs(current, ctx) : [];
   const showContext = section.label === "Exploitation" && context && context.length > 0;
 

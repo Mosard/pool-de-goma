@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { Button, Card, FieldError, Input, Label, Textarea } from "@/components/ui";
 import { updateFunctionAction, type FunctionFormState } from "../actions";
+import { PermissionPicker } from "./permission-picker";
 
 const initialState: FunctionFormState = {};
 
@@ -15,7 +16,6 @@ export function EditFunctionForm({
   permissionCatalog: { key: string; label: string; category: string }[];
 }) {
   const [state, formAction, pending] = useActionState(updateFunctionAction.bind(null, role.id), initialState);
-  const categories = Array.from(new Set(permissionCatalog.map((p) => p.category)));
 
   return (
     <Card>
@@ -37,23 +37,7 @@ export function EditFunctionForm({
             {role.holders} titulaire(s) : ils recevront ou perdront ces permissions dès leur prochaine action. Seules les permissions que vous détenez vous-même
             peuvent être données.
           </p>
-          <div className="space-y-4">
-            {categories.map((category) => (
-              <div key={category}>
-                <p className="mb-2 text-xs font-semibold uppercase text-gray-400">{category}</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {permissionCatalog
-                    .filter((p) => p.category === category)
-                    .map((p) => (
-                      <label key={p.key} className="flex items-start gap-2 text-sm text-gray-700">
-                        <input type="checkbox" name="permissionKeys" value={p.key} defaultChecked={role.permissionKeys.includes(p.key)} className="mt-1" />
-                        {p.label}
-                      </label>
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <PermissionPicker catalog={permissionCatalog} checked={role.permissionKeys} />
         </div>
         {state.formError && <FieldError message={state.formError} />}
         <Button type="submit" disabled={pending}>
