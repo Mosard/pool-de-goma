@@ -79,7 +79,8 @@ export default async function DiplomesPage({ searchParams }: { searchParams: Pro
           </div>
         </section>
 
-        <div className="mx-auto -mt-16 max-w-6xl px-4 pb-16 sm:px-6">
+        <div className="-mt-16 px-4 pb-16 sm:px-10">
+          <div className="mx-auto max-w-6xl">
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <section
               aria-labelledby="recherche-titre"
@@ -179,6 +180,7 @@ export default async function DiplomesPage({ searchParams }: { searchParams: Pro
               </div>
             </section>
           )}
+          </div>
         </div>
       </main>
 
