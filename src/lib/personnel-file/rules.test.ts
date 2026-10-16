@@ -106,9 +106,9 @@ test("Champs du compte : postnom, prénom, sexe et date de naissance vont dans U
   assert.equal(r.user.sex, "F");
   assert.equal(r.user.postnom, "Postnom");
   assert.equal(r.user.dateNaissance?.toISOString(), "1990-05-17T00:00:00.000Z");
-  // Un champ vidé efface la valeur du compte (null), il ne la conserve pas en silence.
+  // Un champ vidé efface la valeur du compte (null)… sauf le sexe, obligatoire sur le compte : il est conservé.
   const cleared = parseFieldsGroup(findFieldsGroup("identite")!, {});
-  assert.ok(cleared.ok && cleared.user.postnom === null && cleared.user.sex === null);
+  assert.ok(cleared.ok && cleared.user.postnom === null && !("sex" in cleared.user));
   const shown = userColumnsToGroupValues(findFieldsGroup("identite")!, { postnom: "Postnom", sex: "M", dateNaissance: new Date("1990-05-17T00:00:00Z") });
   assert.deepEqual(shown, { sex: "M", postnom: "Postnom", dateNaissance: "1990-05-17" });
 });

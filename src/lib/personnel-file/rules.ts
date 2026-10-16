@@ -143,6 +143,8 @@ export function parseFieldsGroup(group: FieldsGroup, input: Record<string, unkno
       errors[f.key] = r.error;
       continue;
     }
+    // Sexe obligatoire sur le compte (décision du 2026-10-16) : un « Genre » laissé vide ne l'efface pas.
+    if (f.userColumn === "sex" && r.value === null) continue;
     if (f.userColumn) setUserColumn(user, f.userColumn, r.value);
     else if (r.value !== null) data[f.key] = r.value;
   }
