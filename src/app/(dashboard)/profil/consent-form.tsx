@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Alert, Button, Card } from "@/components/ui";
+import { Alert, Button } from "@/components/ui";
 import { updatePublicationConsentAction, type ConsentFormState } from "./actions";
 
 const initialState: ConsentFormState = {};
@@ -29,7 +29,7 @@ export function ConsentForm({
         : "non publié";
 
   return (
-    <Card>
+    <div>
       <h3 className="text-sm font-semibold text-gray-900">Publication sur le site public</h3>
       <p className="mt-1 text-xs text-gray-500">
         Votre nom, votre fonction et votre photo n&apos;apparaissent sur le site public (page de votre POOL ou section
@@ -60,6 +60,6 @@ export function ConsentForm({
           {pending ? "Enregistrement..." : "Enregistrer mon choix"}
         </Button>
       </form>
-    </Card>
+    </div>
   );
 }

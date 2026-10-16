@@ -74,7 +74,7 @@ export function MobileNav({
               className="flex min-h-[48px] items-center gap-3 rounded-xl px-4 text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white"
             >
               <UserIcon size={20} strokeWidth={1.75} />
-              Mon profil
+              Mon compte
             </Link>
           </nav>
           <form action={signOutAction} className="px-4 pb-6">
