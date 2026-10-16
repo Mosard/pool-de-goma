@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { Alert, Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import { SearchSelect } from "@/components/search-select";
 import { WORKFLOW_STATUS_KEYS } from "@/lib/rbac-data";
 import { OFFICIAL_FICHES } from "@/lib/fiches/defs/index";
 import { filtersQuery } from "@/lib/exports/scope";
@@ -56,14 +57,13 @@ export default async function RapportsPage({ searchParams }: { searchParams: Pro
           {options.canFilterInspector && (
             <label className="text-sm font-medium text-gray-700">
               Inspecteur
-              <select name="inspecteur" defaultValue={filters.inspecteurId ?? ""} className={field}>
-                <option value="">Tous</option>
-                {options.inspectors.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </select>
+              <SearchSelect
+                name="inspecteur"
+                defaultValue={filters.inspecteurId ?? ""}
+                placeholder="Tous les inspecteurs"
+                className="mt-1"
+                options={options.inspectors.map((i) => ({ value: i.id, label: i.name }))}
+              />
             </label>
           )}
           {options.canFilterPool && (

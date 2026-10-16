@@ -4,6 +4,7 @@ import { Fingerprint, KeyRound, Link2 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge, Card, EmptyState, Field, Input, Notice, PageHeader, SectionTitle, Select, SubHeading } from "@/components/ui";
+import { SearchSelect } from "@/components/search-select";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { holdsOrgPermission } from "@/lib/presence/config";
 import { holdsDeviceAdminRole, presenceSimulatorEnabled } from "@/lib/presence/devices";
@@ -260,14 +261,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
               <Input name="deviceUserId" required defaultValue={sp.deviceUserId ?? ""} inputMode="numeric" className="font-mono" />
             </Field>
             <Field label="Compte">
-              <Select name="userId" required defaultValue="">
-                <option value="">— Choisir —</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </Select>
+              <SearchSelect name="userId" required placeholder="Rechercher un compte…" options={accounts.map((a) => ({ value: a.id, label: a.name }))} />
             </Field>
             <Field label="Valable à partir du">
               <Input type="date" name="from" defaultValue={today} required />

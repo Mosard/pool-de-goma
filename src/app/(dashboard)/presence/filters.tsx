@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button, Field, Input, Select } from "@/components/ui";
+import { SearchSelect } from "@/components/search-select";
 
 // Filtres (formulaire GET). Les options proviennent du périmètre du lecteur ;
 // toute valeur reçue est de toute façon revérifiée côté serveur.
@@ -95,14 +96,7 @@ export function PresenceFiltersForm({
       )}
       {mode === "period" && agents.length > 0 && (
         <Field label="Agent">
-          <Select name="userId" defaultValue={values.userId ?? ""}>
-            <option value="">Tous</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
+          <SearchSelect name="userId" defaultValue={values.userId ?? ""} placeholder="Tous les agents" options={agents.map((a) => ({ value: a.id, label: a.name }))} />
         </Field>
       )}
     </FilterBar>
