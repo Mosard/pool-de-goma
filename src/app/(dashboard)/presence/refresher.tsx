@@ -39,13 +39,27 @@ export function PresenceRefresher({ initialCursor }: { initialCursor: string }) 
     return () => window.clearInterval(id);
   }, [router]);
 
+  // Pastille d'état : verte quand la dernière vérification a réussi, ambre si la connexion manque.
   return (
-    <p className="text-xs text-gray-500" aria-live="polite">
-      {failed
-        ? "Actualisation impossible pour l'instant (connexion) : les données affichées peuvent être anciennes."
-        : checkedAt
-          ? `Vérifié à ${checkedAt} (heure de Goma) — actualisation automatique toutes les 30 s.`
-          : "Actualisation automatique toutes les 30 s."}
+    <p
+      aria-live="polite"
+      title="Vérification toutes les 30 secondes ; la page ne se recharge que si des données ont changé."
+      className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${
+        failed ? "border-amber-200 bg-amber-50 text-amber-900" : "border-gray-200 bg-white text-gray-600"
+      }`}
+    >
+      <span className={`h-2 w-2 shrink-0 rounded-full ${failed ? "bg-amber-500" : "bg-emerald-500"}`} aria-hidden />
+      <span className="min-w-0">
+        {failed ? (
+          "Actualisation impossible (connexion) : données peut-être anciennes"
+        ) : checkedAt ? (
+          <>
+            Vérifié à <span className="tabular-nums">{checkedAt}</span> (heure de Goma) · toutes les 30 s
+          </>
+        ) : (
+          "Actualisation automatique toutes les 30 s"
+        )}
+      </span>
     </p>
   );
 }

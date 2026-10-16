@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, Input, PageHeader } from "@/components/ui";
+import { Card, Field, Input, Notice, PageHeader, SectionTitle } from "@/components/ui";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { holdsOrgPermission, loadSchedule } from "@/lib/presence/config";
 import { PENDING_RULES, WEEKDAY_LABELS } from "@/lib/presence/settings";
@@ -9,6 +9,16 @@ import { dbDateToKey, formatDateKey, formatGomaDateTime, gomaDateKey } from "@/l
 import { loadPresenceViewer } from "@/lib/presence/views";
 import { ActionForm } from "../action-form";
 import { addCalendarDayAction, removeCalendarDayAction, saveScheduleAction } from "../actions";
+
+function Slot({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="rounded-xl border border-gray-200 px-4 py-3">
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold tabular-nums text-gray-900">{value}</dd>
+      {note && <dd className="text-xs text-gray-500">{note}</dd>}
+    </div>
+  );
+}
 
 // Horaires et calendrier : consultation (vue globale des présences) ;
 // modification SEULEMENT par presence.schedule.manage (IPP principal, IPA chargé
@@ -40,96 +50,96 @@ export default async function SettingsPage() {
       />
 
       <Card>
-        <h2 className="mb-1 text-sm font-semibold text-gray-900">Horaire validé</h2>
-        <p className="mb-3 text-xs text-gray-500">{setAt ? `Dernière modification : ${formatGomaDateTime(setAt)}.` : "Aucun horaire enregistré : les calculs sont bloqués."}</p>
+        <SectionTitle
+          title="Horaire validé"
+          description={setAt ? `Dernière modification : ${formatGomaDateTime(setAt)}.` : "Aucun horaire enregistré : les calculs sont bloqués."}
+        />
         {schedule && !canEdit && (
-          <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+          <div className="space-y-4">
             <div>
-              <dt className="text-gray-500">Jours travaillés</dt>
-              <dd>{schedule.workdays.map((d) => WEEKDAY_LABELS[d]).join(", ")}</dd>
+              <p className="mb-2 text-xs text-gray-500">Jours travaillés</p>
+              <ul className="flex flex-wrap gap-1.5">
+                {[1, 2, 3, 4, 5, 6, 7].map((d) => {
+                  const on = schedule.workdays.includes(d);
+                  return (
+                    <li
+                      key={d}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium ${on ? "border-blue-200 bg-blue-50 text-blue-800" : "border-gray-200 text-gray-400 line-through"}`}
+                    >
+                      {WEEKDAY_LABELS[d]}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <div>
-              <dt className="text-gray-500">Journée</dt>
-              <dd>
-                {schedule.start} – {schedule.end}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">Retard signalé après</dt>
-              <dd>{schedule.lateAfter} (incluse : pas de retard)</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">Départ anticipé avant</dt>
-              <dd>{schedule.end}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">Départ normal jusqu&apos;à</dt>
-              <dd>{schedule.normalDepartureUntil} (incluse)</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">Temps supplémentaire proposé depuis</dt>
-              <dd>{schedule.overtimeFrom}</dd>
-            </div>
-          </dl>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <Slot label="Début de journée" value={schedule.start} />
+              <Slot label="Retard signalé après" value={schedule.lateAfter} note="incluse : pas de retard" />
+              <Slot label="Départ anticipé avant" value={schedule.end} />
+              <Slot label="Départ normal jusqu'à" value={schedule.normalDepartureUntil} note="incluse" />
+              <Slot label="Temps suppl. proposé depuis" value={schedule.overtimeFrom} />
+            </dl>
+          </div>
         )}
         {canEdit && (
-          <ActionForm action={saveScheduleAction} submit="Enregistrer l'horaire" className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
-            <fieldset className="sm:col-span-3">
-              <legend className="text-sm text-gray-700">Jours travaillés</legend>
-              <div className="mt-1 flex flex-wrap gap-3 text-sm">
+          <ActionForm action={saveScheduleAction} submit="Enregistrer l'horaire" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
+            <fieldset className="sm:col-span-2 lg:col-span-5">
+              <legend className="text-sm font-medium text-gray-700">Jours travaillés</legend>
+              <div className="mt-2 flex flex-wrap gap-2">
                 {[1, 2, 3, 4, 5, 6, 7].map((d) => (
-                  <label key={d} className="flex items-center gap-1">
-                    <input type="checkbox" name="workdays" value={d} defaultChecked={schedule?.workdays.includes(d) ?? false} /> {WEEKDAY_LABELS[d]}
+                  <label key={d} className="cursor-pointer">
+                    <input type="checkbox" name="workdays" value={d} defaultChecked={schedule?.workdays.includes(d) ?? false} className="peer sr-only" />
+                    <span className="inline-flex min-h-10 items-center rounded-full border border-gray-200 px-4 text-sm text-gray-600 transition-colors hover:border-gray-300 peer-checked:border-blue-300 peer-checked:bg-blue-50 peer-checked:font-medium peer-checked:text-blue-800 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-1">
+                      {WEEKDAY_LABELS[d]}
+                    </span>
                   </label>
                 ))}
               </div>
             </fieldset>
-            <label className="text-sm text-gray-700">
-              Début de journée
-              <Input type="time" name="start" defaultValue={schedule?.start} required className="mt-1" />
-            </label>
-            <label className="text-sm text-gray-700">
-              Retard signalé après (incluse : pas de retard)
-              <Input type="time" name="lateAfter" defaultValue={schedule?.lateAfter} required className="mt-1" />
-            </label>
-            <label className="text-sm text-gray-700">
-              Fin de journée (départ anticipé avant)
-              <Input type="time" name="end" defaultValue={schedule?.end} required className="mt-1" />
-            </label>
-            <label className="text-sm text-gray-700">
-              Départ normal jusqu&apos;à (incluse)
-              <Input type="time" name="normalDepartureUntil" defaultValue={schedule?.normalDepartureUntil} required className="mt-1" />
-            </label>
-            <label className="text-sm text-gray-700">
-              Temps supplémentaire proposé depuis
-              <Input type="time" name="overtimeFrom" defaultValue={schedule?.overtimeFrom} required className="mt-1" />
-            </label>
+            <Field label="Début de journée">
+              <Input type="time" name="start" defaultValue={schedule?.start} required />
+            </Field>
+            <Field label="Retard signalé après" hint="Heure incluse : pas de retard.">
+              <Input type="time" name="lateAfter" defaultValue={schedule?.lateAfter} required />
+            </Field>
+            <Field label="Fin de journée" hint="Départ anticipé avant cette heure.">
+              <Input type="time" name="end" defaultValue={schedule?.end} required />
+            </Field>
+            <Field label="Départ normal jusqu'à" hint="Heure incluse.">
+              <Input type="time" name="normalDepartureUntil" defaultValue={schedule?.normalDepartureUntil} required />
+            </Field>
+            <Field label="Temps suppl. proposé depuis">
+              <Input type="time" name="overtimeFrom" defaultValue={schedule?.overtimeFrom} required />
+            </Field>
           </ActionForm>
         )}
       </Card>
 
-      <Card>
-        <h2 className="mb-2 text-sm font-semibold text-gray-900">Règles non décidées (non configurables)</h2>
-        <ul className="space-y-1 text-sm text-amber-900">
+      <Notice tone="warning" title="Règles non décidées (non configurables)">
+        <ul className="space-y-1.5">
           {Object.values(PENDING_RULES).map((r) => (
-            <li key={r.code + r.message}>
-              <span className="font-mono text-xs">{r.code}</span> — {r.message}
+            <li key={r.code + r.message} className="flex gap-2">
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[11px]">{r.code}</span>
+              <span>{r.message}</span>
             </li>
           ))}
         </ul>
-      </Card>
+      </Notice>
 
       <Card>
-        <h2 className="mb-1 text-sm font-semibold text-gray-900">Calendrier : jours non travaillés</h2>
-        <p className="mb-3 text-xs text-gray-500">Aucun calendrier officiel n&apos;est préchargé. Un jour inscrit ici n&apos;entraîne ni retard ni temps supplémentaire.</p>
+        <SectionTitle
+          title="Calendrier : jours non travaillés"
+          description="Aucun calendrier officiel n'est préchargé. Un jour inscrit ici n'entraîne ni retard ni temps supplémentaire."
+        />
         {days.length === 0 ? (
           <p className="text-sm text-gray-500">Aucun jour inscrit pour cette année.</p>
         ) : (
-          <ul className="divide-y divide-gray-100 text-sm">
+          <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200 text-sm">
             {days.map((d) => (
-              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <span>
-                  {formatDateKey(dbDateToKey(d.date))} — {d.label}
+                  <span className="font-medium tabular-nums text-gray-900">{formatDateKey(dbDateToKey(d.date))}</span>
+                  <span className="text-gray-600"> — {d.label}</span>
                 </span>
                 {canEdit && <ActionForm action={removeCalendarDayAction.bind(null, d.id)} submit="Retirer" variant="ghost" />}
               </li>
@@ -137,9 +147,13 @@ export default async function SettingsPage() {
           </ul>
         )}
         {canEdit && (
-          <ActionForm action={addCalendarDayAction} submit="Ajouter au calendrier" className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
-            <Input type="date" name="date" required aria-label="Date" />
-            <Input name="label" required placeholder="Motif (ex. décision de l'Inspection)" aria-label="Motif" />
+          <ActionForm action={addCalendarDayAction} submit="Ajouter au calendrier" className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+            <Field label="Date">
+              <Input type="date" name="date" required />
+            </Field>
+            <Field label="Motif">
+              <Input name="label" required placeholder="ex. décision de l'Inspection" />
+            </Field>
           </ActionForm>
         )}
       </Card>

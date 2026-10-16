@@ -13,6 +13,7 @@ import {
   EXPLOITATION_TABS,
   INSPECTEURS_TABS,
   NAV_ITEMS,
+  PARAMETRES_TABS,
   isNavItemActive,
   isNavItemVisible,
   matchesPath,
@@ -148,4 +149,29 @@ test("Le lien d'un espace mène au premier onglet autorisé", () => {
     roleKeys: [ROLE_KEYS.IPP],
   };
   assert.equal(navItemHref(comptes, publicationSeule), "/publication");
+});
+
+test("Paramètres : trois onglets ; visibilité inchangée (pools.manage ou cellule du personnel)", () => {
+  assert.deepEqual(PARAMETRES_TABS.map((t) => t.label), ["Pools et fonctions", "Cellules de l'IPP", "Gérer les accès"]);
+  const parametres = NAV_ITEMS.find((i) => i.label === "Paramètres")!;
+  // Gestion de la cellule du personnel seule : l'entrée mène directement aux cellules.
+  const personnelSeul: NavContext = {
+    permissions: [{ permissionKey: PERMISSIONS.CELLS_PERSONNEL_MANAGE, poolId: null, organizationId: ORG }],
+    roleKeys: [ROLE_KEYS.SECRETAIRE_IPP],
+  };
+  assert.ok(isNavItemVisible(parametres, personnelSeul));
+  assert.equal(navItemHref(parametres, personnelSeul), "/parametres/cellules");
+  assert.deepEqual(tabs(PARAMETRES_TABS, personnelSeul), ["Cellules de l'IPP"]);
+  // Chef de POOL : « Gérer les accès » depuis « Mon POOL », pas d'espace Paramètres.
+  assert.ok(!isNavItemVisible(parametres, ctx(ROLE_KEYS.CHEF_POOL, { poolId: "A" })));
+  // Inspecteur : rien.
+  assert.ok(!isNavItemVisible(parametres, ctx(ROLE_KEYS.INSPECTEUR, { poolId: "A" })));
+  // Gestion des pools sans fonction provinciale : pas l'onglet des accès.
+  const poolsSansFonction: NavContext = {
+    permissions: [{ permissionKey: PERMISSIONS.POOLS_MANAGE, poolId: null, organizationId: ORG }],
+    roleKeys: [],
+  };
+  assert.deepEqual(tabs(PARAMETRES_TABS, poolsSansFonction), ["Pools et fonctions", "Cellules de l'IPP"]);
+  assert.deepEqual(tabs(PARAMETRES_TABS, { ...poolsSansFonction, roleKeys: [ROLE_KEYS.IPP] }), ["Pools et fonctions", "Cellules de l'IPP", "Gérer les accès"]);
+  assert.equal(sectionForPath("/parametres/acces/abc")?.label, "Paramètres");
 });

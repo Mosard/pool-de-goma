@@ -327,7 +327,7 @@ export default async function PoolAdminPage({ params }: { params: Promise<{ id: 
           <p className="text-sm text-gray-500">Aucun agent n&apos;a de fonction dans ce POOL.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-gray-100 text-left text-xs uppercase text-gray-400">
+            <thead className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="py-2 pr-4">Agent</th>
                 <th className="py-2 pr-4">Fonction(s)</th>

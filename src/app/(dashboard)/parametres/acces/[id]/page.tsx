@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Badge, PageHeader } from "@/components/ui";
+import { ArrowLeft } from "lucide-react";
+import { Badge, Notice, PageHeader } from "@/components/ui";
 import { ForbiddenError } from "@/lib/permissions";
 import { canGrantRole } from "@/lib/permission-checks";
 import { ROLES_MANAGED_ELSEWHERE, actorPools, grantableRoles, inheritedPermissions, loadActor, loadManageableAccount } from "@/lib/access-admin";
@@ -39,8 +40,11 @@ export default async function CompteAccesPage({ params }: { params: Promise<{ id
 
   return (
     <div className="space-y-6">
-      <Link href="/parametres/acces" className="text-xs font-medium text-blue-600 hover:underline">
-        ← Gérer les accès
+      <Link
+        href="/parametres/acces"
+        className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+      >
+        <ArrowLeft size={14} aria-hidden /> Gérer les accès
       </Link>
       <PageHeader
         title={target.name}
@@ -48,9 +52,9 @@ export default async function CompteAccesPage({ params }: { params: Promise<{ id
         actions={<Badge color={target.status === "ACTIVE" ? "green" : "orange"}>{STATUS[target.status] ?? target.status}</Badge>}
       />
       {target.status !== "ACTIVE" && (
-        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Ce compte n&apos;est pas actif : il n&apos;a aucun droit tant qu&apos;il ne l&apos;est pas, quels que soient ses fonctions et ajustements.
-        </p>
+        <Notice tone="warning" title="Compte non actif">
+          <p>Il n&apos;a aucun droit tant qu&apos;il ne l&apos;est pas, quels que soient ses fonctions et ajustements.</p>
+        </Notice>
       )}
       <AccessEditor
         targetId={target.id}

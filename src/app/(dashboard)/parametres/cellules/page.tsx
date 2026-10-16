@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Notice, PageHeader, SectionTitle, SubHeading } from "@/components/ui";
 import { loadUserAccess } from "@/lib/permissions";
 import { PERMISSIONS, ROLE_KEYS } from "@/lib/rbac-data";
 import { CELL_MANDATE_LABELS } from "@/lib/cells/rules";
@@ -51,55 +51,44 @@ export default async function CellulesPage() {
   const ipasWithoutCell = ipas.filter((i) => !i.cellLed);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Cellules de l'IPP"
         description="Chaque cellule est rattachée à un IPA ; ses exploitants ne voient que les rapports que le secrétariat lui envoie."
-        actions={
-          <Link href="/parametres">
-            <Button type="button" variant="secondary">
-              Retour aux paramètres
-            </Button>
-          </Link>
-        }
       />
 
-      {(unattached.length > 0 || ipasWithoutCell.length > 0) && (
-        <Card className="border-amber-200 bg-amber-50 text-sm text-amber-900">
-          {unattached.length > 0 && (
-            <div>
-              <p className="font-semibold">Exploitants de l&apos;IPP à rattacher à une cellule ({unattached.length})</p>
-              <p className="mb-2 text-xs">Sans cellule, ces comptes ne voient aucun rapport de l&apos;IPP : c&apos;est voulu. Rattachez-les depuis « Gérer les accès ».</p>
-              <ul className="space-y-1">
-                {unattached.map((u) => (
-                  <li key={u.id}>
-                    <Link href={`/parametres/acces/${u.id}`} className="font-medium underline">
-                      {u.name}
-                    </Link>
-                    {u.isDemo && <span className="text-xs"> (démonstration)</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {ipasWithoutCell.length > 0 && (
-            <p className={unattached.length > 0 ? "mt-3" : ""}>
-              IPA sans cellule (aucun rapport de l&apos;IPP visible) : {ipasWithoutCell.map((i) => i.name).join(", ")}.
-            </p>
-          )}
-        </Card>
+      {unattached.length > 0 && (
+        <Notice tone="warning" title={`Exploitants de l'IPP à rattacher à une cellule (${unattached.length})`}>
+          <p className="text-xs">Sans cellule, ces comptes ne voient aucun rapport de l&apos;IPP : c&apos;est voulu. Rattachez-les depuis « Gérer les accès ».</p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {unattached.map((u) => (
+              <li key={u.id}>
+                <Link href={`/parametres/acces/${u.id}`} className="font-medium underline underline-offset-2">
+                  {u.name}
+                </Link>
+                {u.isDemo && <span className="text-xs"> (démonstration)</span>}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      )}
+      {ipasWithoutCell.length > 0 && (
+        <Notice tone="warning" title="IPA sans cellule (aucun rapport de l'IPP visible)">
+          <p>{ipasWithoutCell.map((i) => i.name).join(", ")}.</p>
+        </Notice>
       )}
 
       {personnelCells.length > 1 && (
-        <Card className="border-red-200 bg-red-50 text-sm text-red-900">
-          Plusieurs cellules actives portent la vocation « Gestion du personnel » ({personnelCells.map((c) => c.code).join(", ")}) : aucun
-          responsable ne reçoit les pouvoirs de gestion du personnel tant qu&apos;il en reste plus d&apos;une.
-        </Card>
+        <Notice tone="danger" title="Plusieurs cellules « Gestion du personnel » actives">
+          <p>
+            {personnelCells.map((c) => c.code).join(", ")} : aucun responsable ne reçoit les pouvoirs de gestion du personnel tant qu&apos;il en reste plus d&apos;une.
+          </p>
+        </Notice>
       )}
 
       {canManageCells && (
         <Card>
-          <h2 className="mb-3 text-sm font-semibold text-gray-900">Nouvelle cellule</h2>
+          <SectionTitle title="Nouvelle cellule" description="Sigle, intitulé et IPA responsable ; un IPA ne dirige qu'une cellule." />
           <CellForm ipas={ipaOptions} allowPersonnelMandate={canManagePersonnel} />
         </Card>
       )}
@@ -108,40 +97,63 @@ export default async function CellulesPage() {
         <EmptyState message="Aucune cellule saisie pour le moment." />
       ) : (
         cells.map((c) => (
-          <Card key={c.id} className={c.active ? "" : "opacity-70"}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-gray-900">
-                {c.code} — {c.name} {!c.active && <Badge color="gray">Archivée</Badge>}
-              </h2>
+          <Card key={c.id} className={c.active ? "space-y-4" : "space-y-4 bg-gray-50/60"}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-gray-900">
+                  <span className="mr-2 rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-sm text-gray-800">{c.code}</span>
+                  {c.name}
+                </h2>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                  <Badge color={c.mandate === "PERSONNEL" ? "blue" : "gray"}>{CELL_MANDATE_LABELS[c.mandate]}</Badge>
+                  {!c.active && <Badge color="gray">Archivée</Badge>}
+                </div>
+              </div>
               {canManageCells && (
                 <form action={setCellActiveAction.bind(null, c.id, !c.active)}>
-                  <Button type="submit" variant={c.active ? "danger" : "secondary"} className="!min-h-0 !px-3 !py-1 text-xs">
+                  <Button type="submit" variant={c.active ? "danger" : "outline"} size="sm">
                     {c.active ? "Archiver" : "Réactiver"}
                   </Button>
                 </form>
               )}
             </div>
-            {c.active && canManageCells && <CellForm cell={{ id: c.id, code: c.code, name: c.name, ipaId: c.ipaId }} ipas={ipaOptions} />}
-            {c.active && canManagePersonnel && (
-              <div className="mt-4 space-y-3 rounded-lg border border-gray-100 p-3">
-                <MandateForm cellId={c.id} mandate={c.mandate} />
-                {c.mandate === "PERSONNEL" && !canManageCells && (
-                  <PersonnelIpaForm cellId={c.id} cellCode={c.code} ipaId={c.ipaId} ipas={ipaOptions} />
-                )}
+
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-gray-500">IPA responsable</dt>
+                <dd className={c.ipa ? "font-medium text-gray-900" : "text-amber-700"}>{c.ipa?.name ?? "À désigner"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Exploitants ({c.userRoles.length})</dt>
+                <dd className="text-gray-900">
+                  {c.userRoles.length === 0 ? (
+                    <span className="text-gray-400">Aucun</span>
+                  ) : (
+                    c.userRoles.map((ur) => ur.user.name + (ur.user.status === "ACTIVE" ? "" : " (inactif)")).join(", ")
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            {c.active && c.mandate === "PERSONNEL" && c.ipa && (c.ipa.status !== "ACTIVE" || c.ipa.roles.length === 0) && (
+              <Notice tone="danger">
+                <p>Responsable enregistré sans compte actif ou sans fonction d&apos;IPA : il n&apos;exerce aucun pouvoir du personnel.</p>
+              </Notice>
+            )}
+
+            {c.active && canManageCells && (
+              <div className="border-t border-gray-100 pt-4">
+                <SubHeading className="mb-3">Modifier la cellule</SubHeading>
+                <CellForm cell={{ id: c.id, code: c.code, name: c.name, ipaId: c.ipaId }} ipas={ipaOptions} />
               </div>
             )}
-            {c.active && c.mandate === "PERSONNEL" && c.ipa && (c.ipa.status !== "ACTIVE" || c.ipa.roles.length === 0) && (
-              <p className="mt-2 text-xs text-red-700">
-                Responsable enregistré sans compte actif ou sans fonction d&apos;IPA : il n&apos;exerce aucun pouvoir du personnel.
-              </p>
+            {c.active && canManagePersonnel && (
+              <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                <SubHeading>Gestion du personnel</SubHeading>
+                <MandateForm cellId={c.id} mandate={c.mandate} />
+                {c.mandate === "PERSONNEL" && !canManageCells && <PersonnelIpaForm cellId={c.id} cellCode={c.code} ipaId={c.ipaId} ipas={ipaOptions} />}
+              </div>
             )}
-            <p className="mt-3 text-xs text-gray-600">
-              Vocation : <Badge color={c.mandate === "PERSONNEL" ? "blue" : "gray"}>{CELL_MANDATE_LABELS[c.mandate]}</Badge>
-            </p>
-            <p className="mt-1 text-xs text-gray-600">
-              IPA : {c.ipa?.name ?? "à désigner"} · Exploitants :{" "}
-              {c.userRoles.length === 0 ? "aucun" : c.userRoles.map((ur) => ur.user.name + (ur.user.status === "ACTIVE" ? "" : " (inactif)")).join(", ")}
-            </p>
           </Card>
         ))
       )}

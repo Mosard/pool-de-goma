@@ -31,12 +31,12 @@ export default async function PeriodPage({
   const sorted = [...rows].sort((a, b) => (a.dateKey === b.dateKey ? a.name.localeCompare(b.name) : b.dateKey.localeCompare(a.dateKey)));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
         title="Présences sur une période"
         description={`${viewer.scope.kind === "all" ? "Vue globale" : "Vue de votre cellule"} — ${MAX_PERIOD_DAYS} jours au plus. Heures réelles à l'heure de Goma.`}
+        actions={<PresenceRefresher initialCursor={cursor} />}
       />
-      <PresenceRefresher initialCursor={cursor} />
       <PresenceFiltersForm options={options} values={{ ...period, cellId: sp.cellId, poolId: sp.poolId, site: sp.site, userId: sp.userId }} mode="period" agents={agents} />
       {sorted.length === 0 ? (
         <EmptyState message="Aucune journée à afficher pour ces filtres." />

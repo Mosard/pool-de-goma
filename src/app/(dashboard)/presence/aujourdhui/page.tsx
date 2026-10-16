@@ -2,23 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, Notice, PageHeader } from "@/components/ui";
 import { canReadPersonnelRecords } from "@/lib/personnel/record";
 import { countDay, loadChangeCursor, loadFilterOptions, loadPresenceRows, loadPresenceViewer } from "@/lib/presence/views";
 import { formatDateKey, gomaDateKey, isDateKey } from "@/lib/presence/time";
-import { PendingRulesNote, PresenceTable } from "../presence-ui";
+import { PendingRulesNote, PresenceTable, StatStrip } from "../presence-ui";
 import { PresenceFiltersForm } from "../filters";
 import { PresenceRefresher } from "../refresher";
-
-function Stat({ label, value, hint }: { label: string; value: number; hint?: string }) {
-  return (
-    <Card className="p-4">
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      <p className="text-sm text-gray-600">{label}</p>
-      {hint && <p className="text-xs text-gray-400">{hint}</p>}
-    </Card>
-  );
-}
 
 // Synthèse du jour : vue globale (presence.read_all) ou de cellule
 // (presence.read_cell), périmètre et filtres contrôlés côté serveur.
@@ -41,30 +31,37 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const scopeLabel = viewer.scope.kind === "all" ? "Vue globale : tous les POOL, bureaux et cellules" : "Vue de votre cellule";
 
   return (
-    <div className="space-y-4">
-      <PageHeader title={`Présences — ${formatDateKey(date)}`} description={`${scopeLabel}. Heures réelles à l'heure de Goma.`} />
-      <PresenceRefresher initialCursor={cursor} />
+    <div className="space-y-5">
+      <PageHeader
+        title={`Présences — ${formatDateKey(date)}`}
+        description={`${scopeLabel}. Heures réelles à l'heure de Goma.`}
+        actions={<PresenceRefresher initialCursor={cursor} />}
+      />
       <PresenceFiltersForm options={options} values={{ date, cellId: sp.cellId, poolId: sp.poolId, site: sp.site }} mode="day" />
 
       {deviceCount === 0 && (
-        <Card className="border-gray-200 bg-gray-50 text-sm text-gray-700">
-          Aucune pointeuse n&apos;est enregistrée : aucune donnée de pointage ne peut encore arriver.{" "}
-          <Link href="/presence/synchronisation" className="underline">
-            État de synchronisation
-          </Link>
-        </Card>
+        <Notice tone="neutral" title="Aucune pointeuse enregistrée">
+          <p>
+            Aucune donnée de pointage ne peut encore arriver.{" "}
+            <Link href="/presence/synchronisation" className="font-medium underline underline-offset-2">
+              Voir l&apos;état de synchronisation
+            </Link>
+          </p>
+        </Notice>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-        <Stat label="Personnes" value={c.total} />
-        <Stat label="Avec pointage" value={c.withPunches} />
-        <Stat label="Retards signalés" value={c.late} hint="durée non calculée" />
-        <Stat label="Départs anticipés" value={c.early} />
-        <Stat label="Temps suppl. proposé" value={c.overtime} hint="non approuvé" />
-        <Stat label="Aucun pointage reçu" value={c.noPunch} hint="ne vaut pas absence" />
-        <Stat label="Sans identifiant" value={c.unmapped} />
-        <Stat label="Données simulées" value={c.simulated} />
-      </div>
+      <StatStrip
+        stats={[
+          { label: "Personnes", value: c.total },
+          { label: "Avec pointage", value: c.withPunches },
+          { label: "Retards signalés", value: c.late, hint: "durée non calculée", tone: "attention" },
+          { label: "Départs anticipés", value: c.early, tone: "attention" },
+          { label: "Temps suppl. proposé", value: c.overtime, hint: "non approuvé" },
+          { label: "Aucun pointage reçu", value: c.noPunch, hint: "ne vaut pas absence" },
+          { label: "Sans identifiant", value: c.unmapped, tone: "attention" },
+          { label: "Données simulées", value: c.simulated, tone: "attention" },
+        ]}
+      />
 
       {rows.length === 0 ? (
         <EmptyState

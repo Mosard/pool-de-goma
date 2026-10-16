@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card } from "@/components/ui";
+import { buttonClasses, Card } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 import { loadOwnRows, loadPresenceViewer } from "@/lib/presence/views";
 import { gomaDateKey } from "@/lib/presence/time";
@@ -26,7 +26,7 @@ export async function MyPresenceCard({ userId }: { userId: string }) {
           </div>
         )}
       </div>
-      <Link href="/presence/moi" className="text-sm font-medium text-blue-700 underline">
+      <Link href="/presence/moi" className={buttonClasses({ variant: "outline", size: "sm" })}>
         Voir ma présence
       </Link>
     </Card>

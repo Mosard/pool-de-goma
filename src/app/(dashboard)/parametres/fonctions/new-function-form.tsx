@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { Button, Card, Input, Label, Select, Textarea, FieldError, PageHeader } from "@/components/ui";
 import { createFunctionAction, type FunctionFormState } from "../actions";
+import { PermissionPicker } from "./permission-picker";
 
 const initialState: FunctionFormState = {};
 
@@ -12,8 +13,6 @@ export function NewFunctionForm({
   permissionCatalog: { key: string; label: string; category: string }[];
 }) {
   const [state, formAction, pending] = useActionState(createFunctionAction, initialState);
-
-  const categories = Array.from(new Set(permissionCatalog.map((p) => p.category)));
 
   return (
     <div>
@@ -42,23 +41,7 @@ export function NewFunctionForm({
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-gray-900">Permissions</h3>
-            <div className="space-y-4">
-              {categories.map((category) => (
-                <div key={category}>
-                  <p className="mb-2 text-xs font-semibold uppercase text-gray-400">{category}</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {permissionCatalog
-                      .filter((p) => p.category === category)
-                      .map((p) => (
-                        <label key={p.key} className="flex items-start gap-2 text-sm text-gray-700">
-                          <input type="checkbox" name="permissionKeys" value={p.key} className="mt-1" />
-                          {p.label}
-                        </label>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <PermissionPicker catalog={permissionCatalog} />
           </div>
 
           {state.formError && <FieldError message={state.formError} />}

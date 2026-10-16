@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ChevronRight, Search } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Avatar, Badge, Button, Card, EmptyState, Field, Input, PageHeader, Select } from "@/components/ui";
 import { actorPools, listManageableAccounts, loadActor } from "@/lib/access-admin";
 import { canOpenAccessScreen } from "@/lib/access-rules";
 
@@ -30,73 +31,82 @@ export default async function GererLesAccesPage({
     actorPools(actor),
     prisma.roleDefinition.findMany({ orderBy: { label: "asc" }, select: { key: true, label: true } }),
   ]);
-  const field = "mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm";
+  const filtered = Boolean(sp.q || sp.pool || sp.fonction || sp.etat);
 
   return (
     <div className="space-y-6">
       <PageHeader title="Gérer les accès" description="Fonctions et permissions des comptes que vous avez le droit de gérer" />
 
-      <Card>
-        <form className="grid grid-cols-1 gap-3 sm:grid-cols-5 sm:items-end">
-          <label className="text-sm font-medium text-gray-700 sm:col-span-2">
-            Recherche
-            <input name="q" defaultValue={sp.q ?? ""} placeholder="Nom ou identifiant" className={field} />
-          </label>
-          <label className="text-sm font-medium text-gray-700">
-            POOL
-            <select name="pool" defaultValue={sp.pool ?? ""} className={field}>
-              <option value="">Tous</option>
-              {pools.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium text-gray-700">
-            Fonction
-            <select name="fonction" defaultValue={sp.fonction ?? ""} className={field}>
-              <option value="">Toutes</option>
-              {roles.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium text-gray-700">
-            État
-            <select name="etat" defaultValue={sp.etat ?? ""} className={field}>
-              <option value="">Tous</option>
-              {Object.entries(STATUS).map(([k, s]) => (
-                <option key={k} value={k}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="submit" className="sm:col-start-5">
+      <form className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6 lg:items-end">
+        <Field label="Recherche" className="lg:col-span-2">
+          <span className="relative block">
+            <Search size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Input name="q" defaultValue={sp.q ?? ""} placeholder="Nom ou identifiant" className="pl-9" type="search" />
+          </span>
+        </Field>
+        <Field label="POOL">
+          <Select name="pool" defaultValue={sp.pool ?? ""}>
+            <option value="">Tous</option>
+            {pools.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Fonction">
+          <Select name="fonction" defaultValue={sp.fonction ?? ""}>
+            <option value="">Toutes</option>
+            {roles.map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="État">
+          <Select name="etat" defaultValue={sp.etat ?? ""}>
+            <option value="">Tous</option>
+            {Object.entries(STATUS).map(([k, s]) => (
+              <option key={k} value={k}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="flex items-center gap-2">
+          <Button type="submit" variant="secondary" size="sm" className="min-h-[42px] px-5">
             Filtrer
           </Button>
-        </form>
-      </Card>
+          {filtered && (
+            <Link href="/parametres/acces" className="rounded-full px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900">
+              Réinitialiser
+            </Link>
+          )}
+        </div>
+      </form>
 
       {accounts.length === 0 ? (
         <EmptyState message="Aucun compte à gérer pour ces critères." />
       ) : (
-        <Card className="p-0">
+        <Card className="overflow-hidden p-0">
+          <p className="border-b border-gray-100 bg-gray-50/80 px-5 py-2.5 text-xs font-medium text-gray-500">{accounts.length} compte(s)</p>
           <ul className="divide-y divide-gray-100">
             {accounts.map((u) => (
               <li key={u.id}>
-                <Link href={`/parametres/acces/${u.id}`} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 hover:bg-blue-50/40">
-                  <div className="min-w-0">
+                <Link
+                  href={`/parametres/acces/${u.id}`}
+                  className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-gray-50/80 focus-visible:bg-blue-50/60 focus-visible:outline-none"
+                >
+                  <Avatar name={u.name} className="h-9 w-9 text-xs" />
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900">
-                      {u.name} {u.isDemo && <span className="text-xs text-gray-400">(démo)</span>}
+                      {u.name} {u.isDemo && <span className="text-xs font-normal text-gray-400">(démo)</span>}
                     </p>
                     <p className="text-xs text-gray-500">
                       {u.username ?? u.email} · {u.pool?.name ?? "Sans POOL"}
                     </p>
-                    <p className="mt-1 text-xs text-gray-600">
+                    <p className="mt-1 text-pretty text-xs text-gray-600">
                       {u.roles.length
                         ? u.roles
                             .map((r) =>
@@ -111,6 +121,7 @@ export default async function GererLesAccesPage({
                     </p>
                   </div>
                   <Badge color={STATUS[u.status]?.color ?? "gray"}>{STATUS[u.status]?.label ?? u.status}</Badge>
+                  <ChevronRight size={16} aria-hidden className="shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-gray-500" />
                 </Link>
               </li>
             ))}

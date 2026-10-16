@@ -13,7 +13,7 @@ import {
   Inbox,
   Clock,
 } from "lucide-react";
-import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS } from "@/lib/rbac-data";
+import { PERMISSIONS, PUBLICATION_AUTHORITY_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool, type SessionPermission } from "@/lib/permission-checks";
 
 /** Ce que le menu sait de l'utilisateur : permissions effectives et fonctions (« Voir comme » compris). */
@@ -190,6 +190,23 @@ export const PRESENCE_TABS: NavTab[] = [
   { href: "/presence/parametres", label: "Horaires et calendrier", permission: [PERMISSIONS.PRESENCE_READ_ALL, PERMISSIONS.PRESENCE_SCHEDULE_MANAGE] },
 ];
 
+/**
+ * Espace « Paramètres » (2026-10-16) : mêmes conditions que les pages.
+ * Cellules : aussi la gestion de la cellule du personnel (secrétaires, IPA du
+ * personnel). Accès : gestionnaires provinciaux (src/lib/access-rules.ts) ; le
+ * chef de POOL y arrive depuis « Mon POOL », sans cet espace.
+ */
+export const PARAMETRES_TABS: NavTab[] = [
+  { href: "/parametres", label: "Pools et fonctions", permission: PERMISSIONS.POOLS_MANAGE },
+  { href: "/parametres/cellules", label: "Cellules de l'IPP", permission: [PERMISSIONS.POOLS_MANAGE, PERMISSIONS.CELLS_PERSONNEL_MANAGE] },
+  {
+    href: "/parametres/acces",
+    label: "Gérer les accès",
+    permission: PERMISSIONS.POOLS_MANAGE,
+    roles: [ROLE_KEYS.IPP, ROLE_KEYS.INFORMATICIEN, ROLE_KEYS.SUPER_ADMIN, ROLE_KEYS.ADMIN],
+  },
+];
+
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/ecoles", label: "Écoles", icon: School },
@@ -212,7 +229,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/ia", label: "IA", icon: Sparkles, permission: PERMISSIONS.AI_ANALYZE },
   { href: "/audit", label: "Journal d'audit", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
   // Cellule du personnel (vocation, responsable) : aussi sans pools.manage (secrétaires, IPA du personnel).
-  { href: "/parametres", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.POOLS_MANAGE, PERMISSIONS.CELLS_PERSONNEL_MANAGE] },
+  { href: "/parametres", label: "Paramètres", icon: Settings, tabs: PARAMETRES_TABS },
 ];
 
 /** Espace à onglets contenant cette page, s'il y en a un. */

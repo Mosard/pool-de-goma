@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Badge, Button, Card, PageHeader } from "@/components/ui";
+import { ArrowLeft } from "lucide-react";
+import { Badge, buttonClasses, Card, PageHeader } from "@/components/ui";
 import { hasPermissionAnyPool } from "@/lib/permissions";
 import { CUSTOM_FUNCTION_FORBIDDEN_PERMISSIONS, PERMISSIONS, PERMISSION_CATALOG } from "@/lib/rbac-data";
 import { EditFunctionForm } from "../edit-function-form";
@@ -21,10 +22,8 @@ export default async function EditFunctionPage({ params }: { params: Promise<{ i
   if (!role) notFound();
   const keys = role.rolePermissions.map((rp) => rp.permission.key);
   const back = (
-    <Link href="/parametres">
-      <Button type="button" variant="secondary">
-        Retour aux paramètres
-      </Button>
+    <Link href="/parametres" className={buttonClasses({ variant: "outline", size: "sm", className: "min-h-10" })}>
+      <ArrowLeft size={14} aria-hidden /> Retour aux paramètres
     </Link>
   );
 
