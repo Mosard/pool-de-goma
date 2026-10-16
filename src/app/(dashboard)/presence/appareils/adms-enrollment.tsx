@@ -185,7 +185,14 @@ export function AdmsEnrollment({
                   <span className="inline-flex flex-wrap items-center gap-1.5">
                     <span className="rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-800">PIN {u.pin}</span>
                     {u.privilege > 0 && <Badge color="orange">administrateur de l&apos;appareil</Badge>}
-                    {known.has(u.pin) ? <Badge color="green">associé</Badge> : <Badge color="red">non associé — pointages non comptés</Badge>}
+                    {known.has(u.pin) ? (
+                      <Badge color="green">associé</Badge>
+                    ) : (
+                      <>
+                        <Badge color="red">non associé</Badge>
+                        <span className="text-xs text-gray-500">pointages non comptés</span>
+                      </>
+                    )}
                   </span>
                   {!known.has(u.pin) && u.privilege === 0 && Number(u.pin) < 9000 && (
                     <ActionForm

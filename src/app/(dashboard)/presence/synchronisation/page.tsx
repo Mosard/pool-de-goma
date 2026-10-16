@@ -15,7 +15,7 @@ import { PresenceRefresher } from "../refresher";
 import { SimulatedBadge } from "../presence-ui";
 
 const STATUS: Record<string, { label: string; color: "gray" | "orange" | "green" }> = {
-  NON_VERIFIE: { label: "Non vérifié sur l'appareil réel", color: "orange" },
+  NON_VERIFIE: { label: "Non vérifié", color: "orange" },
   VERIFIE: { label: "Vérifié", color: "green" },
   DESACTIVE: { label: "Désactivé", color: "gray" },
 };
