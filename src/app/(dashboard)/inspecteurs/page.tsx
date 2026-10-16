@@ -8,6 +8,7 @@ import { PERMISSIONS } from "@/lib/rbac-data";
 import { canGrantRole, hasPermissionAnyPool } from "@/lib/permissions";
 import { toggleUserStatusAction } from "./actions";
 import { ReissueActivation } from "./reissue-activation";
+import { displaySex } from "@/lib/personnel/record";
 
 export default async function InspecteursPage({
   searchParams,
@@ -87,6 +88,7 @@ export default async function InspecteursPage({
             <tr>
               <th className="px-6 py-3">Nom</th>
               <th className="px-6 py-3">Email</th>
+              <th className="px-6 py-3">Sexe</th>
               <th className="px-6 py-3">Rôles</th>
               <th className="px-6 py-3">Pool</th>
               <th className="px-6 py-3">Statut</th>
@@ -101,6 +103,7 @@ export default async function InspecteursPage({
                   {u.username && <span className="block font-mono text-xs font-normal text-gray-500">{u.username}</span>}
                 </td>
                 <td className="px-6 py-3 text-gray-600">{u.email}</td>
+                <td className="px-6 py-3 text-gray-600">{displaySex(u.sex)}</td>
                 <td className="px-6 py-3 text-gray-600">{u.roles.map((r) => r.role.label).join(", ") || "—"}</td>
                 <td className="px-6 py-3 text-gray-600">{u.pool?.name ?? "—"}</td>
                 <td className="px-6 py-3">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Card, Input, Label, Select, Alert } from "@/components/ui";
+import { Button, Card, Input, Label, Select, Alert, FieldError } from "@/components/ui";
 import { updateProfileAction, type ProfileFormState } from "./actions";
 
 const initialState: ProfileFormState = {};
@@ -36,11 +36,12 @@ export function ProfileForm({
             </div>
             <div>
               <Label htmlFor="sex">Sexe</Label>
-              <Select id="sex" name="sex" defaultValue={defaultValues.sex ?? ""}>
-                <option value="">Non précisé</option>
+              <Select id="sex" name="sex" defaultValue={defaultValues.sex ?? ""} required>
+                <option value="" disabled>Choisir…</option>
                 <option value="M">Masculin</option>
                 <option value="F">Féminin</option>
               </Select>
+              <FieldError message={state.errors?.sex} />
             </div>
             <div>
               <Label htmlFor="dateNaissance">Date de naissance</Label>

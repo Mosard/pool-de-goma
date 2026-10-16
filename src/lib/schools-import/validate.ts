@@ -3,7 +3,21 @@
 // son numéro et son motif ; elle ne bloque jamais les autres.
 
 import { IMPORT_COLUMNS, type ImportField } from "@/lib/schools-import/columns";
-import { COUNT_INVALID, OPTIONS_SECONDARY_ONLY, isSecondaryType, normalizeOptions, parseCount, sameCode } from "@/lib/school-fields";
+import {
+  COUNT_INVALID,
+  MANAGEMENT_INVALID,
+  OPTIONS_SECONDARY_ONLY,
+  QUALIFIED_EXCEEDS_TOTAL,
+  confessionProblem,
+  isSecondaryType,
+  normalizeConfession,
+  normalizeOptions,
+  parseCount,
+  parseManagement,
+  qualifiedExceedsTotal,
+  sameCode,
+  type SchoolManagementValue,
+} from "@/lib/school-fields";
 
 /** Ligne lue dans le fichier : numéro de ligne Excel et texte des cellules (vide = ""). */
 export type RawRow = { line: number; cells: Partial<Record<ImportField, string>> };
@@ -15,12 +29,15 @@ export type SchoolImportData = {
   province: string;
   territoire: string;
   type: string | null;
+  management: SchoolManagementValue | null;
+  confession: string | null;
   director: string | null;
   phone: string | null;
   address: string | null;
   approvalDecree: string | null;
   classCount: number | null;
   teacherCount: number | null;
+  qualifiedTeacherCount: number | null;
   options: string | null;
 };
 
@@ -43,6 +60,12 @@ export function validateRow(row: RawRow, poolCode: string): { ok: true; row: Val
     const min = MIN_LENGTH[col.field];
     if (min && value.length < min) reasons.push(`${col.label} : ${min} caractères minimum`);
     if (col.kind === "count" && parseCount(value) === "invalid") reasons.push(`${col.label} : ${COUNT_INVALID.toLowerCase()} (« ${value} »)`);
+    if (col.field === "management" && parseManagement(value) === "invalid") reasons.push(`${MANAGEMENT_INVALID.replace(/\.$/, "")} (« ${value} »)`);
+  }
+  const qualified = parseCount(text("qualifiedTeacherCount"));
+  const total = parseCount(text("teacherCount"));
+  if (qualified !== "invalid" && total !== "invalid" && qualifiedExceedsTotal(qualified, total)) {
+    reasons.push(`${QUALIFIED_EXCEEDS_TOTAL.replace(/\.$/, "").toLowerCase()} (${qualified} > ${total})`);
   }
 
   // Le POOL vient TOUJOURS du choix fait à l'écran : la colonne ne sert qu'à vérifier.
@@ -55,7 +78,7 @@ export function validateRow(row: RawRow, poolCode: string): { ok: true; row: Val
   if (reasons.length > 0) return { ok: false, rejection: { line: row.line, code: code || null, reason: capitalize(reasons.join(" ; ")) } };
 
   const optional = (field: ImportField) => text(field) || null;
-  const count = (field: "classCount" | "teacherCount") => parseCount(text(field)) as number | null;
+  const count = (field: "classCount" | "teacherCount" | "qualifiedTeacherCount") => parseCount(text(field)) as number | null;
   return {
     ok: true,
     row: {
@@ -66,12 +89,15 @@ export function validateRow(row: RawRow, poolCode: string): { ok: true; row: Val
         province: text("province"),
         territoire: text("territoire"),
         type: optional("type"),
+        management: parseManagement(text("management")) as SchoolManagementValue | null,
+        confession: normalizeConfession(text("confession")),
         director: optional("director"),
         phone: optional("phone"),
         address: optional("address"),
         approvalDecree: optional("approvalDecree"),
         classCount: count("classCount"),
         teacherCount: count("teacherCount"),
+        qualifiedTeacherCount: count("qualifiedTeacherCount"),
         options: normalizeOptions(text("options")),
       },
     },
@@ -110,17 +136,23 @@ const VALUE_FIELDS = [
   "province",
   "territoire",
   "type",
+  "management",
+  "confession",
   "director",
   "phone",
   "address",
   "approvalDecree",
   "classCount",
   "teacherCount",
+  "qualifiedTeacherCount",
   "options",
 ] as const satisfies readonly (keyof SchoolValues)[];
 
 export function planCreate(data: SchoolImportData): { ok: true; values: SchoolImportData } | { ok: false; reason: string } {
   if (data.options && !isSecondaryType(data.type)) return { ok: false, reason: OPTIONS_SECONDARY_ONLY };
+  if (qualifiedExceedsTotal(data.qualifiedTeacherCount, data.teacherCount)) return { ok: false, reason: QUALIFIED_EXCEEDS_TOTAL };
+  const confession = confessionProblem(data.management, data.confession);
+  if (confession) return { ok: false, reason: confession };
   return { ok: true, values: data };
 }
 
@@ -136,12 +168,25 @@ export function planUpdate(
 ): { ok: true; changes: Partial<SchoolValues> } | { ok: false; reason: string } {
   const effectiveType = data.type ?? existing.type;
   if (data.options && !isSecondaryType(effectiveType)) return { ok: false, reason: OPTIONS_SECONDARY_ONLY };
+  // Cohérence sur les valeurs résultantes : une cellule vide garde la valeur enregistrée.
+  const qualified = data.qualifiedTeacherCount ?? existing.qualifiedTeacherCount;
+  const total = data.teacherCount ?? existing.teacherCount;
+  if (qualifiedExceedsTotal(qualified, total)) {
+    return { ok: false, reason: `${QUALIFIED_EXCEEDS_TOTAL} (après import : ${qualified} qualifiés pour ${total} enseignants)` };
+  }
+  // Confession : exigée pour une école conventionnée ; retirée si elle ne l'est plus.
+  const effectiveManagement = data.management ?? existing.management;
+  if (data.confession && effectiveManagement !== "CONVENTIONED") return { ok: false, reason: confessionProblem(effectiveManagement, data.confession)! };
+  if (effectiveManagement === "CONVENTIONED" && !(data.confession ?? existing.confession)) {
+    return { ok: false, reason: confessionProblem(effectiveManagement, null)! };
+  }
   const changes: Partial<Record<keyof SchoolValues, unknown>> = {};
   for (const field of VALUE_FIELDS) {
     const value = data[field];
     if (value !== null && value !== existing[field]) changes[field] = value;
   }
   if (!isSecondaryType(effectiveType) && existing.options) changes.options = null;
+  if (effectiveManagement !== "CONVENTIONED" && existing.confession) changes.confession = null;
   return { ok: true, changes: changes as Partial<SchoolValues> };
 }
 
