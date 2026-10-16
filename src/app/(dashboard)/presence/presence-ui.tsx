@@ -9,18 +9,35 @@ import { formatDateKey } from "@/lib/presence/time";
 // Affichage commun des présences : heures réelles, signalements validés,
 // mentions explicites pour tout ce qui dépend d'une règle non décidée.
 
-const STATUS_COLORS: Record<string, "gray" | "blue" | "green" | "orange" | "red"> = {
-  ENTREE_SORTIE: "green",
-  ENTREE_SEULE: "blue",
-  SORTIE_SEULE: "blue",
-  POINTAGES_MULTIPLES: "orange",
-  SENS_INCONNU: "orange",
-  AUCUN_POINTAGE: "gray",
-  SANS_IDENTIFIANT: "gray",
-  JOUR_NON_TRAVAILLE: "gray",
-  A_VENIR: "gray",
-  HORAIRE_NON_CONFIGURE: "red",
+// Point de couleur de l'état du jour (le texte porte le sens ; la couleur ne fait que l'appuyer).
+const STATUS_DOT: Record<string, string> = {
+  ENTREE_SORTIE: "bg-emerald-500",
+  ENTREE_SEULE: "bg-blue-500",
+  SORTIE_SEULE: "bg-blue-500",
+  POINTAGES_MULTIPLES: "bg-amber-500",
+  SENS_INCONNU: "bg-amber-500",
+  AUCUN_POINTAGE: "bg-gray-300",
+  SANS_IDENTIFIANT: "bg-gray-300",
+  JOUR_NON_TRAVAILLE: "bg-gray-300",
+  A_VENIR: "bg-gray-300",
+  HORAIRE_NON_CONFIGURE: "bg-red-500",
 };
+
+/**
+ * Règles non décidées : le texte complet est long et identique sur toutes les
+ * lignes. Dans le tableau, une étiquette courte (texte complet au survol) ;
+ * l'explication figure une seule fois dans « Règles en attente de décision ».
+ */
+const RULE_SHORT: { rule: { code: string; message: string }; label: string }[] = [
+  { rule: PENDING_RULES.SYNC, label: "synchronisation" },
+  { rule: PENDING_RULES.ABSENCE, label: "absence" },
+  { rule: PENDING_RULES.LATE_DURATION, label: "durée du retard" },
+  { rule: PENDING_RULES.SECONDS, label: "secondes" },
+  { rule: PENDING_RULES.PAIRING, label: "pointages multiples" },
+  { rule: PENDING_RULES.UNKNOWN_DIRECTION, label: "sens du pointage" },
+  { rule: PENDING_RULES.NON_WORKED_PUNCH, label: "jour non travaillé" },
+];
+const ruleOf = (note: string) => RULE_SHORT.find((r) => r.rule.message === note);
 
 export function SimulatedBadge() {
   return <Badge color="orange">Simulation</Badge>;
@@ -28,8 +45,11 @@ export function SimulatedBadge() {
 
 export function StatusBadge({ s }: { s: DaySummary }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      <Badge color={STATUS_COLORS[s.status] ?? "gray"}>{s.label}</Badge>
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="inline-flex items-baseline gap-2 text-sm font-medium text-gray-900">
+        <span className={`relative top-[-1px] h-2 w-2 shrink-0 self-center rounded-full ${STATUS_DOT[s.status] ?? "bg-gray-300"}`} aria-hidden />
+        {s.label}
+      </span>
       {s.simulated && <SimulatedBadge />}
     </span>
   );
@@ -44,9 +64,11 @@ export function LateCell({ s }: { s: DaySummary }) {
   if (!s.arrival) return <span className="text-gray-400">—</span>;
   if (s.late === true) {
     return (
-      <span>
+      <span className="whitespace-nowrap">
         <span className="font-medium text-red-700">Retard signalé</span>
-        <span className="block text-xs text-amber-700">Durée non calculée — règle à configurer</span>
+        <span className="block text-xs text-gray-500" title={PENDING_RULES.LATE_DURATION.message}>
+          durée non calculée
+        </span>
       </span>
     );
   }
@@ -56,12 +78,13 @@ export function LateCell({ s }: { s: DaySummary }) {
 export function OvertimeCell({ s }: { s: DaySummary }) {
   if (s.overtimeProposedMin !== null) {
     return (
-      <span>
-        {s.overtimeProposedMin} min <span className="block text-xs text-gray-500">proposées, non approuvées</span>
+      <span className="whitespace-nowrap">
+        <span className="font-medium tabular-nums text-gray-900">{s.overtimeProposedMin} min</span>
+        <span className="block text-xs text-gray-500">proposées, non approuvées</span>
       </span>
     );
   }
-  if (s.overtimePending) return <span className="text-xs text-amber-700">Proposé — durée non calculée</span>;
+  if (s.overtimePending) return <span className="whitespace-nowrap text-xs text-gray-500">proposé, durée non calculée</span>;
   return <span className="text-gray-400">—</span>;
 }
 
@@ -69,27 +92,61 @@ export function EarlyCell({ s }: { s: DaySummary }) {
   if (!s.departure) return <span className="text-gray-400">—</span>;
   if (s.earlyDeparture) {
     return (
-      <span>
+      <span className="whitespace-nowrap">
         <span className="font-medium text-red-700">Départ anticipé</span>
-        <span className="block text-xs text-gray-500">sous réserve d&apos;une autorisation</span>
+        <span className="block text-xs text-gray-500">sous réserve d&apos;autorisation</span>
       </span>
     );
   }
   return yesNo(s.earlyDeparture, "Départ anticipé");
 }
 
-const DIRECTION_LABELS = { IN: " (entrée)", OUT: " (sortie)", UNKNOWN: " (sens non transmis)" } as const;
+const DIRECTION_LABELS = { IN: "entrée", OUT: "sortie", UNKNOWN: "sens non transmis" } as const;
 
+/**
+ * Détail du jour sous l'état : pointages, faits constatés (phrases courtes),
+ * puis étiquettes des règles en attente. Les mentions déjà portées par une
+ * colonne (retard, départ anticipé, temps supplémentaire) ne sont pas répétées.
+ */
 export function Notes({ s }: { s: DaySummary }) {
-  const shown = s.notes.filter((n) => !n.startsWith("Retard signalé") && !n.startsWith("Temps supplémentaire proposé :"));
+  const repeated = (n: string) =>
+    n.startsWith("Retard signalé") || n.startsWith("Temps supplémentaire proposé") || n.startsWith("Départ anticipé") || n === PENDING_RULES.LATE_DURATION.message;
+  const rest = s.notes.filter((n) => !repeated(n));
+  const facts = rest.filter((n) => !ruleOf(n));
+  const rules = [...new Map(rest.flatMap((n) => (ruleOf(n) ? [ruleOf(n)!] : [])).map((r) => [r.label, r])).values()];
+  if (s.punches.length === 0 && facts.length === 0 && rules.length === 0) return null;
   return (
-    <div className="space-y-0.5 text-xs text-gray-600">
-      {s.punches.length > 0 && <p>Pointages : {s.punches.map((p) => `${p.clock}${DIRECTION_LABELS[p.direction]}`).join(", ")}</p>}
-      {shown.map((n) => (
-        <p key={n} className={/règle à configurer|non confirmée|pas décidée/.test(n) ? "text-amber-700" : ""}>
+    <div className="space-y-1.5 text-xs text-gray-600">
+      {s.punches.length > 0 && (
+        <p className="tabular-nums">
+          {s.punches.map((p, i) => (
+            <span key={`${p.clock}-${i}`} className="whitespace-nowrap">
+              {i > 0 && ", "}
+              <span className="font-medium text-gray-800">{p.clock}</span> {DIRECTION_LABELS[p.direction]}
+            </span>
+          ))}
+        </p>
+      )}
+      {facts.map((n) => (
+        <p key={n} className="text-pretty">
           {n}
         </p>
       ))}
+      {rules.length > 0 && (
+        <ul className="flex flex-wrap gap-1" aria-label="Règles en attente de décision">
+          {rules.map((r) => (
+            <li
+              key={r.label}
+              title={r.rule.message}
+              className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200"
+            >
+              <span className="sr-only">Règle en attente : </span>
+              {r.label}
+              <span className="font-mono font-normal text-amber-600">{r.rule.code}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -130,14 +187,14 @@ export function PresenceTable({ rows, showDate, canOpenRecord }: { rows: Presenc
             {rows.map((r) => (
               <tr key={`${r.userId}-${r.dateKey}`} className="transition-colors hover:bg-gray-50/70">
                 {showDate && <td className="whitespace-nowrap px-4 py-3 tabular-nums text-gray-600">{formatDateKey(r.dateKey)}</td>}
-                <td className="min-w-48 px-4 py-3">
+                <td className="min-w-44 px-4 py-3">
                   <span className="font-medium text-gray-900">{r.name}</span>
                   <span className="block text-xs text-gray-500">{agentContext(r)}</span>
                   {canOpenRecord && <RecordPanelButton userId={r.userId} name={r.name} />}
                 </td>
-                <td className="min-w-56 px-4 py-3">
+                <td className="w-[22rem] min-w-64 px-4 py-3">
                   <StatusBadge s={r.summary} />
-                  <div className="mt-1.5">
+                  <div className="mt-1.5 empty:hidden">
                     <Notes s={r.summary} />
                   </div>
                 </td>
@@ -205,7 +262,7 @@ export function PresenceTable({ rows, showDate, canOpenRecord }: { rows: Presenc
                 </dd>
               </div>
             </dl>
-            <div className="mt-3">
+            <div className="mt-3 empty:hidden">
               <Notes s={r.summary} />
             </div>
             {canOpenRecord && <RecordPanelButton userId={r.userId} name={r.name} />}
@@ -243,12 +300,14 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
 
 /** Rappel des règles non décidées qui bloquent certains calculs. */
 export function PendingRulesNote() {
-  const items = [PENDING_RULES.LATE_DURATION, PENDING_RULES.PAIRING, PENDING_RULES.SECONDS, PENDING_RULES.ABSENCE, PENDING_RULES.SYNC];
+  const items = RULE_SHORT.map((r) => r.rule);
   return (
     <details className="group rounded-xl border border-amber-200 bg-amber-50/70 text-xs text-amber-900">
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-4 py-3 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 [&::-webkit-details-marker]:hidden">
         <AlertTriangle size={16} aria-hidden className="shrink-0 text-amber-600" />
-        <span className="flex-1">Règles en attente de décision : certains calculs sont bloqués, les données brutes sont conservées</span>
+        <span className="flex-1">
+          Règles en attente de décision (étiquettes ambre du tableau) : certains calculs sont bloqués, les données brutes sont conservées
+        </span>
         <ChevronDown size={16} aria-hidden className="shrink-0 transition-transform duration-200 group-open:rotate-180" />
       </summary>
       <ul className="space-y-1.5 border-t border-amber-200 px-4 py-3">

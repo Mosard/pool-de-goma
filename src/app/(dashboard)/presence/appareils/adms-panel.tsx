@@ -1,4 +1,4 @@
-import { Badge, SubHeading } from "@/components/ui";
+import { SubHeading } from "@/components/ui";
 import { ADMS_PAIRING_MINUTES } from "@/lib/presence/devices";
 import { formatGomaDateTime } from "@/lib/presence/time";
 import { ActionForm } from "../action-form";
@@ -59,13 +59,26 @@ export function AdmsPanel({
     <section className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SubHeading>Pointeuse ADMS</SubHeading>
-        {d.admsPairedAt ? (
-          <Badge color="green">Appairée le {formatGomaDateTime(d.admsPairedAt)}</Badge>
-        ) : pairingOpen ? (
-          <Badge color="blue">Appairage ouvert jusqu&apos;à {formatGomaDateTime(d.admsPairingUntil!)}</Badge>
-        ) : (
-          <Badge color="orange">Non appairée — la pointeuse est refusée</Badge>
-        )}
+        <p className="inline-flex items-center gap-2 text-sm">
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${d.admsPairedAt ? "bg-emerald-500" : pairingOpen ? "bg-blue-500" : "bg-amber-500"}`}
+            aria-hidden
+          />
+          {d.admsPairedAt ? (
+            <span>
+              <span className="font-medium text-gray-900">Appairée</span> <span className="text-gray-500">le {formatGomaDateTime(d.admsPairedAt)}</span>
+            </span>
+          ) : pairingOpen ? (
+            <span>
+              <span className="font-medium text-gray-900">Appairage ouvert</span>{" "}
+              <span className="text-gray-500">jusqu&apos;à {formatGomaDateTime(d.admsPairingUntil!)}</span>
+            </span>
+          ) : (
+            <span>
+              <span className="font-medium text-gray-900">Non appairée</span> <span className="text-gray-500">— la pointeuse est refusée</span>
+            </span>
+          )}
+        </p>
       </div>
 
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
