@@ -70,6 +70,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return true;
     },
     async jwt({ token, user, account }) {
+      // Moyen et heure de la connexion : une connexion Google récente peut
+      // remplacer le mot de passe actuel dans « Mon profil » (src/lib/login-credentials.ts).
+      if (account) {
+        token.authMethod = account.provider;
+        token.authAt = Date.now();
+      }
       if (account?.provider === "google" && user?.email) {
         const dbUser = await prisma.user.findUnique({ where: { email: user.email.toLowerCase() } });
         if (dbUser) {
@@ -107,6 +113,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.viewModeKind = access.viewModeKind;
         session.user.viewMode = access.viewMode;
         session.user.awaitingCell = access.awaitingCell;
+        session.user.authMethod = token.authMethod as string | undefined;
+        session.user.authAt = token.authAt as number | undefined;
       }
       return session;
     },

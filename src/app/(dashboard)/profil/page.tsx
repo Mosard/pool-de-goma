@@ -9,6 +9,9 @@ import { ProfileForm } from "./profile-form";
 import { PhotoForm } from "./photo-form";
 import { ConsentForm } from "./consent-form";
 import { roleDisplayLabel } from "@/lib/cells/rules";
+import { USERNAME_RULE } from "@/lib/activation-token";
+import { RECENT_GOOGLE_LOGIN_MINUTES, recentGoogleMinutesLeft } from "@/lib/login-credentials-rules";
+import { LoginCredentialsForm } from "./login-credentials-form";
 
 export default async function ProfilPage() {
   const session = await auth();
@@ -76,6 +79,17 @@ export default async function ProfilPage() {
           nombreEnfants: user.nombreEnfants,
         }}
       />
+
+      {!session.user.viewMode && (
+        <LoginCredentialsForm
+          currentUsername={user.username}
+          email={user.email}
+          usernameRule={USERNAME_RULE}
+          recentMinutes={RECENT_GOOGLE_LOGIN_MINUTES}
+          googleMinutesLeft={recentGoogleMinutesLeft(session.user.authMethod, session.user.authAt)}
+          googleEnabled={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
+        />
+      )}
 
       <Card>
         <h3 className="mb-3 text-sm font-semibold text-gray-900">Informations administratives</h3>
