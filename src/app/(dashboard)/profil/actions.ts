@@ -4,69 +4,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { profileSchema } from "@/lib/validations";
 import { logAudit } from "@/lib/audit";
 import { normalizeProfilePhoto } from "@/lib/profile-photo";
 import { revalidatePublicPools } from "@/lib/public-pools";
 import { applyPublicationDecision, PUBLICATION_REASONS } from "@/lib/publication";
-import { changedFieldNames } from "@/lib/audit-fields";
 import { AccountError } from "@/lib/accounts";
-import { setOwnLoginCredentials } from "@/lib/login-credentials";
-import { isRecentGoogleLogin, ownCredentialsSchema } from "@/lib/login-credentials-rules";
-
-export type ProfileFormState = {
-  errors?: Record<string, string>;
-  formError?: string;
-  success?: boolean;
-};
-
-export async function updateProfileAction(
-  _prevState: ProfileFormState,
-  formData: FormData
-): Promise<ProfileFormState> {
-  const session = await auth();
-  if (!session?.user || session.user.awaitingCell) redirect("/login");
-
-  const parsed = profileSchema.safeParse({
-    prenom: formData.get("prenom"),
-    postnom: formData.get("postnom"),
-    sex: formData.get("sex"),
-    phone: formData.get("phone"),
-    dateNaissance: formData.get("dateNaissance"),
-    nombreEnfants: formData.get("nombreEnfants"),
-  });
-
-  if (!parsed.success) {
-    return { errors: parsed.error.flatten().fieldErrors as Record<string, string> };
-  }
-
-  const data = {
-    prenom: parsed.data.prenom || null,
-    postnom: parsed.data.postnom || null,
-    sex: parsed.data.sex || null,
-    phone: parsed.data.phone || null,
-    dateNaissance: parsed.data.dateNaissance ? new Date(parsed.data.dateNaissance) : null,
-    nombreEnfants: parsed.data.nombreEnfants ? Number(parsed.data.nombreEnfants) : null,
-  };
-  const before = await prisma.user.findUniqueOrThrow({
-    where: { id: session.user.id },
-    select: { prenom: true, postnom: true, sex: true, phone: true, dateNaissance: true, nombreEnfants: true },
-  });
-  await prisma.user.update({ where: { id: session.user.id }, data });
-
-  // Journal : noms des champs modifiés seulement, jamais leur contenu.
-  await logAudit({
-    actorId: session.user.id,
-    organizationId: session.user.organizationId,
-    action: "profile.update",
-    entityType: "User",
-    entityId: session.user.id,
-    metadata: { fields: changedFieldNames(before, data) },
-  });
-
-  revalidatePath("/profil");
-  return { success: true };
-}
+import { changeOwnPassword, changeOwnUsername, checkUsernameAvailability } from "@/lib/login-credentials";
+import {
+  AVAILABILITY_MESSAGES,
+  isRecentGoogleLogin,
+  passwordChangeSchema,
+  usernameChangeSchema,
+  type UsernameAvailability,
+} from "@/lib/login-credentials-rules";
 
 export type PhotoFormState = {
   formError?: string;
@@ -166,45 +116,82 @@ export async function updatePublicationConsentAction(
   revalidatePath("/profil");
   return { success: true };
 }
+// ─── Sécurité et identifiants (« Mon compte ») ───────────────────────────────
 
-export type LoginCredentialsState = {
-  errors?: Record<string, string>;
-  formError?: string;
-  success?: { username: string; passwordChanged: boolean };
-};
-
-/** Identifiant et mot de passe du titulaire, pour se connecter sans Google. */
-export async function updateLoginCredentialsAction(
-  _prevState: LoginCredentialsState,
-  formData: FormData
-): Promise<LoginCredentialsState> {
+async function credentialActor() {
   const session = await auth();
   if (!session?.user || session.user.awaitingCell) redirect("/login");
-  if (session.user.viewMode) {
-    return { formError: "Quittez le mode « Voir comme » pour modifier vos identifiants de connexion." };
-  }
+  return {
+    session,
+    actor: {
+      userId: session.user.id,
+      organizationId: session.user.organizationId,
+      recentGoogle: isRecentGoogleLogin(session.user.authMethod, session.user.authAt),
+      mayUseReservedUsername: Boolean(session.user.isSuperAdmin),
+    },
+  };
+}
 
-  const parsed = ownCredentialsSchema.safeParse({
+const VIEW_MODE_REFUSAL = "Quittez le mode « Voir comme » pour modifier vos identifiants de connexion.";
+
+function fieldErrors(error: { flatten: () => { fieldErrors: Record<string, string[] | undefined> } }) {
+  return Object.fromEntries(Object.entries(error.flatten().fieldErrors).map(([k, v]) => [k, v?.[0] ?? ""]));
+}
+
+/** Disponibilité d'un nom d'utilisateur, pendant la saisie. */
+export async function checkUsernameAction(username: string): Promise<{ status: UsernameAvailability; message: string }> {
+  const { actor } = await credentialActor();
+  const status = await checkUsernameAvailability(actor.userId, String(username ?? "").slice(0, 64), actor.mayUseReservedUsername);
+  return { status, message: AVAILABILITY_MESSAGES[status] };
+}
+
+export type UsernameFormState = {
+  errors?: Record<string, string>;
+  formError?: string;
+  success?: { username: string; previous: string | null };
+};
+
+export async function updateUsernameAction(_prev: UsernameFormState, formData: FormData): Promise<UsernameFormState> {
+  const { session, actor } = await credentialActor();
+  if (session.user.viewMode) return { formError: VIEW_MODE_REFUSAL };
+
+  const parsed = usernameChangeSchema.safeParse({
     username: formData.get("username") ?? "",
+    currentPassword: formData.get("currentPassword") ?? "",
+  });
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
+
+  try {
+    const result = await changeOwnUsername(actor, parsed.data);
+    revalidatePath("/profil");
+    return { success: result };
+  } catch (e) {
+    if (e instanceof AccountError) return { formError: e.message };
+    throw e;
+  }
+}
+
+export type PasswordFormState = {
+  errors?: Record<string, string>;
+  formError?: string;
+  success?: boolean;
+};
+
+export async function updatePasswordAction(_prev: PasswordFormState, formData: FormData): Promise<PasswordFormState> {
+  const { session, actor } = await credentialActor();
+  if (session.user.viewMode) return { formError: VIEW_MODE_REFUSAL };
+
+  const parsed = passwordChangeSchema.safeParse({
     password: formData.get("password") ?? "",
     confirmation: formData.get("confirmation") ?? "",
     currentPassword: formData.get("currentPassword") ?? "",
   });
-  if (!parsed.success) {
-    const fieldErrors = parsed.error.flatten().fieldErrors;
-    return { errors: Object.fromEntries(Object.entries(fieldErrors).map(([k, v]) => [k, v?.[0] ?? ""])) };
-  }
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
 
   try {
-    const result = await setOwnLoginCredentials({
-      userId: session.user.id,
-      organizationId: session.user.organizationId,
-      input: parsed.data,
-      recentGoogle: isRecentGoogleLogin(session.user.authMethod, session.user.authAt),
-      mayUseReservedUsername: Boolean(session.user.isSuperAdmin),
-    });
+    await changeOwnPassword(actor, parsed.data);
     revalidatePath("/profil");
-    return { success: { username: result.username, passwordChanged: result.passwordChanged } };
+    return { success: true };
   } catch (e) {
     if (e instanceof AccountError) return { formError: e.message };
     throw e;

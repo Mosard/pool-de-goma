@@ -18,7 +18,7 @@ export default async function MaFichePage() {
   return (
     <div className="space-y-6">
       <Link href="/profil" className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900">
-        <ArrowLeft size={14} aria-hidden /> Mon profil
+        <ArrowLeft size={14} aria-hidden /> Mon compte
       </Link>
       <PageHeader
         title="Ma fiche personnelle"

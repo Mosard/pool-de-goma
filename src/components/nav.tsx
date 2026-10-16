@@ -128,7 +128,7 @@ export function Topbar({
           className="hidden items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 sm:flex"
         >
           <UserIcon size={16} strokeWidth={1.75} />
-          Mon profil
+          Mon compte
         </Link>
         <form action={signOutAction}>
           <button
