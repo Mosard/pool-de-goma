@@ -28,6 +28,9 @@ export const PERMISSIONS = {
   PRESENCE_READ_ALL: "presence.read_all",
   PRESENCE_READ_CELL: "presence.read_cell",
   PERSONNEL_RECORDS_READ_ALL: "personnel.records.read_all",
+  // Fiche individuelle IGAP (2026-10-16) : modifier la fiche d'un AUTRE agent.
+  // Sa propre fiche ne demande aucune permission.
+  PERSONNEL_RECORDS_EDIT_ALL: "personnel.records.edit_all",
   PRESENCE_DEVICES_MANAGE: "presence.devices.manage",
   PRESENCE_ENROLLMENT_MANAGE: "presence.enrollment.manage",
   PRESENCE_SCHEDULE_MANAGE: "presence.schedule.manage",
@@ -69,6 +72,7 @@ export const PERMISSION_CATALOG: { key: PermissionKey; label: string; category: 
   { key: PERMISSIONS.PRESENCE_READ_ALL, label: "Consulter les présences de tout le personnel (tous les POOL, bureaux et cellules)", category: "Présence du personnel" },
   { key: PERMISSIONS.PRESENCE_READ_CELL, label: "Consulter les présences des personnes de sa cellule", category: "Présence du personnel" },
   { key: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL, label: "Consulter les fiches détaillées de tout le personnel (lecture seule)", category: "Présence du personnel" },
+  { key: PERMISSIONS.PERSONNEL_RECORDS_EDIT_ALL, label: "Modifier les fiches individuelles de tout le personnel et y porter les observations", category: "Présence du personnel" },
   { key: PERMISSIONS.PRESENCE_DEVICES_MANAGE, label: "Administrer les pointeuses et leur synchronisation", category: "Présence du personnel" },
   { key: PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE, label: "Associer les identifiants de pointage aux comptes", category: "Présence du personnel" },
   { key: PERMISSIONS.PRESENCE_SCHEDULE_MANAGE, label: "Modifier les seuils horaires et le calendrier", category: "Présence du personnel" },
@@ -141,6 +145,7 @@ export const PERSONNEL_RECORD_READER_ROLE_KEYS: readonly string[] = DEVICE_ADMIN
 export const PERSONNEL_HEAD_KEYS: readonly PermissionKey[] = [
   PERMISSIONS.PRESENCE_READ_ALL,
   PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
+  PERMISSIONS.PERSONNEL_RECORDS_EDIT_ALL,
   PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,
   PERMISSIONS.PRESENCE_REQUESTS_INITIATE_UNCELLED,
   PERMISSIONS.PRESENCE_REQUESTS_VERIFY,
@@ -156,6 +161,7 @@ export const PERSONNEL_HEAD_KEYS: readonly PermissionKey[] = [
 // heures supplémentaires ; permissions de cellule (il ne dirige aucune cellule).
 export const SUPER_ADMIN_EXCLUDED_PERMISSIONS: readonly PermissionKey[] = [
   PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
+  PERMISSIONS.PERSONNEL_RECORDS_EDIT_ALL,
   PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,
   PERMISSIONS.PRESENCE_REQUESTS_VERIFY,
   PERMISSIONS.PRESENCE_REQUESTS_APPROVE_FINAL,
@@ -171,6 +177,7 @@ export const SUPER_ADMIN_EXCLUDED_PERMISSIONS: readonly PermissionKey[] = [
 export const PRESENCE_NOT_INDIVIDUALLY_GRANTABLE: readonly PermissionKey[] = [
   PERMISSIONS.PRESENCE_READ_ALL,
   PERMISSIONS.PERSONNEL_RECORDS_READ_ALL,
+  PERMISSIONS.PERSONNEL_RECORDS_EDIT_ALL,
   PERMISSIONS.PRESENCE_DEVICES_MANAGE,
   PERMISSIONS.PRESENCE_ENROLLMENT_MANAGE,
   PERMISSIONS.PRESENCE_SCHEDULE_MANAGE,

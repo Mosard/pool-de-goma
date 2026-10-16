@@ -137,13 +137,17 @@ export function bindPersonnelHeadPermissions(p: {
 }
 
 /**
- * Consultation des fiches du personnel par fonction RÉELLE (directive du
- * 2026-10-15) : Super Admin, Admin, IPP principal, informaticien. Portée
- * organisation, lecture seule ; rien pour toute autre fonction.
+ * Fiches du personnel par fonction RÉELLE (directives du 2026-10-15 et du
+ * 2026-10-16) : Super Admin, Admin, IPP principal, informaticien consultent
+ * ET modifient les fiches individuelles, à portée organisation ; rien pour
+ * toute autre fonction (l'IPA du personnel les reçoit par PERSONNEL_HEAD_KEYS).
  */
 export function bindRecordReaderPermissions(roleKeys: readonly string[], organizationId: string): SessionPermission[] {
   if (!roleKeys.some((k) => PERSONNEL_RECORD_READER_ROLE_KEYS.includes(k))) return [];
-  return [{ permissionKey: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL, poolId: null, organizationId }];
+  return [
+    { permissionKey: PERMISSIONS.PERSONNEL_RECORDS_READ_ALL, poolId: null, organizationId },
+    { permissionKey: PERMISSIONS.PERSONNEL_RECORDS_EDIT_ALL, poolId: null, organizationId },
+  ];
 }
 
 /**
