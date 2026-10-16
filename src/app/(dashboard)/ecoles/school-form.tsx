@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Card, Input, Label, Select, Textarea, FieldError } from "@/components/ui";
-import { isSecondaryType } from "@/lib/school-fields";
+import { SCHOOL_MANAGEMENT_LABELS, isSecondaryType } from "@/lib/school-fields";
 import type { SchoolFormState } from "./actions";
 
 const initialState: SchoolFormState = {};
@@ -24,9 +24,11 @@ export function SchoolForm({
     director?: string | null;
     phone?: string | null;
     type?: string | null;
+    management?: string | null;
     approvalDecree?: string | null;
     classCount?: number | null;
     teacherCount?: number | null;
+    qualifiedTeacherCount?: number | null;
     options?: string | null;
   };
 }) {
@@ -79,6 +81,16 @@ export function SchoolForm({
             />
           </div>
           <div>
+            <Label htmlFor="management">Gestion</Label>
+            <Select id="management" name="management" defaultValue={defaultValues?.management ?? ""}>
+              <option value="">Non renseignée</option>
+              {Object.entries(SCHOOL_MANAGEMENT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </Select>
+            <FieldError message={state.errors?.management} />
+          </div>
+          <div>
             <Label htmlFor="director">Directeur</Label>
             <Input id="director" name="director" defaultValue={defaultValues?.director ?? ""} />
           </div>
@@ -120,6 +132,19 @@ export function SchoolForm({
               defaultValue={defaultValues?.teacherCount ?? ""}
             />
             <FieldError message={state.errors?.teacherCount} />
+          </div>
+          <div>
+            <Label htmlFor="qualifiedTeacherCount">Nombre d&apos;enseignants qualifiés</Label>
+            <Input
+              id="qualifiedTeacherCount"
+              name="qualifiedTeacherCount"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              defaultValue={defaultValues?.qualifiedTeacherCount ?? ""}
+            />
+            <FieldError message={state.errors?.qualifiedTeacherCount} />
           </div>
           {isSecondaryType(type) && (
             <div className="sm:col-span-2">

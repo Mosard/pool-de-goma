@@ -1,7 +1,7 @@
 // Colonnes du canevas Excel des écoles (docs/import-ecoles-excel.md, § 3.2) :
 // source unique pour le canevas, la lecture du fichier et les messages.
 
-import { foldText } from "@/lib/school-fields";
+import { SCHOOL_MANAGEMENT_LABELS, foldText } from "@/lib/school-fields";
 
 export type ImportField =
   | "poolCode"
@@ -10,12 +10,14 @@ export type ImportField =
   | "province"
   | "territoire"
   | "type"
+  | "management"
   | "director"
   | "phone"
   | "address"
   | "approvalDecree"
   | "classCount"
   | "teacherCount"
+  | "qualifiedTeacherCount"
   | "options";
 
 export type ImportColumn = {
@@ -25,7 +27,9 @@ export type ImportColumn = {
   /** Nom court utilisé dans les motifs de rejet. */
   label: string;
   required: boolean;
-  kind: "text" | "count";
+  /** choice : valeur prise dans `choices` (liste déroulante du canevas). */
+  kind: "text" | "count" | "choice";
+  choices?: readonly string[];
   maxLength: number;
   width: number;
 };
@@ -37,12 +41,31 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
   { field: "province", header: "Province *", label: "Province", required: true, kind: "text", maxLength: 100, width: 14 },
   { field: "territoire", header: "Territoire *", label: "Territoire", required: true, kind: "text", maxLength: 100, width: 16 },
   { field: "type", header: "Type (Maternelle / Primaire / Secondaire)", label: "Type", required: false, kind: "text", maxLength: 100, width: 22 },
+  {
+    field: "management",
+    header: "Gestion (Publique / Privée)",
+    label: "Gestion",
+    required: false,
+    kind: "choice",
+    choices: Object.values(SCHOOL_MANAGEMENT_LABELS),
+    maxLength: 20,
+    width: 16,
+  },
   { field: "director", header: "Directeur", label: "Directeur", required: false, kind: "text", maxLength: 200, width: 24 },
   { field: "phone", header: "Téléphone", label: "Téléphone", required: false, kind: "text", maxLength: 50, width: 16 },
   { field: "address", header: "Adresse", label: "Adresse", required: false, kind: "text", maxLength: 300, width: 32 },
   { field: "approvalDecree", header: "Arrêté d'agrément", label: "Arrêté d'agrément", required: false, kind: "text", maxLength: 200, width: 24 },
   { field: "classCount", header: "Nombre de classes", label: "Nombre de classes", required: false, kind: "count", maxLength: 10, width: 12 },
   { field: "teacherCount", header: "Nombre d'enseignants", label: "Nombre d'enseignants", required: false, kind: "count", maxLength: 10, width: 14 },
+  {
+    field: "qualifiedTeacherCount",
+    header: "Nombre d'enseignants qualifiés",
+    label: "Nombre d'enseignants qualifiés",
+    required: false,
+    kind: "count",
+    maxLength: 10,
+    width: 16,
+  },
   {
     field: "options",
     header: "Options organisées (secondaire seulement, séparées par des virgules)",

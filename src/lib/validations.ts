@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { USERNAME_PATTERN, USERNAME_RULE } from "@/lib/activation-token";
-import { COUNT_INVALID, OPTIONS_SECONDARY_ONLY, isSecondaryType, normalizeOptions, parseCount } from "@/lib/school-fields";
+import {
+  COUNT_INVALID,
+  MANAGEMENT_INVALID,
+  OPTIONS_SECONDARY_ONLY,
+  QUALIFIED_EXCEEDS_TOTAL,
+  isSecondaryType,
+  normalizeOptions,
+  parseCount,
+  parseManagement,
+  qualifiedExceedsTotal,
+} from "@/lib/school-fields";
 
 const usernameField = z.string().trim().toLowerCase().regex(USERNAME_PATTERN, USERNAME_RULE);
 const newPasswordField = z.string().min(8, "8 caractères minimum").max(128, "128 caractères maximum");
@@ -67,8 +77,21 @@ export const schoolSchema = z
       .max(200, "200 caractères maximum")
       .nullish()
       .transform((v) => v || null),
+    // Statut de gestion : vide = non renseigné (null), jamais déduit.
+    management: z
+      .string()
+      .nullish()
+      .transform((v, ctx) => {
+        const m = parseManagement(v);
+        if (m === "invalid") {
+          ctx.addIssue({ code: "custom", message: MANAGEMENT_INVALID });
+          return z.NEVER;
+        }
+        return m;
+      }),
     classCount: schoolCountField,
     teacherCount: schoolCountField,
+    qualifiedTeacherCount: schoolCountField,
     // Absent du formulaire quand l'école n'est pas secondaire.
     options: z
       .string()
@@ -78,6 +101,9 @@ export const schoolSchema = z
   })
   .superRefine((v, ctx) => {
     if (v.options && !isSecondaryType(v.type)) ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_SECONDARY_ONLY });
+    if (qualifiedExceedsTotal(v.qualifiedTeacherCount, v.teacherCount)) {
+      ctx.addIssue({ code: "custom", path: ["qualifiedTeacherCount"], message: QUALIFIED_EXCEEDS_TOTAL });
+    }
   });
 
 export const userSchema = z.object({
@@ -97,6 +123,7 @@ export const accountRequestSchema = z
     username: usernameField,
     password: newPasswordField,
     confirmation: z.string(),
+    sex: z.enum(["M", "F"]).optional().or(z.literal("")),
     phone: z.string().optional().or(z.literal("")),
     requestedRoleId: z.string().optional().or(z.literal("")),
     poolId: z.string().optional().or(z.literal("")),

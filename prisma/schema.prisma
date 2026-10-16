@@ -23,6 +23,12 @@ enum Sex {
   F
 }
 
+// Statut de gestion d'une école (canevas d'import, 2026-10-16).
+enum SchoolManagement {
+  PUBLIC
+  PRIVATE
+}
+
 enum RoleScope {
   PROVINCE
   POOL
@@ -425,6 +431,9 @@ model AccountRequest {
   // demande (effacée aussi en cas de refus). Jamais affichée.
   username        String?
   passwordHash    String?
+  // Sexe déclaré dans la demande : recopié sur le compte à la validation.
+  // Vide = non renseigné (demandes antérieures au 2026-10-16).
+  sex             Sex?
   phone           String?
   message         String?
   requestedRoleId String?
@@ -462,31 +471,36 @@ model PasswordResetToken {
 // ---------------------------------------------------------------------------
 
 model School {
-  id             String   @id @default(cuid())
-  poolId         String
-  pool           Pool     @relation(fields: [poolId], references: [id])
-  name           String
+  id                    String            @id @default(cuid())
+  poolId                String
+  pool                  Pool              @relation(fields: [poolId], references: [id])
+  name                  String
   // Une école est identifiée par « code du POOL + code de l'école » (jamais
   // par son nom) : le même code peut exister dans deux POOL différents.
-  code           String
-  province       String
-  territoire     String
-  address        String?
-  director       String?
-  phone          String?
-  type           String?
+  code                  String
+  province              String
+  territoire            String
+  address               String?
+  director              String?
+  phone                 String?
+  type                  String?
   // Fiche administrative (docs/import-ecoles-excel.md) : jamais publiée.
-  approvalDecree String?
-  classCount     Int?
-  teacherCount   Int?
+  approvalDecree        String?
+  classCount            Int?
+  teacherCount          Int?
+  // Statut de gestion (Publique / Privée) et nombre d'enseignants qualifiés
+  // (jamais supérieur à teacherCount quand les deux sont connus). Vide = non
+  // renseigné : aucune valeur n'est déduite (2026-10-16).
+  management            SchoolManagement?
+  qualifiedTeacherCount Int?
   // Options organisées, écoles secondaires seulement : texte libre séparé
   // par des virgules (pas de liste imposée pour l'instant).
-  options        String?
-  active         Boolean  @default(true)
+  options               String?
+  active                Boolean           @default(true)
   // École de démonstration (seed) : jamais publiée.
-  isDemo         Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isDemo                Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
   assignments Assignment[]
   inspections Inspection[]

@@ -91,13 +91,14 @@ async function main() {
   assert.ok(demoInfo.isDemo);
 
   // Demande publique telle que la soumet le formulaire (mot de passe haché).
-  const request = async (p: { name: string; email: string; username: string; password: string; roleId?: string; poolId?: string }) =>
+  const request = async (p: { name: string; email: string; username: string; password: string; roleId?: string; poolId?: string; sex?: "M" | "F" }) =>
     submitAccountRequest({
       organizationId: org.id,
       name: p.name,
       email: p.email,
       username: p.username,
       passwordHash: await bcrypt.hash(p.password, 10),
+      sex: p.sex ?? null,
       phone: null,
       requestedRoleId: p.roleId ?? null,
       poolId: p.poolId ?? null,
@@ -180,6 +181,21 @@ async function main() {
     assert.ok(res.isDemo && res.activated && !res.activation);
     const logged = await verifyCredentials(demo.username, demo.password);
     assert.ok(logged?.isDemo);
+  });
+
+  await step("sexe déclaré dans la demande : conservé sur le compte validé ; absent = non renseigné", async () => {
+    assert.equal(accountRequestSchema.safeParse({ name: "A B", email: "a@exemple.cd", username: "ab.sexe", password: "motdepasse-1", confirmation: "motdepasse-1", sex: "X" }).success, false);
+    const f = { name: "Demo Sexe F", email: `sexe.f.${RUN}@example.test`, username: `sexe.f.${RUN}`, password: `Demo-mdp-${RUN}` };
+    const { requestId } = await request({ ...f, sex: "F", roleId: inspecteur.id, poolId: goma.id });
+    assert.equal((await prisma.accountRequest.findUniqueOrThrow({ where: { id: requestId } })).sex, "F");
+    await approveAccountRequest({ actorId: demoInfo.id, organizationId: org.id, requestId, roleId: inspecteur.id, poolId: goma.id, baseUrl: BASE });
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: f.email } });
+    assert.equal(user.sex, "F");
+    assert.equal(user.status, "ACTIVE");
+    const n = { name: "Demo Sexe N", email: `sexe.n.${RUN}@example.test`, username: `sexe.n.${RUN}`, password: `Demo-mdp-${RUN}` };
+    const r2 = await request({ ...n, roleId: inspecteur.id, poolId: goma.id });
+    await approveAccountRequest({ actorId: demoInfo.id, organizationId: org.id, requestId: r2.requestId, roleId: inspecteur.id, poolId: goma.id, baseUrl: BASE });
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { email: n.email } })).sex, null, "jamais déduit");
   });
 
   await step("un informaticien démo NE PEUT PAS créer un compte réel, ni émettre de lien pour un compte réel", async () => {

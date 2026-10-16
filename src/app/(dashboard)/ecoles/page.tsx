@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, EmptyState, Badge } from "@/components/ui";
 import { PERMISSIONS } from "@/lib/rbac-data";
 import { hasPermissionAnyPool } from "@/lib/permissions";
+import { displayManagement } from "@/lib/school-fields";
 
 export default async function EcolesPage() {
   const session = await auth();
@@ -59,7 +60,7 @@ export default async function EcolesPage() {
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-gray-600">
                   <p>{school.province} — {school.territoire}</p>
-                  {school.type && <p>{school.type}</p>}
+                  {(school.type || school.management) && <p>{[school.type, displayManagement(school.management)].filter(Boolean).join(" · ")}</p>}
                   {school.director && <p>Directeur : {school.director}</p>}
                 </div>
                 <div className="mt-4 flex gap-4 text-xs text-gray-400">

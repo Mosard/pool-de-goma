@@ -57,6 +57,15 @@ export async function buildSchoolTemplate(pools: { code: string; name: string }[
           errorTitle: c.label,
           error: "Nombre entier positif attendu.",
         };
+      } else if (c.kind === "choice" && c.choices) {
+        row.getCell(i + 1).dataValidation = {
+          type: "list",
+          formulae: [`"${c.choices.join(",")}"`],
+          allowBlank: true,
+          showErrorMessage: true,
+          errorTitle: c.label,
+          error: `Choisissez : ${c.choices.join(" ou ")}.`,
+        };
       } else if (c.field === "poolCode" && poolList) {
         row.getCell(i + 1).dataValidation = {
           type: "list",
@@ -80,7 +89,9 @@ export async function buildSchoolTemplate(pools: { code: string; name: string }[
     "   • Code absent du POOL : l'école est créée.  • Code déjà enregistré dans ce POOL : la fiche est mise à jour.",
     "3. Colonnes marquées * : obligatoires. Une cellule facultative laissée vide ne modifie pas la valeur déjà enregistrée.",
     "4. Le code du POOL de chaque ligne doit être celui du POOL choisi à l'écran d'import ; sinon la ligne est rejetée.",
-    "5. Nombre de classes et nombre d'enseignants : nombres entiers (0 ou plus).",
+    "5. Nombre de classes, d'enseignants et d'enseignants qualifiés : nombres entiers (0 ou plus).",
+    "   Le nombre d'enseignants qualifiés ne peut pas dépasser le nombre d'enseignants.",
+    "   Gestion : « Publique » ou « Privée » (liste déroulante). Laissée vide : non renseignée.",
     "6. Options organisées : écoles secondaires seulement (type « Secondaire »), séparées par des virgules.",
     "   Exemple : Pédagogie générale, Commerciale et gestion, Scientifique",
     `7. ${MAX_IMPORT_ROWS} écoles au plus par fichier. Les lignes correctes sont importées ; les autres sont listées avec leur motif.`,

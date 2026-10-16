@@ -46,12 +46,14 @@ const SCHOOL_SELECT = {
   province: true,
   territoire: true,
   type: true,
+  management: true,
   director: true,
   phone: true,
   address: true,
   approvalDecree: true,
   classCount: true,
   teacherCount: true,
+  qualifiedTeacherCount: true,
   options: true,
 } as const;
 

@@ -358,3 +358,34 @@ Branche `feat/import-ecoles-excel` (worktree `../app-ecoles`), **non poussée**.
   nouveaux champs sur la fiche et la création, zone « Options » présente
   uniquement pour les écoles secondaires.
 - Fusion dans `master` et déploiement : voir l'historique Git.
+
+## 6. Gestion et enseignants qualifiés (2026-10-16)
+
+Deux colonnes ajoutées au canevas, sans retirer ni renommer les 13 colonnes
+existantes (15 colonnes au total) :
+
+| Colonne du canevas | Champ `School` | Règle |
+| --- | --- | --- |
+| `Gestion (Publique / Privée)` | `management` (enum `SchoolManagement` : `PUBLIC`, `PRIVATE`) | Liste déroulante dans Excel ; à la lecture, casse et accents ignorés (« privee », « PUBLIQUE »…) ; toute autre valeur rejette la ligne avec son motif. |
+| `Nombre d'enseignants qualifiés` | `qualifiedTeacherCount` (entier) | Entier ≥ 0 (même règle que les autres nombres) ; ne peut pas dépasser `Nombre d'enseignants`. |
+
+- **Aucun champ équivalent n'existait** : `type` (Maternelle / Primaire /
+  Secondaire) décrit le niveau, pas la gestion ; seul `teacherCount` existait.
+- **Cohérence qualifiés ≤ total** : contrôlée dans la ligne, puis, en mise à
+  jour, sur les valeurs résultantes (une cellule vide garde la valeur
+  enregistrée : 20 qualifiés importés pour 14 enseignants déjà enregistrés
+  sont rejetés). Contrôle seulement quand les deux nombres sont connus.
+- **Anciens fichiers** (13 colonnes) : toujours acceptés. Création : les deux
+  champs restent non renseignés (`null`). Mise à jour : valeurs existantes
+  conservées (règle Q2). Aucune valeur n'est déduite.
+- **Écoles existantes** : migration `20261016150000_sexe_demande_gestion_ecoles`
+  additive (colonnes facultatives) ; elles restent « non renseignées » jusqu'à
+  saisie dans la fiche ou import.
+- **Définition d'« enseignant qualifié »** : non fixée par l'application ; la
+  colonne enregistre le nombre déclaré par l'Inspection.
+- Saisie et affichage : formulaire de la fiche (création, modification),
+  fiche en lecture seule, carte de la liste `/ecoles` (« Primaire · Publique »).
+  Pas d'export des écoles à ce jour (l'export `/rapports/export.xlsx` ne
+  reprend que le nom de l'école) ; statistiques et tableaux de bord ne
+  comptent que les écoles, sans ces champs.
+- Tests : `schools-import.test.ts` (17) et `verify-schools-import.ts` (11/11).

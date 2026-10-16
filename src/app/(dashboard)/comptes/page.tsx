@@ -6,6 +6,7 @@ import { PERMISSIONS, RESTRICTED_ROLE_KEYS, ROLE_KEYS } from "@/lib/rbac-data";
 import { canGrantRole, hasPermissionAnyPool, isDemoActor } from "@/lib/permissions";
 import { isDemoEmail } from "@/lib/accounts";
 import { RequestReview } from "./request-review";
+import { displaySex } from "@/lib/personnel/record";
 
 export default async function ComptesPage() {
   const session = await auth();
@@ -62,6 +63,7 @@ export default async function ComptesPage() {
                 <th className="px-6 py-3">Nom</th>
                 <th className="px-6 py-3">Identifiant</th>
                 <th className="px-6 py-3">Email</th>
+                <th className="px-6 py-3">Sexe</th>
                 <th className="px-6 py-3">Rôle demandé</th>
                 <th className="px-6 py-3">Pool demandé</th>
                 <th className="px-6 py-3" />
@@ -82,6 +84,7 @@ export default async function ComptesPage() {
                       </span>
                     )}
                   </td>
+                  <td className="px-6 py-3 text-gray-600">{displaySex(r.sex)}</td>
                   <td className="px-6 py-3 text-gray-600">{r.requestedRole?.label ?? "—"}</td>
                   <td className="px-6 py-3 text-gray-600">{r.pool?.name ?? "—"}</td>
                   <td className="px-6 py-3 text-right align-top">

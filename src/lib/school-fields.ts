@@ -44,5 +44,29 @@ export function sameCode(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
+/** Statut de gestion (Publique / Privée) : valeurs en base et libellés affichés. */
+export const SCHOOL_MANAGEMENT_LABELS = { PUBLIC: "Publique", PRIVATE: "Privée" } as const;
+export type SchoolManagementValue = keyof typeof SCHOOL_MANAGEMENT_LABELS;
+
+/** « Publique » / « Privée » (casse et accents ignorés, masculin toléré) ou valeur enregistrée (PUBLIC / PRIVATE, formulaire) ; vide = null. */
+export function parseManagement(value: string | null | undefined): SchoolManagementValue | null | "invalid" {
+  const text = foldText(value ?? "");
+  if (text === "") return null;
+  if (text === "publique" || text === "public") return "PUBLIC";
+  if (text === "privee" || text === "prive" || text === "private") return "PRIVATE";
+  return "invalid";
+}
+
+export function displayManagement(value: string | null | undefined): string | null {
+  return value === "PUBLIC" || value === "PRIVATE" ? SCHOOL_MANAGEMENT_LABELS[value] : null;
+}
+
+/** Vrai seulement quand les deux nombres sont connus et que les qualifiés dépassent le total. */
+export function qualifiedExceedsTotal(qualified: number | null | undefined, total: number | null | undefined): boolean {
+  return qualified != null && total != null && qualified > total;
+}
+
+export const MANAGEMENT_INVALID = "Gestion : « Publique » ou « Privée » attendu.";
+export const QUALIFIED_EXCEEDS_TOTAL = "Le nombre d'enseignants qualifiés ne peut pas dépasser le nombre d'enseignants.";
 export const OPTIONS_SECONDARY_ONLY = "Les options organisées ne concernent que les écoles secondaires (type « Secondaire »).";
 export const COUNT_INVALID = "Nombre entier positif attendu.";
