@@ -10,6 +10,9 @@ import { normalizeProfilePhoto } from "@/lib/profile-photo";
 import { revalidatePublicPools } from "@/lib/public-pools";
 import { applyPublicationDecision, PUBLICATION_REASONS } from "@/lib/publication";
 import { changedFieldNames } from "@/lib/audit-fields";
+import { AccountError } from "@/lib/accounts";
+import { setOwnLoginCredentials } from "@/lib/login-credentials";
+import { isRecentGoogleLogin, ownCredentialsSchema } from "@/lib/login-credentials-rules";
 
 export type ProfileFormState = {
   errors?: Record<string, string>;
@@ -162,4 +165,48 @@ export async function updatePublicationConsentAction(
 
   revalidatePath("/profil");
   return { success: true };
+}
+
+export type LoginCredentialsState = {
+  errors?: Record<string, string>;
+  formError?: string;
+  success?: { username: string; passwordChanged: boolean };
+};
+
+/** Identifiant et mot de passe du titulaire, pour se connecter sans Google. */
+export async function updateLoginCredentialsAction(
+  _prevState: LoginCredentialsState,
+  formData: FormData
+): Promise<LoginCredentialsState> {
+  const session = await auth();
+  if (!session?.user || session.user.awaitingCell) redirect("/login");
+  if (session.user.viewMode) {
+    return { formError: "Quittez le mode « Voir comme » pour modifier vos identifiants de connexion." };
+  }
+
+  const parsed = ownCredentialsSchema.safeParse({
+    username: formData.get("username") ?? "",
+    password: formData.get("password") ?? "",
+    confirmation: formData.get("confirmation") ?? "",
+    currentPassword: formData.get("currentPassword") ?? "",
+  });
+  if (!parsed.success) {
+    const fieldErrors = parsed.error.flatten().fieldErrors;
+    return { errors: Object.fromEntries(Object.entries(fieldErrors).map(([k, v]) => [k, v?.[0] ?? ""])) };
+  }
+
+  try {
+    const result = await setOwnLoginCredentials({
+      userId: session.user.id,
+      organizationId: session.user.organizationId,
+      input: parsed.data,
+      recentGoogle: isRecentGoogleLogin(session.user.authMethod, session.user.authAt),
+      mayUseReservedUsername: Boolean(session.user.isSuperAdmin),
+    });
+    revalidatePath("/profil");
+    return { success: { username: result.username, passwordChanged: result.passwordChanged } };
+  } catch (e) {
+    if (e instanceof AccountError) return { formError: e.message };
+    throw e;
+  }
 }

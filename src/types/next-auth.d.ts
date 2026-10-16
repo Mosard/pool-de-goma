@@ -17,6 +17,9 @@ declare module "next-auth" {
       viewModeKind?: "full" | "bounded" | "readonly" | null;
       /** IPA ou exploitant de l'IPP sans cellule active : aucun espace de travail. */
       awaitingCell?: boolean;
+      /** Moyen de la connexion en cours (« credentials » ou « google ») et son heure (ms). */
+      authMethod?: string;
+      authAt?: number;
       /** Fonction simulée (« Voir comme »), sinon null. */
       viewMode?: {
         role: string;
@@ -41,6 +44,8 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
+    authMethod?: string;
+    authAt?: number;
     id: string;
     organizationId: string;
     poolId: string | null;

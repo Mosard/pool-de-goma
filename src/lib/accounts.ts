@@ -70,6 +70,10 @@ const RESERVED_USERNAMES = new Set([
   "ipp", "ipp-nk1", "ippnk1", "informaticien", "inspection", "inspecteur", "officiel", "inuka",
 ]);
 
+export function isReservedUsername(username: string): boolean {
+  return RESERVED_USERNAMES.has(normalizeUsername(username));
+}
+
 /** Identifiant déjà porté par un compte, ou réservé par une demande en attente. */
 export async function isUsernameTaken(username: string): Promise<boolean> {
   const u = normalizeUsername(username);
