@@ -32,9 +32,12 @@ function parseSchoolForm(formData: FormData) {
     director: formData.get("director"),
     phone: formData.get("phone"),
     type: formData.get("type"),
+    management: formData.get("management"),
+    confession: formData.get("confession"),
     approvalDecree: formData.get("approvalDecree"),
     classCount: formData.get("classCount"),
     teacherCount: formData.get("teacherCount"),
+    qualifiedTeacherCount: formData.get("qualifiedTeacherCount"),
     options: formData.get("options"),
   });
 }

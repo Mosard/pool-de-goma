@@ -112,6 +112,7 @@ export async function submitAccountRequest(params: {
   email: string;
   username: string;
   passwordHash: string;
+  sex: "M" | "F" | null;
   phone: string | null;
   requestedRoleId: string | null;
   poolId: string | null;
@@ -148,6 +149,7 @@ export async function submitAccountRequest(params: {
       email,
       username,
       passwordHash: params.passwordHash,
+      sex: params.sex,
       phone: params.phone,
       requestedRoleId: role?.id ?? null,
       organizationId: params.organizationId,
@@ -382,6 +384,8 @@ export async function approveAccountRequest(params: {
           email,
           username: request.username,
           passwordHash,
+          // Le sexe déclaré dans la demande suit le compte (jamais déduit).
+          sex: request.sex,
           phone: request.phone,
           status: chosenHash ? "ACTIVE" : "PENDING",
           isDemo,

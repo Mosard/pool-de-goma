@@ -328,7 +328,7 @@ test("consultation des fiches : portée organisation exigée (ni POOL, ni cellul
 });
 
 test("profil : nombre d'enfants entier positif ou nul ; vide accepté ; « 0 » conservé", () => {
-  const base = { prenom: "", postnom: "", sex: "", phone: "", dateNaissance: "" };
+  const base = { prenom: "", postnom: "", sex: "F", phone: "", dateNaissance: "" };
   assert.equal(profileSchema.safeParse({ ...base, nombreEnfants: "0" }).success, true);
   assert.equal(profileSchema.safeParse({ ...base, nombreEnfants: "" }).success, true);
   assert.equal(profileSchema.safeParse({ ...base, nombreEnfants: "-1" }).success, false);
@@ -361,4 +361,11 @@ test("historique : appartenances closes, ouvertes, doublons fermés, rien de ré
   assert.deepEqual(d.close.sort(), ["t2", "t3"]);
   assert.deepEqual(d.start, [{ cellId: "c2", roleKey: "ipa" }]);
   assert.deepEqual(diffMemberships([], []), { close: [], start: [] });
+});
+
+test("profil : sexe obligatoire (Masculin ou Féminin), corrigeable mais jamais effacé", () => {
+  const base = { prenom: "", postnom: "", phone: "", dateNaissance: "", nombreEnfants: "" };
+  assert.equal(profileSchema.safeParse({ ...base, sex: "M" }).success, true);
+  assert.equal(profileSchema.safeParse({ ...base, sex: "F" }).success, true);
+  for (const bad of ["", null, "X"]) assert.equal(profileSchema.safeParse({ ...base, sex: bad }).success, false, String(bad));
 });

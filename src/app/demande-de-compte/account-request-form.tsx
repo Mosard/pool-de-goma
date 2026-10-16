@@ -74,6 +74,15 @@ export function AccountRequestForm({
           <FieldError message={state.errors?.email} />
         </div>
         <div>
+          <Label htmlFor="sex">Sexe</Label>
+          <Select id="sex" name="sex" defaultValue="" required>
+            <option value="" disabled>Choisir…</option>
+            <option value="M">Masculin</option>
+            <option value="F">Féminin</option>
+          </Select>
+          <FieldError message={state.errors?.sex} />
+        </div>
+        <div>
           <Label htmlFor="phone">Téléphone</Label>
           <Input id="phone" name="phone" autoComplete="tel" />
         </div>
