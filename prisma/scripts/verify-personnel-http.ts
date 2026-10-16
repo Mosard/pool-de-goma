@@ -105,14 +105,15 @@ async function main() {
     assert.equal(r.text.includes(zero.email), false);
   });
 
-  await check("responsable : fiche en lecture seule, « 0 » conservé, « Non renseigné » pour l'inconnu", async () => {
+  // Fiche individuelle IGAP (2026-10-16) : le responsable du personnel consulte ET modifie.
+  await check("responsable : fiche individuelle modifiable, « 0 » conservé, champ inconnu laissé vide", async () => {
     const z = await h.get(`/personnel/${zero.id}`);
     assert.equal(z.status, 200);
-    assert.ok(shows(z.text, "lecture seule"));
+    assert.ok(shows(z.text, "consultation et modification"));
     assert.ok(z.text.includes(`MAT-${RUN}`));
-    assert.match(z.text, /Nombre d(&#x27;|')enfants<\/dt><dd[^>]*>0<\/dd>/);
+    assert.match(z.text, /En chiffres<\/dt><dd[^>]*><span[^>]*>0<\/span><\/dd>/);
     const n = await h.get(`/personnel/${unknown.id}`);
-    assert.match(n.text, /Nombre d(&#x27;|')enfants<\/dt><dd[^>]*>Non renseigné<\/dd>/);
+    assert.match(n.text, /En chiffres<\/dt><dd[^>]*><span[^>]*aria-label="Non renseigné"[^>]*>—<\/span><\/dd>/);
     assert.equal(z.text.includes(passwordHash), false);
   });
 
@@ -120,9 +121,10 @@ async function main() {
     const list = await s.get(`/personnel?q=${RUN}`);
     assert.ok(deniedTo(list), `statut ${list.status}`);
     assert.equal(list.text.includes(zero.name), false);
+    // Fiche d'autrui hors droits : « introuvable » (même réponse qu'une fiche inexistante).
     const one = await s.get(`/personnel/${zero.id}`);
-    assert.ok(deniedTo(one), `statut ${one.status}`);
     assert.equal(one.text.includes(`MAT-${RUN}`), false);
+    assert.equal(shows(one.text, "Fiche individuelle"), false, `statut ${one.status}`);
     const dash = await s.get("/dashboard");
     assert.equal(dash.text.includes('href="/personnel"'), false);
   });
@@ -150,7 +152,7 @@ async function main() {
     await setCellIpa({ id: ipp.id, organizationId: org.id }, { cellId: cell.id, ipaId: null, via: "direction" });
     const r = await h.get(`/personnel/${zero.id}`);
     assert.equal(r.text.includes(`MAT-${RUN}`), false);
-    assert.equal(r.status === 200 && shows(r.text, "lecture seule"), false);
+    assert.equal(shows(r.text, "Fiche individuelle"), false);
   });
 
   // Archivage de la cellule de test : fait dans finally, même en cas d'échec.

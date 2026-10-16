@@ -92,6 +92,11 @@ async function main() {
   const info = await user("info", ROLE_KEYS.INFORMATICIEN);
   const head = await user("resp", ROLE_KEYS.IPA);
   const secr = await user("secr", ROLE_KEYS.SECRETAIRE_IPP);
+  // Cellules laissées par une exécution précédente de CE script (code FP…, nom « Personnel … ») : archivées.
+  await prisma.cell.updateMany({
+    where: { organizationId: org.id, active: true, mandate: "PERSONNEL", code: { startsWith: "FP" }, name: { startsWith: "Personnel " } },
+    data: { active: false },
+  });
   assert.equal(await prisma.cell.count({ where: { organizationId: org.id, active: true, mandate: "PERSONNEL" } }), 0, "base de test non vierge");
   const cell = await prisma.cell.create({ data: { organizationId: org.id, code: `FP${RUN}`.toUpperCase().slice(0, 20), name: `Personnel ${RUN}`, mandate: "PERSONNEL" } });
   await setCellIpa({ id: ipp.id, organizationId: org.id }, { cellId: cell.id, ipaId: head.id, via: "direction" });
@@ -265,4 +270,8 @@ main()
     console.error(e);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    // La cellule de test est archivée même en cas d'échec : la base reste prête pour les autres vérifications.
+    await prisma.cell.updateMany({ where: { code: { startsWith: "FP" }, name: { startsWith: "Personnel " }, mandate: "PERSONNEL", active: true }, data: { active: false } });
+    await prisma.$disconnect();
+  });
