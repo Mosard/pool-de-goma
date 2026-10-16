@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Alert, Button, Card, FieldError, Input, Label, Select, Textarea } from "@/components/ui";
+import { SearchSelect } from "@/components/search-select";
 import { addPoolRoleAction, designateChiefAction, updatePoolProfileAction, type PoolAdminFormState } from "./actions";
 
 const initialState: PoolAdminFormState = {};
@@ -145,16 +146,7 @@ export function AddRoleForm({
     <form action={formAction} className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
       <div>
         <Label htmlFor="add-userId">Compte</Label>
-        <Select id="add-userId" name="userId" defaultValue="" required>
-          <option value="" disabled>
-            Choisir un compte actif
-          </option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </Select>
+        <SearchSelect id="add-userId" name="userId" required placeholder="Rechercher un compte actif…" options={users.map((u) => ({ value: u.id, label: u.name }))} />
         <FieldError message={state.errors?.userId} />
       </div>
       <div>

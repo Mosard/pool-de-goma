@@ -1,5 +1,6 @@
 import { ShieldAlert, Trash2 } from "lucide-react";
 import { Badge, Field, Input, Select, SubHeading } from "@/components/ui";
+import { SearchSelect } from "@/components/search-select";
 import { formatGomaDateTime } from "@/lib/presence/time";
 import { ActionForm } from "../action-form";
 import {
@@ -138,14 +139,7 @@ export function AdmsEnrollment({
         </p>
         <ActionForm action={enrollAgentAction.bind(null, deviceId)} submit="Inscrire" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 lg:items-end">
           <Field label="Agent" className="lg:col-span-2">
-            <Select name="userId" required defaultValue="">
-              <option value="">— Choisir —</option>
-              {candidates.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect name="userId" required placeholder="Rechercher un agent…" options={candidates.map((a) => ({ value: a.id, label: a.name }))} />
           </Field>
           <Field label="PIN (101 à 8999)">
             <Input name="pin" inputMode="numeric" placeholder="automatique" className="font-mono" />

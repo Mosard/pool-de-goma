@@ -1,7 +1,10 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { FileText } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, PageHeader } from "@/components/ui";
+import { buttonClasses, Card, PageHeader } from "@/components/ui";
+import { loadFileView, resolveFileContext } from "@/lib/personnel-file/server";
 import { ProfileForm } from "./profile-form";
 import { PhotoForm } from "./photo-form";
 import { ConsentForm } from "./consent-form";
@@ -21,6 +24,8 @@ export default async function ProfilPage() {
       (p) => [p.id, p.name]
     )
   );
+  const ficheCtx = session.user.awaitingCell ? null : await resolveFileContext(user.id, user.id);
+  const fiche = ficheCtx ? await loadFileView(ficheCtx) : null;
 
   return (
     <div className="space-y-6">
@@ -30,6 +35,26 @@ export default async function ProfilPage() {
         <PhotoForm name={user.name} photoUrl={user.photoUrl} />
         <p className="mt-3 text-sm text-gray-500">{user.email}</p>
       </Card>
+
+      {fiche && (
+        <Card className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+              <FileText size={20} aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-gray-900">Ma fiche personnelle</h2>
+              <p className="text-pretty text-xs text-gray-500">
+                Fiche de renseignement de l&apos;agent (IGAP), à compléter à votre rythme. Renseignée à{" "}
+                <span className="font-medium tabular-nums text-gray-900">{fiche.completeness.percent} %</span>.
+              </p>
+            </div>
+          </div>
+          <Link href="/profil/fiche" className={buttonClasses({ size: "sm", className: "min-h-10" })}>
+            {fiche.completeness.filled === 0 ? "Commencer ma fiche" : "Ouvrir ma fiche"}
+          </Link>
+        </Card>
+      )}
 
       {!user.isDemo && (
         <ConsentForm
@@ -71,7 +96,8 @@ export default async function ProfilPage() {
           </div>
         </dl>
         <p className="mt-3 text-xs text-gray-400">
-          Ces informations sont gérées par l&apos;administration de l&apos;Inspection.
+          Le matricule se déclare dans « Ma fiche personnelle » (II.A — Engagement) ; le statut administratif et la mécanisation sont gérés par
+          l&apos;administration de l&apos;Inspection.
         </p>
       </Card>
 

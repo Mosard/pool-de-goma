@@ -141,8 +141,12 @@ test("fiches détaillées : aucune ligne de fonction ne les donne ; fonction ré
   for (const r of (Object.keys(ROLE_PERMISSIONS) as RoleKey[]).filter((k) => !PERSONNEL_RECORD_READER_ROLE_KEYS.includes(k))) {
     assert.deepEqual(bindRecordReaderPermissions([r], ORG), [], r);
   }
-  // Lecture seule : aucune autre permission n'est ajoutée.
-  assert.deepEqual(bindRecordReaderPermissions([ROLE_KEYS.IPP], ORG), [{ permissionKey: P.PERSONNEL_RECORDS_READ_ALL, poolId: null, organizationId: ORG }]);
+  // Fiche individuelle (décision du 2026-10-16) : lecture ET modification, rien d'autre.
+  assert.deepEqual(bindRecordReaderPermissions([ROLE_KEYS.IPP], ORG), [
+    { permissionKey: P.PERSONNEL_RECORDS_READ_ALL, poolId: null, organizationId: ORG },
+    { permissionKey: P.PERSONNEL_RECORDS_EDIT_ALL, poolId: null, organizationId: ORG },
+  ]);
+  for (const r of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) assert.equal(ROLE_PERMISSIONS[r].includes(P.PERSONNEL_RECORDS_EDIT_ALL), false, r);
   // Un retrait individuel reste possible.
   const revoked = applyAdjustments(bindRecordReaderPermissions([ROLE_KEYS.INFORMATICIEN], ORG), [{ permissionKey: P.PERSONNEL_RECORDS_READ_ALL, poolId: null, effect: "REVOKE" }], ORG);
   assert.equal(canReadPersonnelRecords(revoked, ORG), false);

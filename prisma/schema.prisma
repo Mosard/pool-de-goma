@@ -418,6 +418,8 @@ model User {
   staffCellTerms          StaffCellTerm[]          @relation("StaffCellTermUser")
   presenceMappings        DeviceUserMapping[]      @relation("PresenceMappingUser")
   presenceDays            DailyAttendance[]        @relation("PresenceDailyUser")
+  // Fiche individuelle IGAP (une au plus), créée à la première saisie.
+  personnelFile           PersonnelFile?           @relation("PersonnelFileUser")
 
   @@index([organizationId])
   @@index([poolId])
@@ -1468,4 +1470,129 @@ model SynthesisVersion {
   createdAt     DateTime  @default(now())
 
   @@unique([synthesisId, number])
+}
+
+// ─── Fiche individuelle du personnel (formulaire IGAP, 9 pages, 2026-10-16) ──
+// Déclarative : aucune valeur de la fiche (grade, affectation, commission…)
+// n'est lue par les fonctions, POOL, cellules ou permissions de l'application.
+// Les champs déjà portés par le compte (postnom, prénom, sexe, date de
+// naissance, téléphone, matricule, nombre d'enfants) restent dans User et ne
+// sont pas recopiés ici. Liste des rubriques et champs : src/lib/personnel-file/defs.ts.
+
+model PersonnelFile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation("PersonnelFileUser", fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  // Auteur de la dernière modification (l'agent ou un gestionnaire du personnel).
+  updatedById    String?
+
+  sections   PersonnelFileSection[]
+  promotions PersonnelPromotion[]
+  diplomas   PersonnelDiploma[]
+  children   PersonnelChild[]
+
+  @@index([organizationId])
+}
+
+// Une rubrique de la fiche (ex. « identite », « engagement ») : valeurs à champ
+// unique, validées côté serveur d'après defs.ts. `version` empêche qu'un
+// enregistrement écrase une modification faite entre-temps par quelqu'un d'autre.
+model PersonnelFileSection {
+  id          String        @id @default(cuid())
+  fileId      String
+  file        PersonnelFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  key         String
+  data        Json          @default("{}")
+  // Colonne « OBS. » du formulaire : réservée aux gestionnaires du personnel.
+  observation String?       @db.Text
+  version     Int           @default(1)
+  updatedAt   DateTime      @updatedAt
+  updatedById String?
+
+  @@unique([fileId, key])
+}
+
+// II.C — Avancements dans les différents grades (promotions 1, 2, 3…).
+model PersonnelPromotion {
+  id             String        @id @default(cuid())
+  fileId         String
+  file           PersonnelFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  position       Int
+  grade          String?
+  actNature      String?
+  actReference   String?
+  actSignedAt    DateTime?     @db.Date
+  actSignatory   String?
+  notifReference String?
+  notifDate      DateTime?     @db.Date
+  notifSignatory String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([fileId, position])
+}
+
+enum PersonnelStudyLevel {
+  PHD
+  MASTER
+  LICENCE
+  GRADUAT
+  D6
+  POST_PRIMAIRE
+  PRIMAIRE
+}
+
+// IV — Niveau d'étude : un ou plusieurs titres par niveau, aucun obligatoire.
+model PersonnelDiploma {
+  id                   String              @id @default(cuid())
+  fileId               String
+  file                 PersonnelFile       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  level                PersonnelStudyLevel
+  // Filière (supérieur) ou option / section (D6, post-primaire).
+  field                String?
+  year                 Int?
+  documentNature       String?
+  documentReference    String?
+  issuedAt             DateTime?           @db.Date
+  institutionName      String?
+  institutionCommune   String?
+  institutionCity      String?
+  institutionProvince  String?
+  institutionCountry   String?
+  institutionContinent String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([fileId, level])
+}
+
+// III.E — Légende du formulaire : EBio, EAd, EST.
+enum PersonnelChildRelation {
+  BIOLOGIQUE
+  ADOPTIF
+  SOUS_TUTELLE
+}
+
+// III.E — Enfants de l'agent : sans limite (le formulaire papier a 15 lignes).
+model PersonnelChild {
+  id          String                  @id @default(cuid())
+  fileId      String
+  file        PersonnelFile           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  position    Int
+  nom         String?
+  postnom     String?
+  prenom      String?
+  sex         Sex?
+  birthDate   DateTime?               @db.Date
+  birthPlace  String?
+  nationality String?
+  profession  String?
+  relation    PersonnelChildRelation?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([fileId, position])
 }
