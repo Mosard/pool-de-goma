@@ -108,7 +108,7 @@ async function main() {
   console.log("\nDemande publique");
 
   await step("validation du formulaire : identifiant, confirmation, mot de passe ≠ identifiant", async () => {
-    const base = { name: "Jean Kambale", email: "j@exemple.cd", password: "motdepasse-1", confirmation: "motdepasse-1" };
+    const base = { name: "Jean Kambale", email: "j@exemple.cd", password: "motdepasse-1", confirmation: "motdepasse-1", sex: "M" };
     assert.ok(accountRequestSchema.safeParse({ ...base, username: "Jean.Kambale" }).success, "majuscules normalisées");
     assert.equal(accountRequestSchema.safeParse({ ...base, username: "jean kambale" }).success, false, "espace refusé");
     assert.equal(accountRequestSchema.safeParse({ ...base, username: "jk@x" }).success, false, "« @ » refusé");
@@ -183,8 +183,9 @@ async function main() {
     assert.ok(logged?.isDemo);
   });
 
-  await step("sexe déclaré dans la demande : conservé sur le compte validé ; absent = non renseigné", async () => {
-    assert.equal(accountRequestSchema.safeParse({ name: "A B", email: "a@exemple.cd", username: "ab.sexe", password: "motdepasse-1", confirmation: "motdepasse-1", sex: "X" }).success, false);
+  await step("sexe obligatoire, conservé sur le compte validé ; demande antérieure sans sexe = non renseigné", async () => {
+    const req = { name: "A B", email: "a@exemple.cd", username: "ab.sexe", password: "motdepasse-1", confirmation: "motdepasse-1" };
+    for (const bad of [undefined, "", "X"]) assert.equal(accountRequestSchema.safeParse({ ...req, sex: bad }).success, false, "sexe obligatoire");
     const f = { name: "Demo Sexe F", email: `sexe.f.${RUN}@example.test`, username: `sexe.f.${RUN}`, password: `Demo-mdp-${RUN}` };
     const { requestId } = await request({ ...f, sex: "F", roleId: inspecteur.id, poolId: goma.id });
     assert.equal((await prisma.accountRequest.findUniqueOrThrow({ where: { id: requestId } })).sex, "F");

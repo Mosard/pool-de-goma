@@ -47,6 +47,7 @@ const SCHOOL_SELECT = {
   territoire: true,
   type: true,
   management: true,
+  confession: true,
   director: true,
   phone: true,
   address: true,

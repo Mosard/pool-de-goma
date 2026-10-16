@@ -361,12 +361,13 @@ Branche `feat/import-ecoles-excel` (worktree `../app-ecoles`), **non poussée**.
 
 ## 6. Gestion et enseignants qualifiés (2026-10-16)
 
-Deux colonnes ajoutées au canevas, sans retirer ni renommer les 13 colonnes
-existantes (15 colonnes au total) :
+Trois colonnes ajoutées au canevas, sans retirer ni renommer les 13 colonnes
+existantes (16 colonnes au total) :
 
 | Colonne du canevas | Champ `School` | Règle |
 | --- | --- | --- |
-| `Gestion (Publique / Privée)` | `management` (enum `SchoolManagement` : `PUBLIC`, `PRIVATE`) | Liste déroulante dans Excel ; à la lecture, casse et accents ignorés (« privee », « PUBLIQUE »…) ; toute autre valeur rejette la ligne avec son motif. |
+| `Gestion (Publique / Privée / Conventionnée)` | `management` (enum `SchoolManagement` : `PUBLIC`, `PRIVATE`, `CONVENTIONED`) | Liste déroulante dans Excel ; à la lecture, casse et accents ignorés (« privee », « PUBLIQUE »…) ; toute autre valeur rejette la ligne avec son motif. |
+| `Confession (si conventionnée : …)` | `confession` (texte, 100 car.) | Obligatoire pour une école conventionnée (Catholique, Protestante, Musulmane, Adventiste ou toute autre, texte libre) ; refusée pour une école publique ou privée ; retirée si l'école cesse d'être conventionnée. |
 | `Nombre d'enseignants qualifiés` | `qualifiedTeacherCount` (entier) | Entier ≥ 0 (même règle que les autres nombres) ; ne peut pas dépasser `Nombre d'enseignants`. |
 
 - **Aucun champ équivalent n'existait** : `type` (Maternelle / Primaire /
@@ -383,9 +384,15 @@ existantes (15 colonnes au total) :
   saisie dans la fiche ou import.
 - **Définition d'« enseignant qualifié »** : non fixée par l'application ; la
   colonne enregistre le nombre déclaré par l'Inspection.
+- Décisions de l'utilisateur (2026-10-16) : les écoles catholiques,
+  protestantes, musulmanes, adventistes ou autres sont « Conventionnées » avec
+  la confession précisée ; « enseignant qualifié » = nombre déclaré, sans
+  définition imposée ; le sexe est obligatoire à la création d'un compte et
+  dans le profil (chacun le corrige depuis son profil, sans pouvoir l'effacer).
 - Saisie et affichage : formulaire de la fiche (création, modification),
-  fiche en lecture seule, carte de la liste `/ecoles` (« Primaire · Publique »).
+  fiche en lecture seule, carte de la liste `/ecoles` (« Primaire · Conventionnée (Catholique) »).
+  Dans le formulaire, le champ Confession n'apparaît que pour une école conventionnée.
   Pas d'export des écoles à ce jour (l'export `/rapports/export.xlsx` ne
   reprend que le nom de l'école) ; statistiques et tableaux de bord ne
   comptent que les écoles, sans ces champs.
-- Tests : `schools-import.test.ts` (17) et `verify-schools-import.ts` (11/11).
+- Tests : `schools-import.test.ts` (20) et `verify-schools-import.ts` (11/11).

@@ -75,8 +75,8 @@ export function AccountRequestForm({
         </div>
         <div>
           <Label htmlFor="sex">Sexe</Label>
-          <Select id="sex" name="sex" defaultValue="">
-            <option value="">Non précisé</option>
+          <Select id="sex" name="sex" defaultValue="" required>
+            <option value="" disabled>Choisir…</option>
             <option value="M">Masculin</option>
             <option value="F">Féminin</option>
           </Select>

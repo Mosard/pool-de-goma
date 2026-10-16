@@ -60,7 +60,7 @@ export default async function EcolesPage() {
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-gray-600">
                   <p>{school.province} — {school.territoire}</p>
-                  {(school.type || school.management) && <p>{[school.type, displayManagement(school.management)].filter(Boolean).join(" · ")}</p>}
+                  {(school.type || school.management) && <p>{[school.type, displayManagement(school.management, school.confession)].filter(Boolean).join(" · ")}</p>}
                   {school.director && <p>Directeur : {school.director}</p>}
                 </div>
                 <div className="mt-4 flex gap-4 text-xs text-gray-400">

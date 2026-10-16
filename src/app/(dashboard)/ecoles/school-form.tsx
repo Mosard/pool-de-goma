@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Card, Input, Label, Select, Textarea, FieldError } from "@/components/ui";
-import { SCHOOL_MANAGEMENT_LABELS, isSecondaryType } from "@/lib/school-fields";
+import { CONFESSION_SUGGESTIONS, SCHOOL_MANAGEMENT_LABELS, isSecondaryType } from "@/lib/school-fields";
 import type { SchoolFormState } from "./actions";
 
 const initialState: SchoolFormState = {};
@@ -25,6 +25,7 @@ export function SchoolForm({
     phone?: string | null;
     type?: string | null;
     management?: string | null;
+    confession?: string | null;
     approvalDecree?: string | null;
     classCount?: number | null;
     teacherCount?: number | null;
@@ -35,6 +36,8 @@ export function SchoolForm({
   const [state, formAction, pending] = useActionState(action, initialState);
   // Les options organisées ne concernent que les écoles secondaires.
   const [type, setType] = useState(defaultValues?.type ?? "");
+  // La confession ne concerne que les écoles conventionnées.
+  const [management, setManagement] = useState(defaultValues?.management ?? "");
 
   return (
     <Card>
@@ -82,7 +85,7 @@ export function SchoolForm({
           </div>
           <div>
             <Label htmlFor="management">Gestion</Label>
-            <Select id="management" name="management" defaultValue={defaultValues?.management ?? ""}>
+            <Select id="management" name="management" value={management} onChange={(e) => setManagement(e.target.value)}>
               <option value="">Non renseignée</option>
               {Object.entries(SCHOOL_MANAGEMENT_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -90,6 +93,25 @@ export function SchoolForm({
             </Select>
             <FieldError message={state.errors?.management} />
           </div>
+          {management === "CONVENTIONED" && (
+            <div>
+              <Label htmlFor="confession">Confession</Label>
+              <Input
+                id="confession"
+                name="confession"
+                list="confession-suggestions"
+                placeholder="Catholique, Protestante, Musulmane, Adventiste…"
+                defaultValue={defaultValues?.confession ?? ""}
+                required
+              />
+              <datalist id="confession-suggestions">
+                {CONFESSION_SUGGESTIONS.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+              <FieldError message={state.errors?.confession} />
+            </div>
+          )}
           <div>
             <Label htmlFor="director">Directeur</Label>
             <Input id="director" name="director" defaultValue={defaultValues?.director ?? ""} />

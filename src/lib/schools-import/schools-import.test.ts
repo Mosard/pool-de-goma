@@ -75,6 +75,7 @@ const data = (over: Partial<SchoolImportData> = {}): SchoolImportData => ({
   territoire: "Goma",
   type: null,
   management: null,
+  confession: null,
   director: null,
   phone: null,
   address: null,
@@ -146,14 +147,15 @@ test("canevas : en-têtes reconnus, codes du POOL et de l'école en tête, mode 
   assert.deepEqual(headers.slice(0, 2), ["Code du POOL *", "Code de l'école *"]);
   assert.ok(headers.includes("Arrêté d'agrément"));
   assert.ok(!headers.some((h) => /numéro d'agrément|effectif/i.test(h)), "ni numéro d'agrément ni effectif");
-  assert.equal(headers.length, 15);
-  assert.ok(headers.includes("Gestion (Publique / Privée)"));
+  assert.equal(headers.length, 16);
+  assert.ok(headers.includes("Gestion (Publique / Privée / Conventionnée)"));
+  assert.ok(headers.some((h) => matchHeader(h) === "confession"));
   assert.ok(headers.includes("Nombre d'enseignants qualifiés"));
   // Liste déroulante sur la colonne Gestion, entier ≥ 0 sur les enseignants qualifiés.
   const col = (h: string) => headers.indexOf(h) + 1;
-  const mgmt = ws.getRow(2).getCell(col("Gestion (Publique / Privée)")).dataValidation;
+  const mgmt = ws.getRow(2).getCell(col("Gestion (Publique / Privée / Conventionnée)")).dataValidation;
   assert.equal(mgmt?.type, "list");
-  assert.deepEqual(mgmt?.formulae, ['"Publique,Privée"']);
+  assert.deepEqual(mgmt?.formulae, ['"Publique,Privée,Conventionnée"']);
   const qual = ws.getRow(2).getCell(col("Nombre d'enseignants qualifiés")).dataValidation;
   assert.equal(qual?.type, "whole");
   assert.ok(headers.every((h) => matchHeader(h) !== null));
@@ -191,15 +193,16 @@ test("fichier qui n'est pas le canevas : refus en bloc avec message clair", asyn
   await assert.rejects(readSchoolRows(new TextEncoder().encode("pas un classeur")), ImportFileError);
 });
 
-test("gestion : Publique / Privée (casse et accents ignorés), autre valeur rejetée", () => {
+test("gestion : Publique / Privée / Conventionnée (casse et accents ignorés), autre valeur rejetée", () => {
   assert.equal(parseManagement("Publique"), "PUBLIC");
   assert.equal(parseManagement(" PRIVEE "), "PRIVATE");
   assert.equal(parseManagement("privée"), "PRIVATE");
   assert.equal(parseManagement(""), null);
-  assert.equal(parseManagement("Conventionnée"), "invalid");
-  const { valid, rejected } = validateRows([row(2, { management: "Privée" }), row(3, { management: "Conventionnée" }), row(4, {})], "GOMA");
+  assert.equal(parseManagement("CONVENTIONNEE"), "CONVENTIONED");
+  assert.equal(parseManagement("Confessionnelle"), "invalid");
+  const { valid, rejected } = validateRows([row(2, { management: "Privée" }), row(3, { management: "Confessionnelle" }), row(4, {})], "GOMA");
   assert.deepEqual(valid.map((v) => [v.line, v.data.management]), [[2, "PRIVATE"], [4, null]]);
-  assert.match(rejected[0].reason, /Gestion.*Conventionnée/);
+  assert.match(rejected[0].reason, /Gestion.*Confessionnelle/);
 });
 
 test("enseignants qualifiés : entier ≥ 0 et jamais plus que le nombre d'enseignants", () => {
@@ -238,7 +241,7 @@ test("mise à jour : cohérence qualifiés / total vérifiée sur les valeurs r�
 });
 
 test("ancien canevas (13 colonnes, sans Gestion ni qualifiés) : toujours lu, nouveaux champs non renseignés", async () => {
-  const legacyHeaders = IMPORT_COLUMNS.filter((c) => c.field !== "management" && c.field !== "qualifiedTeacherCount").map((c) => c.header);
+  const legacyHeaders = IMPORT_COLUMNS.filter((c) => !["management", "confession", "qualifiedTeacherCount"].includes(c.field)).map((c) => c.header);
   assert.equal(legacyHeaders.length, 13);
   const buf = await filledWorkbook(legacyHeaders, [["GOMA", "EP-1", "EP Uvira", "Nord-Kivu", "Goma", "Primaire", null, null, null, null, 6, 12, null]]);
   const rows = await readSchoolRows(buf);
@@ -251,7 +254,7 @@ test("ancien canevas (13 colonnes, sans Gestion ni qualifiés) : toujours lu, no
 
 test("nouveau canevas rempli : Gestion et qualifiés lus", async () => {
   const buf = await filledWorkbook(
-    ["Code du POOL *", "Code de l'école *", "Nom de l'école *", "Province *", "Territoire *", "Gestion (Publique / Privée)", "Nombre d'enseignants", "Nombre d'enseignants qualifiés"],
+    ["Code du POOL *", "Code de l'école *", "Nom de l'école *", "Province *", "Territoire *", "Gestion (Publique / Privée / Conventionnée)", "Nombre d'enseignants", "Nombre d'enseignants qualifiés"],
     [["GOMA", "EP-2", "EP Amani", "Nord-Kivu", "Goma", "Publique", 14, 9]]
   );
   const { valid } = validateRows(await readSchoolRows(buf), "GOMA");
@@ -274,4 +277,47 @@ test("formulaire : gestion et enseignants qualifiés", () => {
   assert.equal(over.success, false);
   assert.deepEqual(over.error?.issues[0].path, ["qualifiedTeacherCount"]);
   assert.equal(schoolSchema.safeParse({ ...base, qualifiedTeacherCount: "-2" }).success, false);
+});
+
+test("conventionnée : confession obligatoire, réservée aux conventionnées, retirée si la gestion change", () => {
+  assert.equal(planCreate(data({ management: "CONVENTIONED" })).ok, false, "confession manquante");
+  const ok = planCreate(data({ management: "CONVENTIONED", confession: "Adventiste" }));
+  assert.ok(ok.ok);
+  assert.equal(planCreate(data({ management: "PUBLIC", confession: "Catholique" })).ok, false);
+  assert.equal(planCreate(data({ confession: "Catholique" })).ok, false, "gestion vide : pas conventionnée");
+
+  const existing = data({ management: "CONVENTIONED", confession: "Catholique" });
+  const keep = planUpdate(existing, data({ director: "Sœur Furaha" }));
+  assert.ok(keep.ok && keep.changes.confession === undefined, "cellule vide : confession conservée");
+  const change = planUpdate(existing, data({ confession: "Protestante" }));
+  assert.ok(change.ok);
+  assert.equal(change.changes.confession, "Protestante");
+  const toPublic = planUpdate(existing, data({ management: "PUBLIC" }));
+  assert.ok(toPublic.ok);
+  assert.equal(toPublic.changes.confession, null, "n'est plus conventionnée : confession retirée");
+  assert.equal(planUpdate(data({ management: "PUBLIC" }), data({ management: "CONVENTIONED" })).ok, false, "devient conventionnée sans confession");
+  assert.equal(planUpdate(data({ management: "PRIVATE" }), data({ confession: "Musulmane" })).ok, false);
+});
+
+test("lecture : Conventionnée + confession libre (« autre » accepté)", async () => {
+  const buf = await filledWorkbook(
+    ["Code du POOL *", "Code de l'école *", "Nom de l'école *", "Province *", "Territoire *", "Gestion (Publique / Privée / Conventionnée)", "Confession (si conventionnée : Catholique, Protestante, Musulmane, Adventiste, autre)"],
+    [["GOMA", "EP-5", "EP Salama", "Nord-Kivu", "Goma", "Conventionnée", "  Kimbanguiste  "]]
+  );
+  const { valid } = validateRows(await readSchoolRows(buf), "GOMA");
+  assert.equal(valid[0].data.management, "CONVENTIONED");
+  assert.equal(valid[0].data.confession, "Kimbanguiste");
+});
+
+test("formulaire : confession exigée pour une conventionnée, refusée sinon", () => {
+  const base = { poolId: "p1", name: "EP Test", code: "EP-9", province: "Nord-Kivu", territoire: "Goma", type: "Primaire" };
+  const ok = schoolSchema.safeParse({ ...base, management: "CONVENTIONED", confession: " Catholique " });
+  assert.ok(ok.success);
+  assert.equal(ok.data.confession, "Catholique");
+  const missing = schoolSchema.safeParse({ ...base, management: "CONVENTIONED", confession: "" });
+  assert.equal(missing.success, false);
+  assert.deepEqual(missing.error?.issues[0].path, ["confession"]);
+  // Formulaire d'une école non conventionnée : le champ n'est pas envoyé.
+  assert.ok(schoolSchema.safeParse({ ...base, management: "PUBLIC", confession: null }).success);
+  assert.equal(schoolSchema.safeParse({ ...base, management: "PRIVATE", confession: "Catholique" }).success, false);
 });

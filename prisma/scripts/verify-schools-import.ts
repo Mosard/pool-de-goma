@@ -103,13 +103,18 @@ async function main() {
     assert.equal(again.unchanged.length, 1);
   });
 
-  await step("Gestion et enseignants qualifiés : enregistrés, cohérence avec le total, ancienne valeur conservée si vide", async () => {
+  await step("Gestion, confession et enseignants qualifiés : enregistrés, cohérence, ancienne valeur conservée si vide", async () => {
     const where = { poolId_code: { poolId: goma.id, code: c1 } };
     assert.equal((await prisma.school.findUniqueOrThrow({ where })).management, null, "non renseigné tant que rien n'est importé");
+    const conv = await run(chef, goma.id, [school(goma.code, c1, { management: "Conventionnée" })]);
+    assert.match(conv.rejected[0]?.reason ?? "", /précisez la confession/);
+    await run(chef, goma.id, [school(goma.code, c1, { management: "Conventionnée", confession: "Catholique" })]);
+    assert.equal((await prisma.school.findUniqueOrThrow({ where })).confession, "Catholique");
     const r = await run(chef, goma.id, [school(goma.code, c1, { management: "Privée", qualifiedTeacherCount: 9 })]);
     assert.equal(r.updated.length, 1);
     let s = await prisma.school.findUniqueOrThrow({ where });
     assert.equal(s.management, "PRIVATE");
+    assert.equal(s.confession, null, "plus conventionnée : confession retirée");
     assert.equal(s.qualifiedTeacherCount, 9);
     // 20 qualifiés pour 14 enseignants enregistrés : rejeté, rien n'est écrit.
     const bad = await run(chef, goma.id, [school(goma.code, c1, { qualifiedTeacherCount: 20 })]);

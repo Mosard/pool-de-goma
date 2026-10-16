@@ -11,6 +11,7 @@ export type ImportField =
   | "territoire"
   | "type"
   | "management"
+  | "confession"
   | "director"
   | "phone"
   | "address"
@@ -43,13 +44,22 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
   { field: "type", header: "Type (Maternelle / Primaire / Secondaire)", label: "Type", required: false, kind: "text", maxLength: 100, width: 22 },
   {
     field: "management",
-    header: "Gestion (Publique / Privée)",
+    header: "Gestion (Publique / Privée / Conventionnée)",
     label: "Gestion",
     required: false,
     kind: "choice",
     choices: Object.values(SCHOOL_MANAGEMENT_LABELS),
     maxLength: 20,
-    width: 16,
+    width: 18,
+  },
+  {
+    field: "confession",
+    header: "Confession (si conventionnée : Catholique, Protestante, Musulmane, Adventiste, autre)",
+    label: "Confession",
+    required: false,
+    kind: "text",
+    maxLength: 100,
+    width: 26,
   },
   { field: "director", header: "Directeur", label: "Directeur", required: false, kind: "text", maxLength: 200, width: 24 },
   { field: "phone", header: "Téléphone", label: "Téléphone", required: false, kind: "text", maxLength: 50, width: 16 },

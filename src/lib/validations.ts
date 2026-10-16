@@ -5,7 +5,9 @@ import {
   MANAGEMENT_INVALID,
   OPTIONS_SECONDARY_ONLY,
   QUALIFIED_EXCEEDS_TOTAL,
+  confessionProblem,
   isSecondaryType,
+  normalizeConfession,
   normalizeOptions,
   parseCount,
   parseManagement,
@@ -14,6 +16,8 @@ import {
 
 const usernameField = z.string().trim().toLowerCase().regex(USERNAME_PATTERN, USERNAME_RULE);
 const newPasswordField = z.string().min(8, "8 caractères minimum").max(128, "128 caractères maximum");
+// Sexe obligatoire à la création d'un compte et dans le profil (décision du 2026-10-16).
+const sexField = z.enum(["M", "F"], { error: "Sexe requis : Masculin ou Féminin." });
 
 export const poolSchema = z.object({
   name: z.string().min(2, "Nom requis"),
@@ -89,6 +93,12 @@ export const schoolSchema = z
         }
         return m;
       }),
+    // Absent du formulaire quand l'école n'est pas conventionnée.
+    confession: z
+      .string()
+      .max(100, "100 caractères maximum")
+      .nullish()
+      .transform((v) => normalizeConfession(v)),
     classCount: schoolCountField,
     teacherCount: schoolCountField,
     qualifiedTeacherCount: schoolCountField,
@@ -101,6 +111,8 @@ export const schoolSchema = z
   })
   .superRefine((v, ctx) => {
     if (v.options && !isSecondaryType(v.type)) ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_SECONDARY_ONLY });
+    const confession = confessionProblem(v.management, v.confession);
+    if (confession) ctx.addIssue({ code: "custom", path: ["confession"], message: confession });
     if (qualifiedExceedsTotal(v.qualifiedTeacherCount, v.teacherCount)) {
       ctx.addIssue({ code: "custom", path: ["qualifiedTeacherCount"], message: QUALIFIED_EXCEEDS_TOTAL });
     }
@@ -112,7 +124,7 @@ export const userSchema = z.object({
   username: z.union([z.literal(""), usernameField]).optional(),
   roleId: z.string().min(1, "Rôle requis"),
   poolId: z.string().optional().or(z.literal("")),
-  sex: z.enum(["M", "F"]).optional().or(z.literal("")),
+  sex: sexField,
   phone: z.string().optional().or(z.literal("")),
 });
 
@@ -123,7 +135,7 @@ export const accountRequestSchema = z
     username: usernameField,
     password: newPasswordField,
     confirmation: z.string(),
-    sex: z.enum(["M", "F"]).optional().or(z.literal("")),
+    sex: sexField,
     phone: z.string().optional().or(z.literal("")),
     requestedRoleId: z.string().optional().or(z.literal("")),
     poolId: z.string().optional().or(z.literal("")),
@@ -163,7 +175,7 @@ export const commentSchema = z.object({
 export const profileSchema = z.object({
   prenom: z.string().optional().or(z.literal("")),
   postnom: z.string().optional().or(z.literal("")),
-  sex: z.enum(["M", "F"]).optional().or(z.literal("")),
+  sex: sexField,
   phone: z.string().optional().or(z.literal("")),
   dateNaissance: z.string().optional().or(z.literal("")),
   // Entier positif ou nul ; vide = non renseigné (un « 0 » saisi est conservé).

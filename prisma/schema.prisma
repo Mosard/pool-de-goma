@@ -27,6 +27,8 @@ enum Sex {
 enum SchoolManagement {
   PUBLIC
   PRIVATE
+  // Conventionnée : confession précisée dans School.confession.
+  CONVENTIONED
 }
 
 enum RoleScope {
@@ -492,6 +494,9 @@ model School {
   // (jamais supérieur à teacherCount quand les deux sont connus). Vide = non
   // renseigné : aucune valeur n'est déduite (2026-10-16).
   management            SchoolManagement?
+  // Écoles conventionnées seulement : texte libre (Catholique, Protestante,
+  // Musulmane, Adventiste, autre…), obligatoire pour ces écoles.
+  confession            String?
   qualifiedTeacherCount Int?
   // Options organisées, écoles secondaires seulement : texte libre séparé
   // par des virgules (pas de liste imposée pour l'instant).

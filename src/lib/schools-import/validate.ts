@@ -8,7 +8,9 @@ import {
   MANAGEMENT_INVALID,
   OPTIONS_SECONDARY_ONLY,
   QUALIFIED_EXCEEDS_TOTAL,
+  confessionProblem,
   isSecondaryType,
+  normalizeConfession,
   normalizeOptions,
   parseCount,
   parseManagement,
@@ -28,6 +30,7 @@ export type SchoolImportData = {
   territoire: string;
   type: string | null;
   management: SchoolManagementValue | null;
+  confession: string | null;
   director: string | null;
   phone: string | null;
   address: string | null;
@@ -87,6 +90,7 @@ export function validateRow(row: RawRow, poolCode: string): { ok: true; row: Val
         territoire: text("territoire"),
         type: optional("type"),
         management: parseManagement(text("management")) as SchoolManagementValue | null,
+        confession: normalizeConfession(text("confession")),
         director: optional("director"),
         phone: optional("phone"),
         address: optional("address"),
@@ -133,6 +137,7 @@ const VALUE_FIELDS = [
   "territoire",
   "type",
   "management",
+  "confession",
   "director",
   "phone",
   "address",
@@ -146,6 +151,8 @@ const VALUE_FIELDS = [
 export function planCreate(data: SchoolImportData): { ok: true; values: SchoolImportData } | { ok: false; reason: string } {
   if (data.options && !isSecondaryType(data.type)) return { ok: false, reason: OPTIONS_SECONDARY_ONLY };
   if (qualifiedExceedsTotal(data.qualifiedTeacherCount, data.teacherCount)) return { ok: false, reason: QUALIFIED_EXCEEDS_TOTAL };
+  const confession = confessionProblem(data.management, data.confession);
+  if (confession) return { ok: false, reason: confession };
   return { ok: true, values: data };
 }
 
@@ -167,12 +174,19 @@ export function planUpdate(
   if (qualifiedExceedsTotal(qualified, total)) {
     return { ok: false, reason: `${QUALIFIED_EXCEEDS_TOTAL} (après import : ${qualified} qualifiés pour ${total} enseignants)` };
   }
+  // Confession : exigée pour une école conventionnée ; retirée si elle ne l'est plus.
+  const effectiveManagement = data.management ?? existing.management;
+  if (data.confession && effectiveManagement !== "CONVENTIONED") return { ok: false, reason: confessionProblem(effectiveManagement, data.confession)! };
+  if (effectiveManagement === "CONVENTIONED" && !(data.confession ?? existing.confession)) {
+    return { ok: false, reason: confessionProblem(effectiveManagement, null)! };
+  }
   const changes: Partial<Record<keyof SchoolValues, unknown>> = {};
   for (const field of VALUE_FIELDS) {
     const value = data[field];
     if (value !== null && value !== existing[field]) changes[field] = value;
   }
   if (!isSecondaryType(effectiveType) && existing.options) changes.options = null;
+  if (effectiveManagement !== "CONVENTIONED" && existing.confession) changes.confession = null;
   return { ok: true, changes: changes as Partial<SchoolValues> };
 }
 
