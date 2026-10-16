@@ -53,7 +53,7 @@ export const AVAILABILITY_MESSAGES: Record<UsernameAvailability, string> = {
   invalid: USERNAME_RULE,
   current: "C'est déjà votre nom d'utilisateur.",
   reserved: "Ce nom est réservé. Choisissez-en un autre.",
-  taken: "Ce nom est déjà utilisé. Choisissez-en un autre.",
+  taken: "Ce nom n'est pas disponible (déjà utilisé ou abandonné récemment par un autre compte). Choisissez-en un autre.",
   available: "Ce nom est disponible.",
 };
 

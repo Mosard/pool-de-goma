@@ -74,14 +74,41 @@ export function isReservedUsername(username: string): boolean {
   return RESERVED_USERNAMES.has(normalizeUsername(username));
 }
 
-/** Identifiant déjà porté par un compte, ou réservé par une demande en attente. */
-export async function isUsernameTaken(username: string): Promise<boolean> {
+/**
+ * Un nom d'utilisateur abandonné (changement depuis « Mon compte ») reste
+ * bloqué pendant ce délai : personne d'autre ne peut le prendre et se faire
+ * passer pour son ancien titulaire. Celui-ci peut le reprendre.
+ */
+export const RELEASED_USERNAME_HOLD_DAYS = 90;
+
+/** Nom abandonné depuis moins de RELEASED_USERNAME_HOLD_DAYS par un autre compte que `exceptUserId`. */
+export async function isUsernameRecentlyReleased(username: string, exceptUserId?: string): Promise<boolean> {
+  const since = new Date(Date.now() - RELEASED_USERNAME_HOLD_DAYS * 24 * 60 * 60 * 1000);
+  const row = await prisma.auditLog.findFirst({
+    where: {
+      entityType: "User",
+      action: "user.username_change",
+      createdAt: { gte: since },
+      oldValue: { path: ["username"], equals: normalizeUsername(username) },
+      ...(exceptUserId && { entityId: { not: exceptUserId } }),
+    },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
+/**
+ * Identifiant déjà porté par un compte, réservé par une demande en attente,
+ * ou abandonné récemment par un autre compte (voir RELEASED_USERNAME_HOLD_DAYS).
+ */
+export async function isUsernameTaken(username: string, exceptUserId?: string): Promise<boolean> {
   const u = normalizeUsername(username);
-  const [user, request] = await Promise.all([
+  const [user, request, released] = await Promise.all([
     prisma.user.findUnique({ where: { username: u }, select: { id: true } }),
     prisma.accountRequest.findFirst({ where: { username: u, status: "PENDING" }, select: { id: true } }),
+    isUsernameRecentlyReleased(u, exceptUserId),
   ]);
-  return Boolean(user || request);
+  return Boolean(user || request || released);
 }
 
 async function suggestUsername(base: string): Promise<string | null> {

@@ -58,7 +58,8 @@ export async function checkUsernameAvailability(
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
   if (user?.username === username) return "current";
   if (!mayUseReservedUsername && isReservedUsername(username)) return "reserved";
-  return (await isUsernameTaken(username)) ? "taken" : "available";
+  // Le titulaire peut reprendre un nom qu'il a lui-même abandonné récemment.
+  return (await isUsernameTaken(username, userId)) ? "taken" : "available";
 }
 
 export async function changeOwnUsername(actor: Actor, input: UsernameChangeInput): Promise<{ username: string; previous: string | null }> {
